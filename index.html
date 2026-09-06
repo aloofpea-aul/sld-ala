@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Single Line Diagram - สถานีไฟฟ้าอ่าวลึก</title>
+<style>
+  :root{
+    --pea-purple:#4b2e83;
+    --pea-purple-dark:#341f5c;
+    --ink:#1c1b1f;
+    --paper:#f6f5f2;
+    --panel:#ffffff;
+    --line:#d9d6ce;
+    --muted:#6b6860;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--paper);color:var(--ink);
+    font-family:"Noto Sans Thai","TH Sarabun New","Segoe UI",sans-serif;}
+  #app{display:flex;flex-direction:column;height:100vh;}
+
+  header{background:var(--pea-purple);color:#fff;padding:14px 20px;display:flex;
+    align-items:baseline;gap:14px;flex-wrap:wrap;}
+  header h1{font-size:1.05rem;margin:0;font-weight:600;letter-spacing:.2px;}
+  header .sub{font-size:.8rem;opacity:.85;}
+  header .meta{margin-left:auto;font-size:.75rem;opacity:.8;}
+
+  #searchbar{display:flex;gap:8px;padding:10px 20px;background:var(--pea-purple-dark);}
+  #searchbar input{flex:1;max-width:420px;padding:8px 12px;border-radius:6px;border:none;
+    font-size:.9rem;font-family:inherit;}
+  #searchbar button{padding:8px 14px;border-radius:6px;border:none;background:#fff;
+    color:var(--pea-purple-dark);font-weight:600;cursor:pointer;font-size:.85rem;}
+  #searchResults{position:relative;}
+  #searchResultsList{position:absolute;top:38px;left:0;width:100%;max-width:420px;
+    background:#fff;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.25);
+    max-height:260px;overflow:auto;z-index:20;display:none;}
+  #searchResultsList div{padding:8px 12px;font-size:.82rem;cursor:pointer;border-bottom:1px solid #eee;}
+  #searchResultsList div:hover{background:#f2f0fa;}
+  #searchResultsList .fid{color:var(--pea-purple);font-weight:700;margin-right:6px;}
+
+  main{flex:1;display:flex;min-height:0;}
+  #diagramWrap{flex:1.35;position:relative;overflow:hidden;background:
+    radial-gradient(circle at 50% 45%, #ffffff 0%, #f0eee8 70%);}
+  svg{width:100%;height:100%;display:block;}
+
+  .feeder-line{fill:none;stroke-linecap:round;cursor:pointer;transition:stroke-width .15s;}
+  .feeder-line:hover{filter:brightness(1.15);}
+  .feeder-dot{cursor:pointer;}
+  .feeder-label{font-size:13px;font-weight:700;cursor:pointer;paint-order:stroke;
+    stroke:#f6f5f2;stroke-width:4px;}
+  .feeder-count{font-size:10.5px;fill:var(--muted);paint-order:stroke;stroke:#f6f5f2;stroke-width:3px;}
+  .center-box{fill:var(--pea-purple);stroke:var(--pea-purple-dark);stroke-width:2;}
+  .center-text{fill:#fff;font-size:13px;font-weight:700;text-anchor:middle;}
+  .center-sub{fill:#e4dcf7;font-size:9.5px;text-anchor:middle;}
+  .tie-label{font-size:9.5px;fill:var(--muted);font-style:italic;}
+
+  #panel{flex:1;max-width:420px;min-width:300px;background:var(--panel);
+    border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;}
+  #panelHeader{padding:16px 18px 10px;border-bottom:1px solid var(--line);}
+  #panelHeader h2{margin:0 0 4px;font-size:1.05rem;}
+  #panelHeader .tie{font-size:.78rem;color:var(--muted);}
+  #panelHeader .count-badge{display:inline-block;background:var(--paper);border:1px solid var(--line);
+    border-radius:20px;padding:2px 10px;font-size:.75rem;margin-top:6px;}
+  #deviceList{flex:1;overflow:auto;padding:6px 0;}
+  .device-row{display:flex;gap:8px;padding:8px 18px;border-bottom:1px solid #f0efe9;
+    font-size:.82rem;align-items:baseline;}
+  .device-row:hover{background:#faf9f6;}
+  .device-row .did{font-weight:700;color:var(--pea-purple-dark);white-space:nowrap;font-family:"Consolas",monospace;font-size:.78rem;}
+  .device-row .drating{color:#b5651d;font-size:.72rem;white-space:nowrap;min-width:34px;}
+  .device-row .ddesc{color:var(--ink);flex:1;}
+  .device-row .ddesc:empty::after{content:"—";color:#ccc;}
+  .empty-state{padding:40px 24px;color:var(--muted);font-size:.88rem;text-align:center;line-height:1.7;}
+  .empty-state b{color:var(--ink);}
+  #legend{padding:10px 18px;border-top:1px solid var(--line);font-size:.72rem;color:var(--muted);
+    display:flex;flex-wrap:wrap;gap:8px 12px;}
+  #legend span{display:inline-flex;align-items:center;gap:5px;}
+  #legend i{width:10px;height:10px;border-radius:2px;display:inline-block;}
+
+  footer{padding:6px 20px;font-size:.7rem;color:var(--muted);background:var(--paper);
+    border-top:1px solid var(--line);}
+
+  @media (max-width:820px){
+    main{flex-direction:column;}
+    #panel{max-width:none;border-left:none;border-top:1px solid var(--line);flex:1;}
+    #diagramWrap{flex:1;min-height:280px;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Single Line Diagram</h1>
+    <span class="sub" id="stationSub">สถานีไฟฟ้าอ่าวลึก · กฟส.อ่าวลึก กฟต.2</span>
+    <span class="meta" id="sourceMeta"></span>
+  </header>
+
+  <div id="searchbar">
+    <div id="searchResults" style="flex:1;max-width:420px;">
+      <input id="searchInput" type="text" placeholder="ค้นหา เช่น ALA01WS-101, บ.นาเหนือ, โรงงาน...">
+      <div id="searchResultsList"></div>
+    </div>
+    <button id="clearBtn">แสดงทั้งหมด</button>
+  </div>
+
+  <main>
+    <div id="diagramWrap">
+      <svg id="svg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div id="panel">
+      <div id="panelHeader">
+        <h2 id="panelTitle">เลือกวงจรเพื่อดูรายละเอียด</h2>
+        <div class="tie" id="panelTie"></div>
+        <div class="count-badge" id="panelCount" style="display:none;"></div>
+      </div>
+      <div id="deviceList">
+        <div class="empty-state">
+          คลิกเส้นวงจร (ฟีดเดอร์) ในผังด้านซ้าย เพื่อดูรายการอุปกรณ์ทั้งหมดในวงจรนั้น<br><br>
+          หรือพิมพ์ค้นหารหัสอุปกรณ์ / ชื่อสถานที่ ในช่องด้านบน
+        </div>
+      </div>
+      <div id="legend"></div>
+    </div>
+  </main>
+  <footer>ที่มา: แบบ Single Line Diagram (AutoCAD) · ข้อมูลอุปกรณ์ถอดจากแบบ อาจมีจุดที่ต้องตรวจสอบ/แก้ไขเพิ่มเติมใน Google Sheet</footer>
+</div>
+
+<script>
+// ============ CONFIG ============
+// ถ้ามีการ deploy Google Apps Script Web App แล้ว ให้ใส่ URL ตรงนี้
+// เพื่อให้หน้าเว็บดึงข้อมูลสดจาก Google Sheet แทนข้อมูลที่ฝังไว้ (embedded) ด้านล่าง
+const GAS_WEB_APP_URL = ""; // เช่น "https://script.google.com/macros/s/XXXXX/exec"
+
+// ============ EMBEDDED FALLBACK DATA ============
+const EMBEDDED_DATA = {"substation": {"id": "ALA", "name": "สถานีไฟฟ้าอ่าวลึก", "region": "กฟต.2", "branch": "กฟส.อ่าวลึก", "sourceDrawing": "A0-ALA (15 พ.ค. 68) - SINGLE LINE DIAGRAM"}, "feeders": [{"id": "ALA01", "name": "ฟีดเดอร์ ALA01", "color": "#e30613", "tieTo": "KBB01 (กฟล.กระบี่)", "devices": [{"id": "ALA01WS-101", "type": "WS", "desc": "เซอร์กิตเบรกเกอร์ต้นทาง (สถานี)"}, {"id": "ALA01WS-102", "type": "WS", "desc": ""}, {"id": "ALA01WF-107", "type": "WF", "rating": "6K", "desc": "บ.ถ้ำยวนทอง"}, {"id": "ALA01WF-108", "type": "WF", "rating": "10K", "desc": "บ.ในยวนแขก"}, {"id": "ALA01WF-109", "type": "WF", "rating": "6K", "desc": "AIS"}, {"id": "ALA01WF-110", "type": "WF", "rating": "15K", "desc": ""}, {"id": "ALA01WF-111", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA01WS-103", "type": "WS", "desc": ""}, {"id": "ALA01WR-101", "type": "WR", "desc": "รีโคลสเซอร์ (105)"}, {"id": "ALA01WF-112", "type": "WF", "rating": "10K", "desc": "บ.หนองจุด"}, {"id": "ALA01WF-114", "type": "WF", "rating": "6K", "desc": "ซ.ฟาร์มไก่นาแค"}, {"id": "ALA01WF-120", "type": "WF", "rating": "25K", "desc": "บ.ไร่ใหญ่ / นากุ้งนายแลง"}, {"id": "ALA01WF-121", "type": "WF", "rating": "15K", "desc": "บ.นายาว"}, {"id": "ALA01WF-122", "type": "WF", "rating": "10K", "desc": "บ.นาเหนืออ่าวลึกน้อย"}, {"id": "ALA01WF-123", "type": "WF", "rating": "6K", "desc": "บ.ศิริวงศ์"}, {"id": "ALA01WF-701", "type": "WF", "rating": "10K", "desc": "โรงโม่หิน"}, {"id": "ALA01WF-702", "type": "WF", "rating": "10K", "desc": "โรงสี"}, {"id": "ALA01WS-104", "type": "WS", "desc": ""}, {"id": "ALA01WS-106", "type": "WS", "desc": ""}, {"id": "ALA01WS-107", "type": "WS", "desc": ""}, {"id": "ALA01WS-108", "type": "WS", "desc": "จุดต่อเชื่อม KBB01 (กฟล.กระบี่)"}, {"id": "ALA01WF-124", "type": "WF", "rating": "25K", "desc": "บ่อกุ้ง"}, {"id": "ALA01WF-125", "type": "WF", "rating": "10K", "desc": "บ่อกุ้ง"}, {"id": "ALA01WF-126", "type": "WF", "rating": "10K", "desc": "บ.บ่าราม"}, {"id": "ALA01WF-127", "type": "WF", "rating": "10K", "desc": "บ.หินลับ"}, {"id": "ALA01WF-128", "type": "WF", "rating": "15K", "desc": ""}, {"id": "ALA01WF-703", "type": "WF", "rating": "25K", "desc": ""}, {"id": "ALA01WF-704", "type": "WF", "rating": "10K", "desc": "บ่อกุ้งนายส่งเสียม"}, {"id": "ALA01WF-705", "type": "WF", "rating": "10K", "desc": "บ่อกุ้งนายกำจร"}, {"id": "ALA01WF-706", "type": "WF", "rating": "10K", "desc": "ลอระวีฟาร์ม"}]}, {"id": "ALA02", "name": "ฟีดเดอร์ ALA02", "color": "#a020f0", "tieTo": "KBB01 (กฟล.กระบี่)", "devices": [{"id": "ALA02WS-101", "type": "WS", "desc": "เซอร์กิตเบรกเกอร์ต้นทาง (สถานี)"}, {"id": "ALA02WS-102", "type": "WS", "desc": ""}, {"id": "ALA02WS-103", "type": "WS", "desc": ""}, {"id": "ALA02WS-104", "type": "WS", "desc": ""}, {"id": "ALA02WR-101", "type": "WR", "desc": "รีโคลสเซอร์ (105/106/107)"}, {"id": "ALA02WC-101", "type": "WC", "rating": "3x100KVAR", "desc": "คาปาซิเตอร์แบงค์"}, {"id": "ALA02WF-111", "type": "WF", "desc": "ตลาดกลาง / จ.บ้านนาแล / กรมป่าไม้"}, {"id": "ALA02WF-113", "type": "WF", "desc": "โรงเลี้ยงหมูอตี"}, {"id": "ALA02WF-114", "type": "WF", "rating": "6K", "desc": "จ.น.บ้านนาลาม"}, {"id": "ALA02WF-115", "type": "WF", "rating": "6K", "desc": "บ้านลาราม"}, {"id": "ALA02WF-116", "type": "WF", "rating": "10K", "desc": "ชุมทน (ซ.คันน้อย)"}, {"id": "ALA02WF-117", "type": "WF", "rating": "6K", "desc": "พารามใก"}, {"id": "ALA02WF-118", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA02WF-119", "type": "WF", "desc": "ประปา ม.1"}, {"id": "ALA02WF-120", "type": "WF", "rating": "25K", "desc": ""}, {"id": "ALA02WF-121", "type": "WF", "rating": "6K", "desc": "ลพวณ ซ.6"}, {"id": "ALA02WF-122", "type": "WF", "rating": "6K", "desc": "นเทพอนุกู"}, {"id": "ALA02WF-123", "type": "WF", "rating": "6K", "desc": "ลพวณ ซ.8"}, {"id": "ALA02WF-124", "type": "WF", "rating": "6K", "desc": "นเยียบ / เหมยขาว"}, {"id": "ALA02WF-125", "type": "WF", "rating": "10K", "desc": "ลพวณ ซ.9"}, {"id": "ALA02WF-126", "type": "WF", "rating": "15K", "desc": "ลพวณ ซ.10"}, {"id": "ALA02WF-127", "type": "WF", "desc": "เยินเบล"}, {"id": "ALA02WF-128", "type": "WF", "rating": "6K", "desc": "ลพวณ ซ.13"}, {"id": "ALA02WF-129", "type": "WF", "rating": "10K", "desc": "ลพวณ ซ.14"}, {"id": "ALA02WF-130", "type": "WF", "rating": "6K", "desc": "บ.นาบใหม่"}, {"id": "ALA02WF-131", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA02WF-132", "type": "WF", "desc": "บ.โต๊ะกาว"}, {"id": "ALA02WF-133", "type": "WF", "rating": "15K", "desc": "ฟาร์มไก่ราศี"}, {"id": "ALA02WF-134", "type": "WF", "rating": "25K", "desc": ""}, {"id": "ALA02WF-135", "type": "WF", "rating": "15K", "desc": "อุตสาหกรรมป่าไม้"}, {"id": "ALA02WF-136", "type": "WF", "rating": "15K", "desc": "บ.เขาอาย"}, {"id": "ALA02WF-137", "type": "WF", "rating": "6K", "desc": "บ.คลองยางพัก"}, {"id": "ALA02WF-138", "type": "WF", "rating": "6K", "desc": "บ.ช่องเทพ 1"}, {"id": "ALA02WF-139", "type": "WF", "rating": "6K", "desc": "บ.คลองไร่"}, {"id": "ALA02WF-140", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA02WF-141", "type": "WF", "rating": "6K", "desc": "บ.ช่องเทพ 2"}, {"id": "ALA02WF-142", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA02WF-143", "type": "WF", "rating": "25K", "desc": ""}, {"id": "ALA02WF-144", "type": "WF", "rating": "15K", "desc": "บ.ปากช่อง"}, {"id": "ALA02WF-145", "type": "WF", "rating": "10K", "desc": "ประปาคลาพระม่วง"}, {"id": "ALA02WF-146", "type": "WF", "rating": "6K", "desc": "บ.นาบใหม่"}, {"id": "ALA02WF-701", "type": "WF", "desc": "กระเป๋าน้ำอเนก"}, {"id": "ALA02WF-702", "type": "WF", "desc": "โรงสีมันไบปาล์ม"}, {"id": "ALA02WF-705", "type": "WF", "rating": "25K", "desc": ""}, {"id": "ALA02WF-706", "type": "WF", "desc": ""}, {"id": "ALA02WF-708", "type": "WF", "desc": ""}, {"id": "ALA02WF-710", "type": "WF", "desc": ""}, {"id": "ALA02WF-711", "type": "WF", "rating": "10K", "desc": "พิธานพาล์ม 1"}, {"id": "ALA02WF-712", "type": "WF", "rating": "10K", "desc": "พิธานพาล์ม 2"}, {"id": "ALA02WF-713", "type": "WF", "rating": "10K", "desc": "ฟาร์มไก่ราศี"}, {"id": "ALA02WF-714", "type": "WF", "rating": "10K", "desc": "บ้านพักพิธานพาล์ม"}, {"id": "ALA02WS-108", "type": "WS", "desc": "จุดต่อเชื่อม KBB01 (กฟล.กระบี่)"}]}, {"id": "ALA03", "name": "ฟีดเดอร์ ALA03", "color": "#0033cc", "devices": [{"id": "ALA03WS-101", "type": "WS", "desc": "เซอร์กิตเบรกเกอร์ต้นทาง (สถานี)"}, {"id": "ALA03WS-102", "type": "WS", "desc": "ลนง.ขนส่ง"}, {"id": "ALA03WS-103", "type": "WS", "desc": "พาร์มไก่ณรงค์ชัย"}, {"id": "ALA03WF-101", "type": "WF", "rating": "10K", "desc": "พาร์มไก่ณรงค์ชัย"}, {"id": "ALA03WF-102", "type": "WF", "rating": "10K", "desc": "ซ.โรงอิฐทอง"}, {"id": "ALA03WF-103", "type": "WF", "rating": "10K", "desc": "ลหกรณ์เมืองใหม่"}, {"id": "ALA03WF-104", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA03WF-138", "type": "WF", "rating": "15K", "desc": "โรงงานลดน้ำมันปาล์ม"}, {"id": "ALA03WF-709", "type": "WF", "rating": "8K", "desc": ""}, {"id": "ALA03WR-102", "type": "WR", "desc": "รีโคลสเซอร์ (108/109/110)"}, {"id": "ALA03WS-107", "type": "WS", "desc": ""}, {"id": "ALA03WF-140", "type": "WF", "rating": "30K", "desc": "บริษัทบันวัลชัย"}, {"id": "ALA03WF-710", "type": "WF", "rating": "30K", "desc": "บริษัทหินปาล์ม"}, {"id": "ALA03WF-141", "type": "WF", "rating": "10K", "desc": "บ.หนองสลา"}, {"id": "ALA03WF-139", "type": "WF", "rating": "6K", "desc": "บ.นาอวยดา"}, {"id": "ALA03WF-142", "type": "WF", "rating": "6K", "desc": "บ.หนวนเยียว"}, {"id": "ALA03WF-143", "type": "WF", "rating": "10K", "desc": "บริษัทลพบาล"}, {"id": "ALA03WF-144", "type": "WF", "rating": "10K", "desc": "สำนักแม่ยาทวีลึก"}, {"id": "ALA03WF-145", "type": "WF", "rating": "6K", "desc": "พาร์มหมู"}, {"id": "ALA03WF-146", "type": "WF", "rating": "6K", "desc": "พาร์มหมู"}, {"id": "ALA03WF-147", "type": "WF", "rating": "10K", "desc": "บ.นาทวยอน"}, {"id": "ALA03WF-148", "type": "WF", "rating": "6K", "desc": "บ.นาทา"}, {"id": "ALA03WF-149", "type": "WF", "rating": "6K", "desc": "บ.หนวนเยียว"}, {"id": "ALA03WF-150", "type": "WF", "rating": "6K", "desc": "บ.นาทา"}, {"id": "ALA03WF-151", "type": "WF", "rating": "6K", "desc": "บ.นาบ้าน"}, {"id": "ALA03WF-152", "type": "WF", "desc": "บริษัทลพบาล"}, {"id": "ALA03WF-153", "type": "WF", "rating": "10K", "desc": "บ.นาทวยอน"}, {"id": "ALA03WS-111", "type": "WS", "desc": ""}, {"id": "ALA03WC-101", "type": "WC", "rating": "3x100KVAR", "desc": "คาปาซิเตอร์แบงค์"}, {"id": "ALA03WF-154", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA03WF-155", "type": "WF", "rating": "8K", "desc": "บ.คลองยาง"}, {"id": "ALA03WF-156", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA03WF-157", "type": "WF", "rating": "8K", "desc": "เขาทวยลึกประชา"}, {"id": "ALA03WF-158", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA03WF-159", "type": "WF", "rating": "6K", "desc": "โรงเลื่อยแหลมทอง"}, {"id": "ALA03WR-103", "type": "WR", "desc": "รีโคลสเซอร์ (112/113/114)"}, {"id": "ALA03WF-160", "type": "WF", "rating": "6K", "desc": "บ.นาทวยอน"}, {"id": "ALA03WF-161", "type": "WF", "rating": "6K", "desc": "บ.นาพรหน"}, {"id": "ALA03WF-162", "type": "WF", "rating": "8K", "desc": "หนวนคุตม"}, {"id": "ALA03WF-163", "type": "WF", "desc": "ลพหณนบ้านคย่าง"}, {"id": "ALA03WF-164", "type": "WF", "rating": "6K", "desc": "บ.นายาว"}, {"id": "ALA03WF-165", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA03WF-166", "type": "WF", "rating": "10K", "desc": "บ.นาพยาน"}, {"id": "ALA03WF-167", "type": "WF", "desc": "โรงเรียนอนุบาลควาว"}, {"id": "ALA03WF-168", "type": "WF", "rating": "15K", "desc": ""}, {"id": "ALA03WS-119", "type": "WS", "desc": ""}, {"id": "ALA03WS-115", "type": "WS", "desc": ""}, {"id": "ALA03WR-104", "type": "WR", "desc": "รีโคลสเซอร์ (116/117/118)"}, {"id": "ALA03WF-169", "type": "WF", "rating": "6K", "desc": "บ.แขวง"}, {"id": "ALA03WF-170", "type": "WF", "rating": "10K", "desc": "บ.นาลาย"}, {"id": "ALA03WF-171", "type": "WF", "rating": "6K", "desc": "ซ.บวนดี"}, {"id": "ALA03WF-172", "type": "WF", "rating": "15K", "desc": "บ.คลองปัญญา"}, {"id": "ALA03WF-173", "type": "WF", "rating": "8K", "desc": "บ.ทอยบ"}, {"id": "ALA03WF-174", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA03WF-175", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA03WF-176", "type": "WF", "rating": "20K", "desc": "บ.แสนพืช"}, {"id": "ALA03WF-177", "type": "WF", "rating": "6K", "desc": "บ.เขาสย"}, {"id": "ALA03WF-178", "type": "WF", "rating": "6K", "desc": "บ.พูล"}, {"id": "ALA03WF-179", "type": "WF", "rating": "10K", "desc": "บ.แขก"}, {"id": "ALA03WF-180", "type": "WF", "desc": "ช.นายกทอง"}, {"id": "ALA03WF-181", "type": "WF", "rating": "6K", "desc": "บ.แขนย"}, {"id": "ALA03WF-182", "type": "WF", "rating": "6K", "desc": "บ.ทีขึ้น"}, {"id": "ALA03WF-183", "type": "WF", "rating": "10K", "desc": "ช.นายทอง"}, {"id": "ALA03WF-184", "type": "WF", "desc": "บ.อ่าวลา"}, {"id": "ALA03WF-185", "type": "WF", "desc": "บ.สุธวลี"}, {"id": "ALA03WF-186", "type": "WF", "rating": "20K", "desc": "บ.พิสนา"}, {"id": "ALA03WF-187", "type": "WF", "rating": "6K", "desc": "บ.เขาแดง"}, {"id": "ALA03WF-188", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA03WF-189", "type": "WF", "rating": "8K", "desc": "บ.คลองหวน"}, {"id": "ALA03WF-190", "type": "WF", "desc": "บ.ทุ่งขยา"}, {"id": "ALA03WF-191", "type": "WF", "rating": "6K", "desc": "ป่าไม้"}, {"id": "ALA03WF-192", "type": "WF", "rating": "6K", "desc": "บ.น้ำจาภูภ"}, {"id": "ALA03WF-193", "type": "WF", "rating": "6K", "desc": "ซ.หลวงพร"}, {"id": "ALA03WF-194", "type": "WF", "rating": "30K", "desc": ""}, {"id": "ALA03WF-195", "type": "WF", "rating": "15K", "desc": "น.บาลิด"}, {"id": "ALA03WF-196", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA03WF-197", "type": "WF", "desc": "กปน.ปลายพระยา"}, {"id": "ALA03WF-198", "type": "WF", "rating": "10K", "desc": "บ.นาเจียน"}, {"id": "ALA03WF-199", "type": "WF", "rating": "10K", "desc": "บ.แรงงาน"}, {"id": "ALA03WF-201", "type": "WF", "rating": "20K", "desc": "บ.นาเวียน"}, {"id": "ALA03WF-202", "type": "WF", "rating": "15K", "desc": "บ.พุ่มยอด"}, {"id": "ALA03WF-203", "type": "WF", "desc": "บ.ทับญา"}, {"id": "ALA03WF-204", "type": "WF", "rating": "6K", "desc": "น้ำท่า"}, {"id": "ALA03WF-205", "type": "WF", "rating": "15K", "desc": "ลวนขุเรียน"}, {"id": "ALA03WF-206", "type": "WF", "rating": "6K", "desc": "ปักหมี"}, {"id": "ALA03WF-207", "type": "WF", "rating": "6K", "desc": "เขาทวยเมืองใหม่"}, {"id": "ALA03WF-208", "type": "WF", "rating": "6K", "desc": "เขาทวยเมืองใหม่"}, {"id": "ALA03WF-209", "type": "WF", "rating": "6K", "desc": "บักดี"}, {"id": "ALA03WF-210", "type": "WF", "rating": "15K", "desc": "บ.ช่องหญ้า"}, {"id": "ALA03WF-211", "type": "WF", "rating": "8K", "desc": "บ.หน้าดวง"}, {"id": "ALA03WS-120", "type": "WS", "desc": ""}, {"id": "ALA03WS-901", "type": "WS", "desc": "รีโมท SCADA"}, {"id": "ALA03WS-902", "type": "WS", "desc": "รีโมท SCADA (2.85 MW โซลาร์)"}, {"id": "ALA03WF-701", "type": "WF", "desc": ""}, {"id": "ALA03WF-702", "type": "WF", "desc": ""}, {"id": "ALA03WF-703", "type": "WF", "desc": ""}, {"id": "ALA03WF-704", "type": "WF", "rating": "10K", "desc": "ลหกรณ์เมืองใหม่"}, {"id": "ALA03WF-705", "type": "WF", "rating": "15K", "desc": "บริษัทดุจวิด"}, {"id": "ALA03WF-706", "type": "WF", "rating": "10K", "desc": "บ้านทับกรีชัยวิด"}, {"id": "ALA03WF-707", "type": "WF", "rating": "40K", "desc": "ลวนขุเรียน"}, {"id": "ALA03WF-708", "type": "WF", "rating": "8K", "desc": "โรงงานผัดกากมะ"}, {"id": "ALA03WF-711", "type": "WF", "desc": ""}, {"id": "ALA03WF-712", "type": "WF", "rating": "15K", "desc": ""}, {"id": "ALA03WF-713", "type": "WF", "rating": "8K", "desc": "บ้านพักนำอาวุธ"}]}, {"id": "ALA05", "name": "ฟีดเดอร์ ALA05", "color": "#00b0f0", "tieTo": "PGA05 (กฟล.ทับปุด)", "devices": [{"id": "ALA05WS-101", "type": "WS", "desc": "เซอร์กิตเบรกเกอร์ต้นทาง (สถานี)"}, {"id": "ALA05WS-104", "type": "WS", "desc": ""}, {"id": "ALA05WS-105", "type": "WS", "desc": ""}, {"id": "ALA05WF-101", "type": "WF", "desc": ""}, {"id": "ALA05WF-102", "type": "WF", "desc": "บ.หน้าเขาสัด"}, {"id": "ALA05WF-103", "type": "WF", "rating": "20K", "desc": "บ.บางสัด"}, {"id": "ALA05WF-104", "type": "WF", "desc": "ฟาร์มไก่พันธุ์"}, {"id": "ALA05WF-105", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA05WF-106", "type": "WF", "rating": "10K", "desc": "บ.บางไม้"}, {"id": "ALA05WF-107", "type": "WF", "rating": "10K", "desc": "บ.นาเหนือ"}, {"id": "ALA05WF-108", "type": "WF", "rating": "20K", "desc": "บ.ทุ่งลาซีก"}, {"id": "ALA05WF-701", "type": "WF", "desc": "ทุ่งลาซีก"}, {"id": "ALA05WF-702", "type": "WF", "desc": "พาร์มหมูนายจตุ"}, {"id": "ALA05WS-109", "type": "WS", "desc": ""}, {"id": "ALA05WR-101", "type": "WR", "desc": "รีโคลสเซอร์ (106/107/108)"}, {"id": "ALA05WF-109", "type": "WF", "rating": "10K", "desc": "ซ.ประปาละบุย"}, {"id": "ALA05WF-110", "type": "WF", "rating": "10K", "desc": "พาร์มหมูปากลาว"}, {"id": "ALA05WF-111", "type": "WF", "rating": "6K", "desc": "บ.บางเดียว"}, {"id": "ALA05WF-112", "type": "WF", "rating": "10K", "desc": "บ.ปากลาว"}, {"id": "ALA05WF-113", "type": "WF", "rating": "6K", "desc": "บ.ระจุย"}, {"id": "ALA05WF-114", "type": "WF", "rating": "10K", "desc": "บ.ป่าแดว"}, {"id": "ALA05WF-115", "type": "WF", "rating": "10K", "desc": "บ.บางจากไม้"}, {"id": "ALA05SW-105", "type": "SW", "desc": ""}]}, {"id": "ALA06", "name": "ฟีดเดอร์ ALA06", "color": "#ff8c00", "devices": [{"id": "ALA06WS-101", "type": "WS", "desc": "เซอร์กิตเบรกเกอร์ต้นทาง (สถานี)"}, {"id": "ALA06WF-101", "type": "WF", "rating": "25K", "desc": "โรงงานปาล์ม / อ.สังข์เมืองใหม่"}, {"id": "ALA06WF-102", "type": "WF", "desc": ""}, {"id": "ALA06WF-103", "type": "WF", "rating": "15K", "desc": "บ.วงแนนสุด"}, {"id": "ALA06WS-102", "type": "WS", "desc": ""}, {"id": "ALA06WS-103", "type": "WS", "desc": ""}, {"id": "ALA06WS-901", "type": "WS", "desc": "รีโมท SCADA"}, {"id": "ALA06WS-902", "type": "WS", "desc": "รีโมท SCADA"}, {"id": "ALA06WF-104", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA06WF-105", "type": "WF", "desc": ""}, {"id": "ALA06WF-106", "type": "WF", "rating": "15K", "desc": ""}, {"id": "ALA06WF-107", "type": "WF", "rating": "8K", "desc": "หญิงกวางเจริญทอง"}, {"id": "ALA06WF-108", "type": "WF", "desc": "บ้านชาวเขา"}, {"id": "ALA06WF-109", "type": "WF", "rating": "10K", "desc": "โรงปุ๋ยบ้านนายพงศ์ ชีวภาพ"}, {"id": "ALA06WR-102", "type": "WR", "desc": "รีโคลสเซอร์ (108/109/110)"}, {"id": "ALA06WF-110", "type": "WF", "desc": "บ.น้ำเชี่ยว"}, {"id": "ALA06WF-111", "type": "WF", "rating": "10K", "desc": "บ.ทุ่งออก"}, {"id": "ALA06WF-112", "type": "WF", "rating": "15K", "desc": "บ.หัวช้าง"}, {"id": "ALA06WF-113", "type": "WF", "rating": "8K", "desc": "บ่อกุ้งนายฝีมือ"}, {"id": "ALA06WF-114", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA06WF-115", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA06WF-116", "type": "WF", "desc": ""}, {"id": "ALA06WC-101", "type": "WC", "rating": "3x100KVAR", "desc": "คาปาซิเตอร์แบงค์"}, {"id": "ALA06WS-903", "type": "WS", "desc": "รีโมท SCADA (1.0 MW โซลาร์)"}, {"id": "ALA06WR-102b", "type": "WR", "desc": "รีโคลสเซอร์ (105/106/107)"}, {"id": "ALA06WF-119", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA06WF-120", "type": "WF", "rating": "15K", "desc": ""}, {"id": "ALA06WF-121", "type": "WF", "rating": "6K", "desc": "บ.กาสอ"}, {"id": "ALA06WF-122", "type": "WF", "rating": "10K", "desc": "OCEAN VIEW"}, {"id": "ALA06WF-123", "type": "WF", "rating": "6K", "desc": "รีสอร์ทหินขาว"}, {"id": "ALA06WF-124", "type": "WF", "rating": "10K", "desc": "บ.กาเหรียน"}, {"id": "ALA06WF-125", "type": "WF", "rating": "10K", "desc": "บ่อกุ้ง"}, {"id": "ALA06WF-126", "type": "WF", "rating": "10K", "desc": "บ.ใต้ไม้"}, {"id": "ALA06WF-127", "type": "WF", "rating": "6K", "desc": "ชาวเขาถ่าน"}, {"id": "ALA06WF-128", "type": "WF", "rating": "10K", "desc": "บ.อ่าวน้ำ"}, {"id": "ALA06WF-129", "type": "WF", "desc": "บ่อกุ้งนาย ปทัญญา / บ่อกุ้ง TSP มาริน / บ่อกุ้งนายไพทูรย์"}, {"id": "ALA06WF-130", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA06WF-131", "type": "WF", "rating": "10K", "desc": "บ.แหลมสัก"}, {"id": "ALA06WF-132", "type": "WF", "rating": "6K", "desc": "บ.เขาเหมือดดำ"}, {"id": "ALA06WF-133", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA06WF-134", "type": "WF", "rating": "10K", "desc": "บ.นาไม้ไผ่"}, {"id": "ALA06WF-135", "type": "WF", "desc": ""}, {"id": "ALA06WF-136", "type": "WF", "rating": "6K", "desc": "บ.หนองอุด"}, {"id": "ALA06WF-137", "type": "WF", "rating": "6K", "desc": "บ.สันไผ่"}, {"id": "ALA06WF-138", "type": "WF", "rating": "6K", "desc": "บ.สามัคคี"}, {"id": "ALA06WF-139", "type": "WF", "rating": "6K", "desc": "บ.สันปาล์ม"}, {"id": "ALA06WF-140", "type": "WF", "rating": "8K", "desc": "บ.ทุ่งดำหวัง"}, {"id": "ALA06WF-141", "type": "WF", "rating": "6K", "desc": "บ.สันแฝด"}, {"id": "ALA06WF-142", "type": "WF", "rating": "6K", "desc": "บ.ไชยใหญ่"}, {"id": "ALA06WF-143", "type": "WF", "rating": "6K", "desc": "บ.เรวังนุ่ย"}, {"id": "ALA06WR-103", "type": "WR", "desc": "รีโคลสเซอร์ (109/110/108)"}, {"id": "ALA06WF-701", "type": "WF", "desc": ""}, {"id": "ALA06WF-702", "type": "WF", "desc": ""}, {"id": "ALA06WF-703", "type": "WF", "desc": ""}]}, {"id": "ALA07", "name": "ฟีดเดอร์ ALA07", "color": "#4caf00", "devices": [{"id": "ALA07WS-101", "type": "WS", "desc": "เซอร์กิตเบรกเกอร์ต้นทาง (สถานี)"}, {"id": "ALA07WR-101", "type": "WR", "desc": "รีโคลสเซอร์ (104/105/106)"}, {"id": "ALA07WF-701", "type": "WF", "rating": "10K", "desc": "บริษัทเกษตรลิขิต"}, {"id": "ALA07WF-702", "type": "WF", "rating": "6K", "desc": "ฟาร์มไก่นายสมพร / ลหกรณ์นาจาน"}, {"id": "ALA07WR-102", "type": "WR", "desc": "รีโคลสเซอร์ (106/107/108)"}, {"id": "ALA07WF-704", "type": "WF", "rating": "10K", "desc": "ประปาบ.ทับควาย"}, {"id": "ALA07WF-111", "type": "WF", "rating": "10K", "desc": "บ.ไร่ใหญ่"}, {"id": "ALA07WC-101", "type": "WC", "rating": "15x100KVAR", "desc": "คาปาซิเตอร์แบงค์"}, {"id": "ALA07WF-110", "type": "WF", "rating": "10K", "desc": "บ.เกาะพี"}, {"id": "ALA07WF-701b", "type": "WF", "rating": "6K", "desc": "บ.หนองพอ"}, {"id": "ALA07WF-105", "type": "WF", "rating": "6K", "desc": "ประปาหมู่ 2"}, {"id": "ALA07WF-104", "type": "WF", "rating": "6K", "desc": "บ.หน้าถ้ำ"}, {"id": "ALA07WF-106", "type": "WF", "rating": "6K", "desc": "บ.หน้าถ้ำ"}, {"id": "ALA07WF-107", "type": "WF", "rating": "10K", "desc": "บ.หนองพอ"}, {"id": "ALA07WF-108", "type": "WF", "rating": "10K", "desc": "บ.ควนหมาหอบ"}, {"id": "ALA07WS-105", "type": "WS", "desc": ""}, {"id": "ALA07WF-103", "type": "WF", "rating": "25K", "desc": "ธนาคาร ธกส."}, {"id": "ALA07WF-109", "type": "WF", "rating": "10K", "desc": "บ.เกาะพีอีก"}, {"id": "ALA07WS-108", "type": "WS", "desc": ""}, {"id": "ALA07WF-113", "type": "WF", "rating": "40K", "desc": ""}, {"id": "ALA07WF-114", "type": "WF", "desc": "โรงงานผลปาล์มบูดฯ"}, {"id": "ALA07WF-115", "type": "WF", "rating": "25K", "desc": ""}, {"id": "ALA07WF-116", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA07WF-117", "type": "WF", "rating": "10K", "desc": "จ.จนบานเหลี่ยว"}, {"id": "ALA07WF-118", "type": "WF", "rating": "6K", "desc": "ลานสหกรณ์"}, {"id": "ALA07WF-119", "type": "WF", "rating": "6K", "desc": "บ.นาเหลี่ยว"}, {"id": "ALA07WF-706", "type": "WF", "rating": "6K", "desc": "โรงรับจำนำ"}, {"id": "ALA07WF-707", "type": "WF", "rating": "40K", "desc": ""}, {"id": "ALA07WS-109", "type": "WS", "desc": ""}, {"id": "ALA07WS-110", "type": "WS", "desc": ""}, {"id": "ALA07WF-120", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA07WF-121", "type": "WF", "desc": "บ.แรงงาน"}, {"id": "ALA07WF-122", "type": "WF", "rating": "6K", "desc": "ประปาบ.น้ำจอบ"}, {"id": "ALA07WF-123", "type": "WF", "rating": "6K", "desc": "จ.ห้วยเสียว"}, {"id": "ALA07WF-124", "type": "WF", "desc": "ลานสหพัฒน์"}, {"id": "ALA07WF-125", "type": "WF", "desc": "หน่วยการทาง"}, {"id": "ALA07WF-126", "type": "WF", "desc": "จัดสรรนี"}, {"id": "ALA07WF-127", "type": "WF", "rating": "10K", "desc": "บ.นวลนี"}, {"id": "ALA07WF-128", "type": "WF", "rating": "6K", "desc": "บ.หนองเปีย"}, {"id": "ALA07WF-129", "type": "WF", "rating": "40K", "desc": "ควนขวัน / โรงฟรีปกมา"}, {"id": "ALA07WF-130", "type": "WF", "desc": "ธนประธาน"}, {"id": "ALA07WF-131", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA07WF-132", "type": "WF", "rating": "6K", "desc": "ธนประธาน"}, {"id": "ALA07WF-133", "type": "WF", "rating": "10K", "desc": "บ.เขาสนิม"}, {"id": "ALA07WF-134", "type": "WF", "rating": "10K", "desc": "บ.เขาเทียว"}, {"id": "ALA07WF-135", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA07WF-136", "type": "WF", "rating": "10K", "desc": "บ.พารามวี"}, {"id": "ALA07WF-137", "type": "WF", "rating": "6K", "desc": "บ.คลองพระยา"}, {"id": "ALA07WF-138", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA07WF-140", "type": "WF", "rating": "6K", "desc": "บ.คลองพระยา"}, {"id": "ALA07WF-708", "type": "WF", "rating": "10K", "desc": "บ้านพักบ้านทรยศลาดกรรม / โรงน้ำแข็ง"}, {"id": "ALA07WF-139", "type": "WF", "desc": "EV Charcher"}, {"id": "ALA07WS-111", "type": "WS", "desc": ""}, {"id": "ALA07WF-141", "type": "WF", "rating": "8K", "desc": "จ.นาลาก"}, {"id": "ALA07WF-142", "type": "WF", "rating": "10K", "desc": "ต.นวิจา"}, {"id": "ALA07WF-709", "type": "WF", "rating": "15K", "desc": "ตลาดพระนาปลายพระยา"}, {"id": "ALA07WF-143", "type": "WF", "desc": ""}, {"id": "ALA07WF-144", "type": "WF", "rating": "10K", "desc": "โรงเรียนบุญเหมทาล"}, {"id": "ALA07WF-145", "type": "WF", "rating": "8K", "desc": "ปรับปรุงไฟฟ้า"}, {"id": "ALA07WF-146", "type": "WF", "rating": "8K", "desc": "โรงเรียนอนุบาลศรี"}, {"id": "ALA07WF-147", "type": "WF", "rating": "8K", "desc": "บ่ายอนวัฒน์อาจ"}, {"id": "ALA07WF-148", "type": "WF", "rating": "8K", "desc": "อุปเปอร์ชิป"}, {"id": "ALA07WF-149", "type": "WF", "rating": "10K", "desc": "โรงเรียนปลายพระยาวิทยาคม"}, {"id": "ALA07WF-150", "type": "WF", "rating": "6K", "desc": "ซ.สหกรณ์ปลายพระยาวิทยาคม"}, {"id": "ALA07WS-112", "type": "WS", "desc": ""}, {"id": "ALA07WF-151", "type": "WF", "rating": "6K", "desc": "แผลาบ"}, {"id": "ALA07WF-152", "type": "WF", "rating": "10K", "desc": "ซ.รวลิยว"}, {"id": "ALA07WF-153", "type": "WF", "rating": "10K", "desc": "น.บางลิน"}, {"id": "ALA07WF-154", "type": "WF", "desc": ""}, {"id": "ALA07WF-155", "type": "WF", "rating": "10K", "desc": "ซ.หัวเขียว"}, {"id": "ALA07WF-156", "type": "WF", "rating": "10K", "desc": "น.เขี้ยว"}, {"id": "ALA07WF-157", "type": "WF", "rating": "10K", "desc": "น.บาสิน"}, {"id": "ALA07WS-113", "type": "WS", "desc": ""}, {"id": "ALA07WS-901", "type": "WS", "desc": "รีโมท SCADA (2.85 MW โซลาร์)"}, {"id": "ALA07WS-902", "type": "WS", "desc": "รีโมท SCADA"}]}, {"id": "ALA09", "name": "ฟีดเดอร์ ALA09", "color": "#000000", "tieTo": "CLA01 (กฟล.ตาขุน)", "devices": [{"id": "ALA09WS-101", "type": "WS", "desc": "เซอร์กิตเบรกเกอร์ต้นทาง (สถานี)"}, {"id": "ALA09WS-104", "type": "WS", "desc": ""}, {"id": "ALA09WS-105", "type": "WS", "desc": ""}, {"id": "ALA09SW-105", "type": "SW", "desc": ""}, {"id": "ALA09WS-901", "type": "WS", "desc": "รีโมท SCADA (โรงไฟฟ้าชีวภาพ 3.0 MW)"}, {"id": "ALA09WS-902", "type": "WS", "desc": "รีโมท SCADA"}, {"id": "ALA09WF-701", "type": "WF", "desc": "โรงงานลูกปุ๋ยจากลุน"}, {"id": "ALA09WF-702", "type": "WF", "rating": "25K", "desc": "จ.ภูษ์รับเบอร์"}, {"id": "ALA09WF-703", "type": "WF", "rating": "10K", "desc": "ธนาคาร ธกส."}, {"id": "ALA09WF-704", "type": "WF", "rating": "15K", "desc": "ลหกรณ์เมืองใหม่"}, {"id": "ALA09WF-705", "type": "WF", "rating": "25K", "desc": "หลกงชมภูษ์"}, {"id": "ALA09WF-706", "type": "WF", "rating": "10K", "desc": "นาเหนือมทัศน์ (บ.หัวควน)"}, {"id": "ALA09WF-707", "type": "WF", "rating": "10K", "desc": "ลาบี EV"}, {"id": "ALA09WF-708", "type": "WF", "rating": "10K", "desc": "นาเหนือมทัศน์"}, {"id": "ALA09WF-105", "type": "WF", "desc": "บ.นาเหนือ"}, {"id": "ALA09WF-106", "type": "WF", "rating": "10K", "desc": "บ.บางสิทร"}, {"id": "ALA09WF-107", "type": "WF", "rating": "10K", "desc": "บ.ทุ่งลง"}, {"id": "ALA09WS-106", "type": "WS", "desc": ""}, {"id": "ALA09WF-108", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA09WF-109", "type": "WF", "rating": "6K", "desc": ""}, {"id": "ALA09WF-710", "type": "WF", "rating": "15K", "desc": "บริษัทบันวัลชัย"}, {"id": "ALA09WF-711", "type": "WF", "rating": "10K", "desc": "บริษัทหินปาล์ม"}, {"id": "ALA09WF-712", "type": "WF", "rating": "25K", "desc": "หน่วยกู้ภัยราชสีห์"}, {"id": "ALA09WF-110", "type": "WF", "rating": "25K", "desc": ""}, {"id": "ALA09WF-111", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA09MR-101", "type": "MR", "desc": "รีโคลสเซอร์ (107/108/109)"}, {"id": "ALA09WF-113", "type": "WF", "rating": "6K", "desc": "น.บาทวี"}, {"id": "ALA09WF-114", "type": "WF", "rating": "10K", "desc": "น.แร่งบิน"}, {"id": "ALA09WF-115", "type": "WF", "rating": "10K", "desc": "น.สนขาย"}, {"id": "ALA09WF-116", "type": "WF", "rating": "10K", "desc": "น.สนขาย"}, {"id": "ALA09WF-117", "type": "WF", "rating": "25K", "desc": "น.สนขายพิบิ"}, {"id": "ALA09WF-118", "type": "WF", "rating": "6K", "desc": "น.สนขาย ม.5"}, {"id": "ALA09WF-119", "type": "WF", "desc": "บ่อนกจาก"}, {"id": "ALA09WF-120", "type": "WF", "rating": "10K", "desc": "บริษัทอินเดินภูมิภาค"}, {"id": "ALA09WF-121", "type": "WF", "rating": "10K", "desc": "ความสายพัฒน์"}, {"id": "ALA09WF-122", "type": "WF", "rating": "10K", "desc": "บริษัทอินเดินสวนปุน"}, {"id": "ALA09WF-123", "type": "WF", "rating": "8K", "desc": "บ.นายอด"}, {"id": "ALA09WF-715", "type": "WF", "rating": "10K", "desc": ""}, {"id": "ALA09WS-110", "type": "WS", "desc": "โรงน้ำ"}, {"id": "ALA09WF-125", "type": "WF", "rating": "20K", "desc": "บ.นาทองแลง"}, {"id": "ALA09WF-126", "type": "WF", "rating": "8K", "desc": "บริษัทอินธุรกิจสวน"}, {"id": "ALA09WF-127", "type": "WF", "rating": "10K", "desc": "ว.วิษาต่อ"}, {"id": "ALA09WF-128", "type": "WF", "rating": "6K", "desc": "บ.นาสวี"}, {"id": "ALA09WS-111", "type": "WS", "desc": "สาธารณสุข"}, {"id": "ALA09WF-129", "type": "WF", "rating": "8K", "desc": "ลานสภาพ"}, {"id": "ALA09WF-130", "type": "WF", "rating": "15K", "desc": "ซ.น้ำตก"}, {"id": "ALA09WS-112", "type": "WS", "desc": "บ.เข็ดปุก"}, {"id": "ALA09WF-131", "type": "WF", "rating": "6K", "desc": "โรงเก็บน้ำสวย"}, {"id": "ALA09WF-132", "type": "WF", "rating": "6K", "desc": "เพ่งไม้"}, {"id": "ALA09WF-133", "type": "WF", "rating": "6K", "desc": "บ.เก็บชุม"}, {"id": "ALA09WF-134", "type": "WF", "rating": "6K", "desc": "โรงเก็บมันขายชุม"}, {"id": "ALA09WF-717", "type": "WF", "rating": "15K", "desc": "บ.นาบยบ"}, {"id": "ALA09WF-135", "type": "WF", "desc": "บ.มีคาย"}, {"id": "ALA09WF-136", "type": "WF", "rating": "10K", "desc": "บ.นาสตด"}, {"id": "ALA09WF-137", "type": "WF", "rating": "10K", "desc": "บ.นาเลิด (แนวลาด)"}, {"id": "ALA09WF-138", "type": "WF", "rating": "10K", "desc": "ซ.วิสัทนา (ร.ร.บ้านบก)"}, {"id": "ALA09WF-139", "type": "WF", "rating": "8K", "desc": "บ.ทุ่งขี้เหล็ก 1"}, {"id": "ALA09WF-140", "type": "WF", "rating": "10K", "desc": "บ.ทุ่งศรี"}, {"id": "ALA09WF-141", "type": "WF", "rating": "10K", "desc": "ช.น.น.บ้านบก"}, {"id": "ALA09WF-142", "type": "WF", "rating": "10K", "desc": "บ.เขื่อนสูง / ลากภูมิบุญคุณ"}, {"id": "ALA09WF-143", "type": "WF", "rating": "10K", "desc": "โรงงานแอลชี"}, {"id": "ALA09WF-144", "type": "WF", "rating": "10K", "desc": "โรงงานแอลชี้"}, {"id": "ALA09WF-145", "type": "WF", "rating": "8K", "desc": "โรงงานแอลชี้"}, {"id": "ALA09WF-146", "type": "WF", "rating": "10K", "desc": "บ.แพทอง"}, {"id": "ALA09WF-147", "type": "WF", "rating": "10K", "desc": "บ.แพทอง"}, {"id": "ALA09WF-718", "type": "WF", "rating": "10K", "desc": "บ.แพทอง"}, {"id": "ALA09WF-148", "type": "WF", "rating": "20K", "desc": "กฟล.ปลายพระยา (สายเชื่อม)"}, {"id": "ALA09WF-719", "type": "WF", "rating": "8K", "desc": "โรงงานผลไม้แอด"}, {"id": "CLA01WS-124", "type": "WS", "desc": "จุดต่อเชื่อม กฟล.ตาขุน (บ.บางแห้ง)"}]}]};
+
+// ============ STATE ============
+let DATA = EMBEDDED_DATA;
+let selectedFeeder = null;
+
+async function loadData(){
+  document.getElementById('sourceMeta').textContent = DATA.substation.sourceDrawing || '';
+  if(GAS_WEB_APP_URL){
+    try{
+      const res = await fetch(GAS_WEB_APP_URL);
+      const json = await res.json();
+      if(json && json.feeders && json.feeders.length){
+        DATA = json;
+        document.getElementById('sourceMeta').textContent = 'ข้อมูลสดจาก Google Sheet';
+      }
+    }catch(e){
+      console.warn('โหลดข้อมูลจาก GAS ไม่สำเร็จ ใช้ข้อมูลสำรองที่ฝังไว้แทน', e);
+    }
+  }
+  renderDiagram();
+  renderLegend();
+}
+
+function renderLegend(){
+  const el = document.getElementById('legend');
+  el.innerHTML = DATA.feeders.map(f =>
+    `<span><i style="background:${f.color}"></i>${f.id}</span>`
+  ).join('');
+}
+
+function renderDiagram(){
+  const svg = document.getElementById('svg');
+  const cx = 500, cy = 350, R = 250;
+  const n = DATA.feeders.length;
+  const startAngle = -90; // straight up
+  let html = '';
+
+  // links first (so labels draw on top)
+  DATA.feeders.forEach((f, i) => {
+    const angle = (startAngle + (360 / n) * i) * Math.PI / 180;
+    const ex = cx + R * Math.cos(angle);
+    const ey = cy + R * Math.sin(angle);
+    const devCount = f.devices.length;
+    const isSel = selectedFeeder === f.id;
+    const strokeW = isSel ? 6 : 3.5;
+
+    html += `<path class="feeder-line" data-fid="${f.id}" d="M ${cx} ${cy} L ${ex} ${ey}"
+              stroke="${f.color}" stroke-width="${strokeW}" opacity="${selectedFeeder && !isSel ? 0.28 : 1}"/>`;
+
+    // device tick marks along the line (sampled, max 14)
+    const showCount = Math.min(devCount, 14);
+    for(let k=1;k<=showCount;k++){
+      const t = k/(showCount+1);
+      const tx = cx + (ex-cx)*t;
+      const ty = cy + (ey-cy)*t;
+      html += `<circle class="feeder-dot" data-fid="${f.id}" cx="${tx}" cy="${ty}" r="3"
+                fill="${f.color}" opacity="${selectedFeeder && !isSel ? 0.28 : 0.9}"/>`;
+    }
+
+    // label position slightly beyond end point
+    const lx = cx + (R+18) * Math.cos(angle);
+    const ly = cy + (R+18) * Math.sin(angle);
+    const anchor = Math.cos(angle) > 0.3 ? 'start' : (Math.cos(angle) < -0.3 ? 'end' : 'middle');
+    html += `<text class="feeder-label" data-fid="${f.id}" x="${lx}" y="${ly}" fill="${f.color}"
+              text-anchor="${anchor}">${f.id}</text>`;
+    html += `<text class="feeder-count" data-fid="${f.id}" x="${lx}" y="${ly+14}"
+              text-anchor="${anchor}">${devCount} อุปกรณ์</text>`;
+    if(f.tieTo){
+      html += `<text class="tie-label" x="${lx}" y="${ly+27}" text-anchor="${anchor}">เชื่อม ${f.tieTo}</text>`;
+    }
+  });
+
+  // center substation box
+  html += `<rect class="center-box" x="${cx-70}" y="${cy-30}" width="140" height="60" rx="8"/>`;
+  html += `<text class="center-text" x="${cx}" y="${cy-3}">${DATA.substation.name}</text>`;
+  html += `<text class="center-sub" x="${cx}" y="${cy+14}">${DATA.substation.branch} · ${DATA.substation.region}</text>`;
+
+  svg.innerHTML = html;
+
+  svg.querySelectorAll('[data-fid]').forEach(elm => {
+    elm.addEventListener('click', () => selectFeeder(elm.getAttribute('data-fid')));
+  });
+}
+
+function selectFeeder(fid){
+  selectedFeeder = fid;
+  renderDiagram();
+  const f = DATA.feeders.find(x => x.id === fid);
+  if(!f) return;
+  document.getElementById('panelTitle').textContent = `${f.name} (${f.id})`;
+  document.getElementById('panelTie').textContent = f.tieTo ? `จุดเชื่อมโยง: ${f.tieTo}` : '';
+  const badge = document.getElementById('panelCount');
+  badge.style.display = 'inline-block';
+  badge.textContent = `${f.devices.length} อุปกรณ์`;
+
+  const list = document.getElementById('deviceList');
+  list.innerHTML = f.devices.map(d => `
+    <div class="device-row">
+      <span class="did">${d.id}</span>
+      <span class="drating">${d.rating || ''}</span>
+      <span class="ddesc">${escapeHtml(d.desc || '')}</span>
+    </div>`).join('');
+}
+
+function escapeHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ============ SEARCH ============
+function doSearch(q){
+  const list = document.getElementById('searchResultsList');
+  q = q.trim().toLowerCase();
+  if(!q){ list.style.display='none'; list.innerHTML=''; return; }
+  let results = [];
+  DATA.feeders.forEach(f => {
+    f.devices.forEach(d => {
+      const hay = (d.id + ' ' + (d.desc||'') + ' ' + (d.type||'')).toLowerCase();
+      if(hay.includes(q)){
+        results.push({fid:f.id, color:f.color, id:d.id, desc:d.desc||'', rating:d.rating||''});
+      }
+    });
+  });
+  results = results.slice(0, 40);
+  if(!results.length){
+    list.innerHTML = '<div style="color:#999;">ไม่พบผลลัพธ์</div>';
+  } else {
+    list.innerHTML = results.map(r =>
+      `<div data-fid="${r.fid}" data-id="${r.id}">
+        <span class="fid" style="color:${r.color}">${r.fid}</span>${r.id} — ${escapeHtml(r.desc)} ${r.rating? '('+r.rating+')':''}
+      </div>`).join('');
+    list.querySelectorAll('div[data-fid]').forEach(row => {
+      row.addEventListener('click', () => {
+        selectFeeder(row.getAttribute('data-fid'));
+        list.style.display = 'none';
+        document.getElementById('searchInput').value = row.getAttribute('data-id');
+        // scroll to & highlight the specific row
+        setTimeout(() => {
+          const target = [...document.querySelectorAll('.device-row .did')]
+            .find(el => el.textContent === row.getAttribute('data-id'));
+          if(target){
+            target.closest('.device-row').scrollIntoView({block:'center'});
+            target.closest('.device-row').style.background = '#fff2cc';
+          }
+        }, 30);
+      });
+    });
+  }
+  list.style.display = 'block';
+}
+
+document.getElementById('searchInput').addEventListener('input', e => doSearch(e.target.value));
+document.getElementById('clearBtn').addEventListener('click', () => {
+  selectedFeeder = null;
+  document.getElementById('searchInput').value = '';
+  document.getElementById('searchResultsList').style.display = 'none';
+  document.getElementById('panelTitle').textContent = 'เลือกวงจรเพื่อดูรายละเอียด';
+  document.getElementById('panelTie').textContent = '';
+  document.getElementById('panelCount').style.display = 'none';
+  document.getElementById('deviceList').innerHTML = `<div class="empty-state">
+    คลิกเส้นวงจร (ฟีดเดอร์) ในผังด้านซ้าย เพื่อดูรายการอุปกรณ์ทั้งหมดในวงจรนั้น<br><br>
+    หรือพิมพ์ค้นหารหัสอุปกรณ์ / ชื่อสถานที่ ในช่องด้านบน</div>`;
+  renderDiagram();
+});
+document.addEventListener('click', e => {
+  if(!e.target.closest('#searchResults')) document.getElementById('searchResultsList').style.display='none';
+});
+
+loadData();
+</script>
+</body>
+</html>
