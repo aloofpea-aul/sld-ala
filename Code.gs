@@ -5,7 +5,7 @@
  * วิธีใช้งาน:
  * 1. สร้าง Google Sheet ใหม่ 1 ไฟล์
  * 2. สร้างชีตชื่อ "Devices" แล้ว import ไฟล์ devices.csv เข้าไป (แถวแรกเป็นหัวตาราง)
- *    คอลัมน์: Feeder, DeviceID, Type, Rating, Description, Lat, Lon, Source
+ *    คอลัมน์: Feeder, DeviceID, Type, Rating, Description, Lat, Lon, Source, ParentID, MeterCount
  * 3. สร้างชีตชื่อ "Feeders" แล้ว import ไฟล์ feeders.csv เข้าไป (แถวแรกเป็นหัวตาราง)
  * 4. เปิด Extensions > Apps Script แล้ววางไฟล์นี้ทับ Code.gs ที่มีอยู่
  * 5. Deploy > New deployment > เลือกประเภท "Web app"
@@ -65,6 +65,10 @@ function buildData() {
     const lat = parseFloat(r[5]), lon = parseFloat(r[6]);
     if (!isNaN(lat) && !isNaN(lon)) { dev.lat = lat; dev.lon = lon; }
     dev.source = String(r[7] || 'manual').trim() || 'manual';
+    const parentId = String(r[8] || '').trim();
+    if (parentId) dev.parentId = parentId;
+    const meterCount = parseInt(r[9], 10);
+    if (!isNaN(meterCount)) dev.meterCount = meterCount;
     feederById[feederId].devices.push(dev);
   });
 
@@ -107,9 +111,10 @@ function doPost(e) {
         if (String(values[i][1]).trim() === dev.id) { rowIndex = i; break; }
       }
       const rowData = [feederId, dev.id, dev.type || '', dev.rating || '', dev.desc || '',
-                        dev.lat || '', dev.lon || '', dev.source || 'manual'];
+                        dev.lat || '', dev.lon || '', dev.source || 'manual',
+                        dev.parentId || '', dev.meterCount || ''];
       if (rowIndex >= 0) {
-        sheet.getRange(rowIndex + 1, 1, 1, 8).setValues([rowData]);
+        sheet.getRange(rowIndex + 1, 1, 1, 10).setValues([rowData]);
       } else {
         sheet.appendRow(rowData);
       }
