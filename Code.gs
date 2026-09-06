@@ -5,6 +5,7 @@
  * วิธีใช้งาน:
  * 1. สร้าง Google Sheet ใหม่ 1 ไฟล์
  * 2. สร้างชีตชื่อ "Devices" แล้ว import ไฟล์ devices.csv เข้าไป (แถวแรกเป็นหัวตาราง)
+ *    คอลัมน์: Feeder, DeviceID, Type, Rating, Description, Lat, Lon, Source
  * 3. สร้างชีตชื่อ "Feeders" แล้ว import ไฟล์ feeders.csv เข้าไป (แถวแรกเป็นหัวตาราง)
  * 4. เปิด Extensions > Apps Script แล้ววางไฟล์นี้ทับ Code.gs ที่มีอยู่
  * 5. Deploy > New deployment > เลือกประเภท "Web app"
@@ -55,12 +56,16 @@ function buildData() {
     const deviceId = String(r[1] || '').trim();
     if (!feederId || !deviceId) return;
     if (!feederById[feederId]) return; // skip rows with unknown feeder id
-    feederById[feederId].devices.push({
+    const dev = {
       id: deviceId,
       type: String(r[2] || '').trim(),
       rating: String(r[3] || '').trim(),
       desc: String(r[4] || '').trim()
-    });
+    };
+    const lat = parseFloat(r[5]), lon = parseFloat(r[6]);
+    if (!isNaN(lat) && !isNaN(lon)) { dev.lat = lat; dev.lon = lon; }
+    dev.source = String(r[7] || 'manual').trim() || 'manual';
+    feederById[feederId].devices.push(dev);
   });
 
   return {
@@ -101,9 +106,10 @@ function doPost(e) {
       for (let i = 1; i < values.length; i++) {
         if (String(values[i][1]).trim() === dev.id) { rowIndex = i; break; }
       }
-      const rowData = [feederId, dev.id, dev.type || '', dev.rating || '', dev.desc || ''];
+      const rowData = [feederId, dev.id, dev.type || '', dev.rating || '', dev.desc || '',
+                        dev.lat || '', dev.lon || '', dev.source || 'manual'];
       if (rowIndex >= 0) {
-        sheet.getRange(rowIndex + 1, 1, 1, 5).setValues([rowData]);
+        sheet.getRange(rowIndex + 1, 1, 1, 8).setValues([rowData]);
       } else {
         sheet.appendRow(rowData);
       }
