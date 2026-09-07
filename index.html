@@ -411,7 +411,7 @@ function buildTreeFromParents(devices){
 }
 
 const ROW_H = 15, COL_W = 78;
-const SIB_JITTER = 5; // ระยะเยื้องเล็กน้อยเมื่อจุดเดียวกันมีหลายอุปกรณ์แยกออกไป (กันเส้นทับกัน)
+const SIB_JITTER = 26; // ระยะเยื้องเมื่อจุดเดียวกันมีหลายอุปกรณ์แยกออกไป ต้องมากพอไม่ให้ดูเหมือนเป็นเส้นต่อเนื่องเดียวกัน
 
 function computeSubtreeSize(root){
   const visiting = new Set();
@@ -483,7 +483,8 @@ function layoutTree(root){
       let cursor = 0;
       laterals.forEach((lat,j)=>{
         cursor += gap;
-        const jitter = j * SIB_JITTER;
+        const jitterMag = Math.ceil((j+1)/2) * SIB_JITTER;
+        const jitter = (j % 2 === 0) ? jitterMag : -jitterMag; // สลับซ้าย-ขวา กันไม่ให้เรียงเป็นเส้นรังสีเดียวกัน
         let tapX, tapY;
         if(horizontal){ tapX = n.x + jitter; tapY = n.y - cursor; }
         else { tapX = n.x + cursor; tapY = n.y - jitter; }
@@ -564,8 +565,12 @@ function renderFeederDetail(f){
     }
     const idShort = String(d.id).replace(f.id,'');
     const labelBits = idShort + (d.rating ? ' ('+d.rating+')' : '') + (d.meterCount ? ' ⚡'+d.meterCount : '');
-    html += `<g class="tap-dot" data-id="${d.id}">${shapeSvg}
-      <text class="tap-label${sel}" x="${mx+7}" y="${my+3}" fill="#333">${escapeHtml(labelBits)}</text>
+    // หม้อแปลง/มิเตอร์แรงกลางมีจำนวนมาก (หลักพัน) — ไม่ใส่ป้ายชื่อค้างไว้ (จะทับกันหมด) ใช้ tooltip ตอนชี้เมาส์แทน
+    const isLeaf = isLeafAssetType(d.type);
+    const labelSvg = isLeaf ? '' : `<text class="tap-label${sel}" x="${mx+7}" y="${my+3}" fill="#333">${escapeHtml(labelBits)}</text>`;
+    const titleSvg = isLeaf ? `<title>${escapeHtml(labelBits + (d.desc ? ' - '+d.desc : ''))}</title>` : '';
+    html += `<g class="tap-dot" data-id="${d.id}">${shapeSvg}${titleSvg}
+      ${labelSvg}
     </g>`;
   });
 
