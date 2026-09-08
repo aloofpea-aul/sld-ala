@@ -33,9 +33,9 @@
   .iconbtn:hover{background:rgba(255,255,255,.28);}
   #editToggleWrap{display:flex;align-items:center;gap:6px;font-size:.78rem;}
   #moreMenuWrap{position:relative;}
-  #moreMenuDropdown{display:none;position:absolute;right:0;top:calc(100% + 6px);background:#fff;
-    color:var(--ink);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.3);min-width:260px;
-    padding:6px;z-index:50;}
+  #moreMenuDropdown{display:none;position:absolute;right:0;top:calc(100% + 6px);background:#ffffff;
+    color:var(--ink);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:260px;
+    padding:6px;z-index:9999;}
   #moreMenuDropdown.open{display:block;}
   #moreMenuDropdown .menuitem{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
     padding:9px 12px;border:none;background:none;font-size:.85rem;font-family:inherit;
@@ -219,13 +219,14 @@
     header .meta{gap:6px;}
     .iconbtn{padding:9px 10px;font-size:.72rem;min-height:38px;}
     #moreMenuBtn{min-width:38px;}
-    #moreMenuDropdown{right:0;left:auto;min-width:240px;}
+    #moreMenuDropdown{position:fixed !important;top:58px !important;right:8px;left:8px;width:auto;min-width:0;
+      box-shadow:0 8px 30px rgba(0,0,0,.45);}
     #moreMenuDropdown .menuitem{padding:13px 12px;font-size:.88rem;min-height:44px;}
-    #searchbar{padding:8px 10px;flex-wrap:wrap;}
+    #searchbar{padding:8px 10px;gap:6px;}
     #searchbar input{font-size:16px;}
-    #searchResults{max-width:none !important;flex:1 1 100% !important;order:1;}
-    #backBtn{order:2;flex:1;}
-    #clearBtn{order:3;flex:1;}
+    #searchResults{max-width:none !important;flex:1 1 auto !important;}
+    #backBtn{flex:0 0 auto;padding:8px 10px;font-size:.72rem;white-space:nowrap;}
+    #clearBtn{flex:0 0 auto;padding:8px 10px;font-size:.72rem;white-space:nowrap;}
     #zoomCtrls button{width:40px;height:40px;font-size:1.1rem;}
     #mapControlBody{max-width:170px;font-size:11px;padding:8px 10px;}
   }
@@ -355,6 +356,7 @@ let fieldVerifyDeviceId = null;
 let view = { x:0, y:0, scale:1 };
 let dragging = false, dragStart = {x:0,y:0}, viewStart = {x:0,y:0};
 let mapMode = false, leafletMap = null, mapMarkers = [];
+let CURRENT_NODE_POS = {}; // ตำแหน่ง x,y ของแต่ละอุปกรณ์ในผังที่กำลังแสดงอยู่ (ใช้พาไปยังจุดที่ค้นหาเจอ)
 
 function loadLocalOverrides(){
   try{ return JSON.parse(localStorage.getItem('sld_local_overrides')||'{}'); }catch(e){ return {}; }
@@ -607,6 +609,8 @@ function renderFeederDetail(f){
   const g = document.getElementById('zoomG');
   if(!root){ g.innerHTML=''; return; }
   const { nodesFlat, totalWidth, totalHeight } = layoutTree(root);
+  CURRENT_NODE_POS = {};
+  nodesFlat.forEach(n=>{ CURRENT_NODE_POS[n.dev.id] = { x:n.x, y:n.y }; });
   let html = '';
 
   // connectors: เส้นตรงเสมอ (แนวนอน/แนวตั้งสลับกันตามชั้น) หนาลดหลั่นตามระดับชั้น
@@ -688,6 +692,25 @@ function highlightAndScrollTo(id){
   const row = [...document.querySelectorAll('.device-row')].find(r=>r.dataset.id===id);
   if(row){ row.scrollIntoView({block:'center'}); row.style.background='#fff2cc';
     setTimeout(()=>{ row.style.background=''; }, 1200); }
+  // พาไปยังตำแหน่งที่พบจริงในผัง/แผนที่ ไม่ใช่แค่เลื่อนรายการด้านข้าง
+  if(mapMode){
+    const f = DATA.feeders.find(x=>x.id===selectedFeeder);
+    const dev = f && f.devices.find(d=>d.id===id);
+    if(dev && dev.lat!=null && dev.lon!=null && leafletMap){
+      leafletMap.setView([dev.lat, dev.lon], 17);
+      const marker = mapMarkers.find(m=>m.getLatLng && Math.abs(m.getLatLng().lat-dev.lat)<1e-6 && Math.abs(m.getLatLng().lng-dev.lon)<1e-6);
+      if(marker && marker.openPopup) marker.openPopup();
+    }
+  } else {
+    const pos = CURRENT_NODE_POS[id];
+    if(pos){
+      const targetScale = Math.max(view.scale, 2.2);
+      view.x = VB_W/2 - pos.x*targetScale;
+      view.y = VB_H/2 - pos.y*targetScale;
+      view.scale = targetScale;
+      applyPanZoom();
+    }
+  }
 }
 
 const VB_W = 1000, VB_H = 700; // fixed SVG viewBox coordinate space (never changes)
