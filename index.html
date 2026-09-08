@@ -91,13 +91,21 @@
   .root-label{font-size:11px;font-weight:700;}
 
   #zoomCtrls{position:absolute;right:14px;bottom:14px;display:flex;flex-direction:column;gap:6px;z-index:5;}
-  #mapControlPanel{position:absolute;left:14px;top:14px;z-index:1000;background:#fff;border:1px solid var(--line);
+  #mapControlPanel{position:absolute;left:14px;top:14px;z-index:1000;}
+  #mapControlToggleBtn{width:36px;height:36px;border-radius:8px;border:1px solid var(--line);
+    background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.15);font-size:16px;cursor:pointer;}
+  #mapControlBody{display:none;margin-top:6px;background:#fff;border:1px solid var(--line);
     border-radius:8px;padding:10px 12px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:220px;}
+  #mapControlBody.open{display:block;}
   #mapControlPanel .mcp-section{margin-bottom:8px;}
   #mapControlPanel .mcp-section:last-child{margin-bottom:0;}
   #mapControlPanel .mcp-label{font-weight:700;margin-bottom:4px;color:#555;}
   #mapControlPanel label{display:block;cursor:pointer;padding:2px 0;white-space:nowrap;}
   #mapControlPanel input[type=checkbox]{margin-right:5px;}
+  #locateBtn{position:absolute;right:14px;bottom:132px;z-index:5;width:32px;height:32px;
+    border-radius:6px;border:1px solid var(--line);background:#fff;font-size:15px;cursor:pointer;
+    box-shadow:0 1px 4px rgba(0,0,0,.15);}
+  #locateBtn:hover{background:var(--paper);}
   #zoomCtrls button{width:32px;height:32px;border-radius:6px;border:1px solid var(--line);
     background:#fff;font-size:1rem;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.15);}
   #hint{position:absolute;left:14px;bottom:14px;font-size:.7rem;color:var(--muted);
@@ -204,21 +212,22 @@
     #diagramWrap{flex:1;min-height:320px;}
   }
   @media (max-width:600px){
-    header{padding:10px 12px;gap:8px;}
-    header h1{font-size:.92rem;}
+    header{padding:8px 10px;gap:6px;}
+    header h1{font-size:.85rem;}
     header .sub{display:none;}
     header #sourceMeta{display:none;}
     header .meta{gap:6px;}
-    .iconbtn{padding:8px 10px;font-size:.75rem;}
-    #moreMenuDropdown{right:auto;left:0;min-width:230px;}
-    #moreMenuDropdown .menuitem{padding:11px 12px;font-size:.85rem;}
+    .iconbtn{padding:9px 10px;font-size:.72rem;min-height:38px;}
+    #moreMenuBtn{min-width:38px;}
+    #moreMenuDropdown{right:0;left:auto;min-width:240px;}
+    #moreMenuDropdown .menuitem{padding:13px 12px;font-size:.88rem;min-height:44px;}
     #searchbar{padding:8px 10px;flex-wrap:wrap;}
     #searchbar input{font-size:16px;}
     #searchResults{max-width:none !important;flex:1 1 100% !important;order:1;}
     #backBtn{order:2;flex:1;}
     #clearBtn{order:3;flex:1;}
     #zoomCtrls button{width:40px;height:40px;font-size:1.1rem;}
-    #mapControlPanel{max-width:170px;font-size:11px;padding:8px 10px;}
+    #mapControlBody{max-width:170px;font-size:11px;padding:8px 10px;}
   }
 </style>
 </head>
@@ -256,18 +265,22 @@
     <div id="diagramWrap">
       <div id="mapDiv"></div>
       <div id="mapControlPanel" style="display:none;">
-        <div class="mcp-section">
-          <label><input type="checkbox" id="osrmToggle"> 🛣 เส้นทางตามถนนจริง (ทดลอง — วงจรใหญ่อาจโหลดช้า)</label>
-        </div>
-        <div class="mcp-section" id="typeFilterSection">
-          <div class="mcp-label">แสดงประเภทอุปกรณ์:</div>
-          <label><input type="checkbox" class="typeFilterChk" value="WB" checked> สถานี/เบรกเกอร์ (WB)</label>
-          <label><input type="checkbox" class="typeFilterChk" value="WS" checked> สวิตช์ (WS)</label>
-          <label><input type="checkbox" class="typeFilterChk" value="WF" checked> ฟิวส์ (WF)</label>
-          <label><input type="checkbox" class="typeFilterChk" value="WR" checked> รีโคลสเซอร์ (WR)</label>
-          <label><input type="checkbox" class="typeFilterChk" value="WC" checked> คาปาซิเตอร์ (WC)</label>
+        <button id="mapControlToggleBtn" title="ตัวเลือกแผนที่">⚙</button>
+        <div id="mapControlBody">
+          <div class="mcp-section">
+            <label><input type="checkbox" id="osrmToggle"> 🛣 เส้นทางตามถนนจริง (ทดลอง — วงจรใหญ่อาจโหลดช้า)</label>
+          </div>
+          <div class="mcp-section" id="typeFilterSection">
+            <div class="mcp-label">แสดงประเภทอุปกรณ์:</div>
+            <label><input type="checkbox" class="typeFilterChk" value="WB" checked> สถานี/เบรกเกอร์ (WB)</label>
+            <label><input type="checkbox" class="typeFilterChk" value="WS" checked> สวิตช์ (WS)</label>
+            <label><input type="checkbox" class="typeFilterChk" value="WF" checked> ฟิวส์ (WF)</label>
+            <label><input type="checkbox" class="typeFilterChk" value="WR" checked> รีโคลสเซอร์ (WR)</label>
+            <label><input type="checkbox" class="typeFilterChk" value="WC" checked> คาปาซิเตอร์ (WC)</label>
+          </div>
         </div>
       </div>
+      <button id="locateBtn" title="ตำแหน่งปัจจุบัน" style="display:none;">📍</button>
       <svg id="svg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet">
         <g id="zoomG"></g>
       </svg>
@@ -817,12 +830,14 @@ function toggleMapMode(){
   const mapDiv = document.getElementById('mapDiv');
   const btn = document.getElementById('mapToggleBtn');
   const panel = document.getElementById('mapControlPanel');
+  const locateBtn = document.getElementById('locateBtn');
   if(mapMode){
     mapDiv.classList.add('active');
     btn.textContent = '📐 ผังวงจร (Schematic)';
     document.getElementById('hint').style.display = 'none';
     document.getElementById('zoomCtrls').style.display = 'none';
     panel.style.display = '';
+    locateBtn.style.display = '';
     if(!leafletMap) initLeafletMap();
     setTimeout(()=>{ if(leafletMap){ leafletMap.invalidateSize(); fitMapBounds(); } }, 50);
   } else {
@@ -831,9 +846,30 @@ function toggleMapMode(){
     document.getElementById('hint').style.display = '';
     document.getElementById('zoomCtrls').style.display = '';
     panel.style.display = 'none';
+    locateBtn.style.display = 'none';
+    document.getElementById('mapControlBody').classList.remove('open');
   }
 }
 document.getElementById('mapToggleBtn').addEventListener('click', toggleMapMode);
+document.getElementById('mapControlToggleBtn').addEventListener('click', e=>{
+  e.stopPropagation();
+  document.getElementById('mapControlBody').classList.toggle('open');
+});
+document.addEventListener('click', e=>{
+  const wrap = document.getElementById('mapControlPanel');
+  if(wrap && !wrap.contains(e.target)) document.getElementById('mapControlBody').classList.remove('open');
+});
+document.getElementById('locateBtn').addEventListener('click', ()=>{
+  if(!leafletMap || !navigator.geolocation) { showToast('อุปกรณ์นี้ไม่รองรับการระบุตำแหน่ง','err'); return; }
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const { latitude, longitude } = pos.coords;
+    leafletMap.setView([latitude, longitude], 16);
+    L.circleMarker([latitude, longitude], {
+      radius:8, color:'#1a73e8', weight:2, fillColor:'#4285f4', fillOpacity:0.9
+    }).addTo(leafletMap).bindPopup('ตำแหน่งปัจจุบันของคุณ').openPopup();
+  }, ()=>{ showToast('ไม่สามารถระบุตำแหน่งได้ — ตรวจสอบการอนุญาตเข้าถึงตำแหน่ง','err'); },
+  { enableHighAccuracy:true, timeout:8000 });
+});
 document.querySelectorAll('.typeFilterChk').forEach(chk=>{
   chk.addEventListener('change', ()=>{ rebuildMapMarkers(); });
 });
