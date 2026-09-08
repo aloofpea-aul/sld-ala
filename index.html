@@ -33,15 +33,6 @@
   .iconbtn:hover{background:rgba(255,255,255,.28);}
   #editToggleWrap{display:flex;align-items:center;gap:6px;font-size:.78rem;}
   #moreMenuWrap{position:relative;}
-  #moreMenuDropdown{display:none;position:absolute;right:0;top:calc(100% + 6px);background:#ffffff;
-    color:var(--ink);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);min-width:260px;
-    padding:6px;z-index:9999;}
-  #moreMenuDropdown.open{display:block;}
-  #moreMenuDropdown .menuitem{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
-    padding:9px 12px;border:none;background:none;font-size:.85rem;font-family:inherit;
-    cursor:pointer;border-radius:5px;color:var(--ink);box-sizing:border-box;}
-  #moreMenuDropdown .menuitem:hover{background:var(--paper);}
-  #moreMenuDropdown label.menuitem input{margin:0;}
 
   #searchbar{display:flex;gap:8px;padding:10px 20px;background:var(--pea-purple-dark);align-items:center;}
   #searchbar input{flex:1;max-width:420px;padding:8px 12px;border-radius:6px;border:none;
@@ -184,6 +175,21 @@
   #reportOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
     align-items:center;justify-content:center;z-index:5000;padding:24px;}
   #reportOverlay.show{display:flex;}
+  #moreMenuOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
+    align-items:flex-start;justify-content:flex-end;z-index:5000;padding:16px;}
+  #moreMenuOverlay.show{display:flex;}
+  #moreMenuPanel{background:#fff;border-radius:10px;max-width:320px;width:100%;
+    box-shadow:0 12px 40px rgba(0,0,0,.3);overflow:hidden;}
+  #moreMenuHeader{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;
+    align-items:center;justify-content:space-between;}
+  #moreMenuHeader h2{margin:0;font-size:1rem;color:var(--pea-purple);}
+  #moreMenuCloseBtn{border:none;background:none;font-size:1.2rem;cursor:pointer;color:var(--muted);}
+  #moreMenuBody{padding:6px;}
+  #moreMenuBody .menuitem{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+    padding:12px 14px;border:none;background:none;font-size:.9rem;font-family:inherit;
+    cursor:pointer;border-radius:6px;color:var(--ink);box-sizing:border-box;min-height:44px;}
+  #moreMenuBody .menuitem:hover{background:var(--paper);}
+  #moreMenuBody label.menuitem input{margin:0;}
   #reportPanel{background:#fff;border-radius:10px;max-width:1100px;width:100%;
     max-height:88vh;display:flex;flex-direction:column;overflow:hidden;}
   #reportHeader{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;
@@ -219,9 +225,7 @@
     header .meta{gap:6px;}
     .iconbtn{padding:9px 10px;font-size:.72rem;min-height:38px;}
     #moreMenuBtn{min-width:38px;}
-    #moreMenuDropdown{position:fixed !important;top:58px !important;right:8px;left:8px;width:auto;min-width:0;
-      box-shadow:0 8px 30px rgba(0,0,0,.45);}
-    #moreMenuDropdown .menuitem{padding:13px 12px;font-size:.88rem;min-height:44px;}
+    #moreMenuPanel{max-width:none;width:100%;}
     #searchbar{padding:8px 10px;gap:6px;}
     #searchbar input{font-size:16px;}
     #searchResults{max-width:none !important;flex:1 1 auto !important;}
@@ -242,13 +246,6 @@
       <button class="iconbtn" id="mapToggleBtn">🗺 แผนที่จริง (GPS)</button>
       <div id="moreMenuWrap">
         <button class="iconbtn" id="moreMenuBtn">⋮ เพิ่มเติม</button>
-        <div id="moreMenuDropdown">
-          <button class="menuitem" id="reportBtn">📊 รายงานเปรียบเทียบ</button>
-          <label class="menuitem"><input type="checkbox" id="leafToggle"> แสดงหม้อแปลง/มิเตอร์</label>
-          <label class="menuitem"><input type="checkbox" id="editToggle"> โหมดแก้ไข</label>
-          <label class="menuitem"><input type="checkbox" id="fieldToggle"> 📷 ตรวจสอบภาคสนาม</label>
-          <button class="menuitem" id="settingsBtn">⚙ ตั้งค่าการเชื่อมต่อ Google Sheet</button>
-        </div>
       </div>
     </span>
   </header>
@@ -317,6 +314,21 @@
       <button id="reportCloseBtn">✕</button>
     </div>
     <div id="reportBody"></div>
+  </div>
+</div>
+<div id="moreMenuOverlay">
+  <div id="moreMenuPanel">
+    <div id="moreMenuHeader">
+      <h2>เพิ่มเติม</h2>
+      <button id="moreMenuCloseBtn">✕</button>
+    </div>
+    <div id="moreMenuBody">
+      <button class="menuitem" id="reportBtn">📊 รายงานเปรียบเทียบ</button>
+      <label class="menuitem"><input type="checkbox" id="leafToggle"> แสดงหม้อแปลง/มิเตอร์</label>
+      <label class="menuitem"><input type="checkbox" id="editToggle"> โหมดแก้ไข</label>
+      <label class="menuitem"><input type="checkbox" id="fieldToggle"> 📷 ตรวจสอบภาคสนาม</label>
+      <button class="menuitem" id="settingsBtn">⚙ ตั้งค่าการเชื่อมต่อ Google Sheet</button>
+    </div>
   </div>
 </div>
 
@@ -1574,7 +1586,7 @@ function renderReportDrilldown(feeder, cat){
 document.getElementById('reportBtn').addEventListener('click', ()=>{
   renderReport();
   document.getElementById('reportOverlay').classList.add('show');
-  document.getElementById('moreMenuDropdown').classList.remove('open');
+  document.getElementById('moreMenuOverlay').classList.remove('show');
 });
 document.getElementById('reportCloseBtn').addEventListener('click', ()=>{
   document.getElementById('reportOverlay').classList.remove('show');
@@ -1584,7 +1596,7 @@ document.getElementById('reportOverlay').addEventListener('click', e=>{
 });
 
 document.getElementById('settingsBtn').addEventListener('click', ()=>{
-  document.getElementById('moreMenuDropdown').classList.remove('open');
+  document.getElementById('moreMenuOverlay').classList.remove('show');
   const current = GAS_URL || '';
   const val = prompt(
     'วาง Google Apps Script Web App URL (ลงท้ายด้วย /exec)\nเว้นว่างแล้วกดตกลง เพื่อยกเลิกการเชื่อมต่อ และใช้ข้อมูลที่ฝังในไฟล์แทน',
@@ -1597,14 +1609,15 @@ document.getElementById('settingsBtn').addEventListener('click', ()=>{
   location.reload();
 });
 
-// เมนู "เพิ่มเติม" ในแถบบน — เปิด/ปิดเมื่อกด และปิดอัตโนมัติเมื่อกดที่อื่น
-document.getElementById('moreMenuBtn').addEventListener('click', e=>{
-  e.stopPropagation();
-  document.getElementById('moreMenuDropdown').classList.toggle('open');
+// เมนู "เพิ่มเติม" — ใช้หน้าต่างป๊อปอัพแบบเดียวกับรายงานเปรียบเทียบ (ทำงานเสถียรกว่าดรอปดาวน์)
+document.getElementById('moreMenuBtn').addEventListener('click', ()=>{
+  document.getElementById('moreMenuOverlay').classList.add('show');
 });
-document.addEventListener('click', e=>{
-  const wrap = document.getElementById('moreMenuWrap');
-  if(!wrap.contains(e.target)) document.getElementById('moreMenuDropdown').classList.remove('open');
+document.getElementById('moreMenuCloseBtn').addEventListener('click', ()=>{
+  document.getElementById('moreMenuOverlay').classList.remove('show');
+});
+document.getElementById('moreMenuOverlay').addEventListener('click', e=>{
+  if(e.target.id === 'moreMenuOverlay') e.currentTarget.classList.remove('show');
 });
 
 loadData();
