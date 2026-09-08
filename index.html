@@ -713,12 +713,33 @@ function initLeafletMap(){
     showToast('โหลดแผนที่ไม่สำเร็จ','err');
   }
 }
+const FEEDER_LENGTH_SCALE = {"ALA01":1.0,"ALA02":1.101,"ALA03":1.246,"ALA05":1.053,"ALA06":1.054,"ALA07":1.0,"ALA09":1.082};
+// อัตราส่วน "ความยาวสายจริงจากข้อมูล GIS" ต่อ "ระยะเส้นตรงระหว่างอุปกรณ์" ต่อวงจร (คำนวณจากไฟล์ DS_MVConductor)
+// ใช้ยืดเส้นแต่ละช่วงให้ยาวใกล้เคียงความยาวสายจริง (ไม่ต่ำกว่า 1.0 เพราะสายจริงสั้นกว่าเส้นตรงไม่ได้)
 function rebuildMapMarkers(){
   if(!leafletMap) return;
   mapMarkers.forEach(m=>leafletMap.removeLayer(m));
   mapMarkers = [];
   DATA.feeders.forEach(f=>{
-    visibleDevices(f).forEach(d=>{
+    const byId = {};
+    f.devices.forEach(d=>{ byId[d.id]=d; });
+    const shown = visibleDevices(f);
+    const scale = FEEDER_LENGTH_SCALE[f.id] || 1.0;
+    // เส้นเชื่อมประมาณเส้นทาง ยืดความยาวตามอัตราส่วนความยาวสายจริงของทั้งวงจร (อาจเลยจุดอุปกรณ์ปลายทางไปบ้าง
+    // เพราะไม่มีพิกัดเส้นทางจริงระดับช่วงต่อช่วง จึงใช้อัตราส่วนรวมทั้งวงจรกระจายลงแต่ละช่วงแทน)
+    shown.forEach(d=>{
+      if(d.lat == null || d.lon == null || !d.parentId) return;
+      const parent = byId[d.parentId];
+      if(!parent || parent.lat == null || parent.lon == null) return;
+      const isTrunk = TRUNK_TYPES.has(d.type);
+      const endLat = parent.lat + (d.lat - parent.lat) * scale;
+      const endLon = parent.lon + (d.lon - parent.lon) * scale;
+      const line = L.polyline([[parent.lat,parent.lon],[endLat,endLon]], {
+        color: f.color, weight: isTrunk?2.5:1.2, opacity:0.6, dashArray: isTrunk?null:'4,3'
+      }).addTo(leafletMap);
+      mapMarkers.push(line);
+    });
+    shown.forEach(d=>{
       if(d.lat == null || d.lon == null) return;
       const isTrunk = TRUNK_TYPES.has(d.type);
       const marker = L.circleMarker([d.lat, d.lon], {
