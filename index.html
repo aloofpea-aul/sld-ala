@@ -81,6 +81,13 @@
   .root-label{font-size:11px;font-weight:700;}
 
   #zoomCtrls{position:absolute;right:14px;bottom:14px;display:flex;flex-direction:column;gap:6px;z-index:5;}
+  #mapControlPanel{position:absolute;left:14px;top:14px;z-index:6;background:#fff;border:1px solid var(--line);
+    border-radius:8px;padding:10px 12px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:220px;}
+  #mapControlPanel .mcp-section{margin-bottom:8px;}
+  #mapControlPanel .mcp-section:last-child{margin-bottom:0;}
+  #mapControlPanel .mcp-label{font-weight:700;margin-bottom:4px;color:#555;}
+  #mapControlPanel label{display:block;cursor:pointer;padding:2px 0;white-space:nowrap;}
+  #mapControlPanel input[type=checkbox]{margin-right:5px;}
   #zoomCtrls button{width:32px;height:32px;border-radius:6px;border:1px solid var(--line);
     background:#fff;font-size:1rem;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.15);}
   #hint{position:absolute;left:14px;bottom:14px;font-size:.7rem;color:var(--muted);
@@ -216,6 +223,19 @@
   <main>
     <div id="diagramWrap">
       <div id="mapDiv"></div>
+      <div id="mapControlPanel" style="display:none;">
+        <div class="mcp-section">
+          <label><input type="checkbox" id="osrmToggle"> 🛣 เส้นทางตามถนนจริง (ทดลอง)</label>
+        </div>
+        <div class="mcp-section" id="typeFilterSection">
+          <div class="mcp-label">แสดงประเภทอุปกรณ์:</div>
+          <label><input type="checkbox" class="typeFilterChk" value="WB" checked> สถานี/เบรกเกอร์ (WB)</label>
+          <label><input type="checkbox" class="typeFilterChk" value="WS" checked> สวิตช์ (WS)</label>
+          <label><input type="checkbox" class="typeFilterChk" value="WF" checked> ฟิวส์ (WF)</label>
+          <label><input type="checkbox" class="typeFilterChk" value="WR" checked> รีโคลสเซอร์ (WR)</label>
+          <label><input type="checkbox" class="typeFilterChk" value="WC" checked> คาปาซิเตอร์ (WC)</label>
+        </div>
+      </div>
       <svg id="svg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet">
         <g id="zoomG"></g>
       </svg>
@@ -703,11 +723,13 @@ function toggleMapMode(){
   mapMode = !mapMode;
   const mapDiv = document.getElementById('mapDiv');
   const btn = document.getElementById('mapToggleBtn');
+  const panel = document.getElementById('mapControlPanel');
   if(mapMode){
     mapDiv.classList.add('active');
     btn.textContent = '📐 ผังวงจร (Schematic)';
     document.getElementById('hint').style.display = 'none';
     document.getElementById('zoomCtrls').style.display = 'none';
+    panel.style.display = '';
     if(!leafletMap) initLeafletMap();
     setTimeout(()=>{ if(leafletMap){ leafletMap.invalidateSize(); fitMapBounds(); } }, 50);
   } else {
@@ -715,9 +737,14 @@ function toggleMapMode(){
     btn.textContent = '🗺 แผนที่จริง (GPS)';
     document.getElementById('hint').style.display = '';
     document.getElementById('zoomCtrls').style.display = '';
+    panel.style.display = 'none';
   }
 }
 document.getElementById('mapToggleBtn').addEventListener('click', toggleMapMode);
+document.querySelectorAll('.typeFilterChk').forEach(chk=>{
+  chk.addEventListener('change', ()=>{ rebuildMapMarkers(); });
+});
+document.getElementById('osrmToggle').addEventListener('change', ()=>{ rebuildMapMarkers(); });
 
 function initLeafletMap(){
   if(typeof L === 'undefined'){
@@ -747,14 +774,52 @@ function initLeafletMap(){
 const FEEDER_LENGTH_SCALE = {"ALA01":1.0,"ALA02":1.101,"ALA03":1.246,"ALA05":1.053,"ALA06":1.054,"ALA07":1.0,"ALA09":1.082};
 // อัตราส่วน "ความยาวสายจริงจากข้อมูล GIS" ต่อ "ระยะเส้นตรงระหว่างอุปกรณ์" ต่อวงจร (คำนวณจากไฟล์ DS_MVConductor)
 // ใช้ยืดเส้นแต่ละช่วงให้ยาวใกล้เคียงความยาวสายจริง (ไม่ต่ำกว่า 1.0 เพราะสายจริงสั้นกว่าเส้นตรงไม่ได้)
+
+// ===== เส้นทางตามถนนจริง (ทดลอง) ผ่าน OSRM public demo server =====
+// หมายเหตุ: เป็นเซิร์ฟเวอร์สาธารณะฟรี ไม่เหมาะกับการยิงพร้อมกันจำนวนมาก จึงจำกัดคิวและแคชผลไว้
+const OSRM_CACHE = {};
+let osrmQueueRunning = 0;
+const OSRM_MAX_CONCURRENT = 3;
+const osrmQueue = [];
+function fetchOsrmRoute(lat1,lon1,lat2,lon2){
+  const key = `${lat1.toFixed(6)},${lon1.toFixed(6)};${lat2.toFixed(6)},${lon2.toFixed(6)}`;
+  if(OSRM_CACHE[key]) return Promise.resolve(OSRM_CACHE[key]);
+  return new Promise(resolve=>{
+    osrmQueue.push(async ()=>{
+      try{
+        const url = `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=full&geometries=geojson`;
+        const res = await fetch(url);
+        const json = await res.json();
+        if(json.routes && json.routes[0]){
+          const coords = json.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]); // [lon,lat] -> [lat,lon]
+          OSRM_CACHE[key] = coords;
+          resolve(coords);
+        } else { resolve(null); }
+      }catch(e){ resolve(null); }
+    });
+    runOsrmQueue();
+  });
+}
+function runOsrmQueue(){
+  while(osrmQueueRunning < OSRM_MAX_CONCURRENT && osrmQueue.length){
+    const job = osrmQueue.shift();
+    osrmQueueRunning++;
+    job().finally(()=>{ osrmQueueRunning--; runOsrmQueue(); });
+  }
+}
+
 function rebuildMapMarkers(){
   if(!leafletMap) return;
   mapMarkers.forEach(m=>leafletMap.removeLayer(m));
   mapMarkers = [];
+  const useOsrm = document.getElementById('osrmToggle').checked;
+  const allowedTypes = new Set(
+    Array.from(document.querySelectorAll('.typeFilterChk:checked')).map(c=>c.value)
+  );
   DATA.feeders.forEach(f=>{
     const byId = {};
     f.devices.forEach(d=>{ byId[d.id]=d; });
-    const shown = visibleDevices(f);
+    const shown = visibleDevices(f).filter(d=> allowedTypes.has(d.type) || isLeafAssetType(d.type));
     const scale = FEEDER_LENGTH_SCALE[f.id] || 1.0;
     // เส้นเชื่อมประมาณเส้นทาง ยืดความยาวตามอัตราส่วนความยาวสายจริงของทั้งวงจร (อาจเลยจุดอุปกรณ์ปลายทางไปบ้าง
     // เพราะไม่มีพิกัดเส้นทางจริงระดับช่วงต่อช่วง จึงใช้อัตราส่วนรวมทั้งวงจรกระจายลงแต่ละช่วงแทน)
@@ -769,6 +834,18 @@ function rebuildMapMarkers(){
         color: f.color, weight: isTrunk?2.5:1.2, opacity:0.6, dashArray: isTrunk?null:'4,3'
       }).addTo(leafletMap);
       mapMarkers.push(line);
+      // ทดลอง: ถ้าเปิดโหมดถนนจริง ให้ยิง OSRM หาเส้นทางจริงมาแทนที่เส้นตรงนี้ (เฉพาะสายหลักเพื่อไม่ให้ยิงถี่เกินไป)
+      if(useOsrm && isTrunk){
+        fetchOsrmRoute(parent.lat, parent.lon, d.lat, d.lon).then(coords=>{
+          if(!coords || !leafletMap) return;
+          const routedLine = L.polyline(coords, {
+            color: f.color, weight: 2.5, opacity: 0.75
+          }).addTo(leafletMap);
+          leafletMap.removeLayer(line);
+          const idx = mapMarkers.indexOf(line);
+          if(idx>=0) mapMarkers[idx] = routedLine; else mapMarkers.push(routedLine);
+        });
+      }
     });
     shown.forEach(d=>{
       if(d.lat == null || d.lon == null) return;
