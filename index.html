@@ -53,7 +53,7 @@
     radial-gradient(circle at 50% 45%, #ffffff 0%, #f0eee8 70%);cursor:grab;}
   #diagramWrap.dragging{cursor:grabbing;}
   svg{width:100%;height:100%;display:block;user-select:none;}
-  #mapDiv{position:absolute;inset:0;display:none;}
+  #mapDiv{position:absolute;inset:0;display:none;z-index:1;}
   #mapDiv.active{display:block;}
   #mapDiv.active ~ svg{display:none;}
   .leaflet-popup-content{font-family:inherit;font-size:.82rem;}
@@ -81,7 +81,7 @@
   .root-label{font-size:11px;font-weight:700;}
 
   #zoomCtrls{position:absolute;right:14px;bottom:14px;display:flex;flex-direction:column;gap:6px;z-index:5;}
-  #mapControlPanel{position:absolute;left:14px;top:14px;z-index:6;background:#fff;border:1px solid var(--line);
+  #mapControlPanel{position:absolute;left:14px;top:14px;z-index:1000;background:#fff;border:1px solid var(--line);
     border-radius:8px;padding:10px 12px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:220px;}
   #mapControlPanel .mcp-section{margin-bottom:8px;}
   #mapControlPanel .mcp-section:last-child{margin-bottom:0;}
