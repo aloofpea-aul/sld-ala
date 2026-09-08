@@ -225,7 +225,7 @@
       <div id="mapDiv"></div>
       <div id="mapControlPanel" style="display:none;">
         <div class="mcp-section">
-          <label><input type="checkbox" id="osrmToggle"> 🛣 เส้นทางตามถนนจริง (ทดลอง)</label>
+          <label><input type="checkbox" id="osrmToggle"> 🛣 เส้นทางตามถนนจริง (ทดลอง — วงจรใหญ่อาจโหลดช้า)</label>
         </div>
         <div class="mcp-section" id="typeFilterSection">
           <div class="mcp-label">แสดงประเภทอุปกรณ์:</div>
@@ -839,13 +839,13 @@ function rebuildMapMarkers(){
         color: f.color, weight: isTrunk?2.5:1.2, opacity:0.6, dashArray: isTrunk?null:'4,3'
       }).addTo(leafletMap);
       mapMarkers.push(line);
-      // ทดลอง: ถ้าเปิดโหมดถนนจริง ให้ยิง OSRM หาเส้นทางจริงมาแทนที่เส้นตรงนี้ (เฉพาะสายหลักเพื่อไม่ให้ยิงถี่เกินไป)
-      if(useOsrm && isTrunk){
+      // ทดลอง: ถ้าเปิดโหมดถนนจริง ให้ยิง OSRM หาเส้นทางจริงมาแทนที่เส้นตรงนี้ (ทุกเส้นยกเว้นหม้อแปลง/มิเตอร์)
+      if(useOsrm && !isLeafAssetType(d.type)){
         osrmAttemptCount++;
         fetchOsrmRoute(parent.lat, parent.lon, d.lat, d.lon).then(coords=>{
           if(!coords || !leafletMap) return;
           const routedLine = L.polyline(coords, {
-            color: f.color, weight: 2.5, opacity: 0.75
+            color: f.color, weight: isTrunk?2.5:1.2, opacity: isTrunk?0.75:0.55
           }).addTo(leafletMap);
           leafletMap.removeLayer(line);
           const idx = mapMarkers.indexOf(line);
