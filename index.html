@@ -32,6 +32,16 @@
     border-radius:6px;padding:5px 10px;font-size:.78rem;cursor:pointer;font-family:inherit;}
   .iconbtn:hover{background:rgba(255,255,255,.28);}
   #editToggleWrap{display:flex;align-items:center;gap:6px;font-size:.78rem;}
+  #moreMenuWrap{position:relative;}
+  #moreMenuDropdown{display:none;position:absolute;right:0;top:calc(100% + 6px);background:#fff;
+    color:var(--ink);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.3);min-width:260px;
+    padding:6px;z-index:50;}
+  #moreMenuDropdown.open{display:block;}
+  #moreMenuDropdown .menuitem{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+    padding:9px 12px;border:none;background:none;font-size:.85rem;font-family:inherit;
+    cursor:pointer;border-radius:5px;color:var(--ink);box-sizing:border-box;}
+  #moreMenuDropdown .menuitem:hover{background:var(--paper);}
+  #moreMenuDropdown label.menuitem input{margin:0;}
 
   #searchbar{display:flex;gap:8px;padding:10px 20px;background:var(--pea-purple-dark);align-items:center;}
   #searchbar input{flex:1;max-width:420px;padding:8px 12px;border-radius:6px;border:none;
@@ -191,7 +201,24 @@
   @media (max-width:820px){
     main{flex-direction:column;}
     #panel{max-width:none;border-left:none;border-top:1px solid var(--line);flex:1;}
-    #diagramWrap{flex:1;min-height:280px;}
+    #diagramWrap{flex:1;min-height:320px;}
+  }
+  @media (max-width:600px){
+    header{padding:10px 12px;gap:8px;}
+    header h1{font-size:.92rem;}
+    header .sub{display:none;}
+    header #sourceMeta{display:none;}
+    header .meta{gap:6px;}
+    .iconbtn{padding:8px 10px;font-size:.75rem;}
+    #moreMenuDropdown{right:auto;left:0;min-width:230px;}
+    #moreMenuDropdown .menuitem{padding:11px 12px;font-size:.85rem;}
+    #searchbar{padding:8px 10px;flex-wrap:wrap;}
+    #searchbar input{font-size:16px;}
+    #searchResults{max-width:none !important;flex:1 1 100% !important;order:1;}
+    #backBtn{order:2;flex:1;}
+    #clearBtn{order:3;flex:1;}
+    #zoomCtrls button{width:40px;height:40px;font-size:1.1rem;}
+    #mapControlPanel{max-width:170px;font-size:11px;padding:8px 10px;}
   }
 </style>
 </head>
@@ -203,11 +230,16 @@
     <span class="meta">
       <span id="sourceMeta"></span>
       <button class="iconbtn" id="mapToggleBtn">🗺 แผนที่จริง (GPS)</button>
-      <button class="iconbtn" id="reportBtn">📊 รายงานเปรียบเทียบ</button>
-      <label id="editToggleWrap"><input type="checkbox" id="leafToggle"> แสดงหม้อแปลง/มิเตอร์</label>
-      <label id="editToggleWrap"><input type="checkbox" id="editToggle"> โหมดแก้ไข</label>
-      <label id="editToggleWrap"><input type="checkbox" id="fieldToggle"> 📷 ตรวจสอบภาคสนาม</label>
-      <button class="iconbtn" id="settingsBtn" title="ตั้งค่าการเชื่อมต่อ Google Sheet">⚙ ตั้งค่า</button>
+      <div id="moreMenuWrap">
+        <button class="iconbtn" id="moreMenuBtn">⋮ เพิ่มเติม</button>
+        <div id="moreMenuDropdown">
+          <button class="menuitem" id="reportBtn">📊 รายงานเปรียบเทียบ</button>
+          <label class="menuitem"><input type="checkbox" id="leafToggle"> แสดงหม้อแปลง/มิเตอร์</label>
+          <label class="menuitem"><input type="checkbox" id="editToggle"> โหมดแก้ไข</label>
+          <label class="menuitem"><input type="checkbox" id="fieldToggle"> 📷 ตรวจสอบภาคสนาม</label>
+          <button class="menuitem" id="settingsBtn">⚙ ตั้งค่าการเชื่อมต่อ Google Sheet</button>
+        </div>
+      </div>
     </span>
   </header>
 
@@ -715,6 +747,67 @@ function initPanZoomEvents(){
     }
     else resetPanZoom();
   });
+
+  // ===== รองรับนิ้วสัมผัส (มือถือ/แท็บเล็ต): ลากนิ้วเดียวเลื่อนภาพ, บีบสองนิ้วซูม, แตะสองครั้งซูมเข้า =====
+  let touchMode = null; // 'pan' | 'pinch'
+  let pinchStartDist = 0, pinchStartScale = 1, pinchStartView = null, pinchMid = null;
+  let lastTapTime = 0;
+  function touchDist(t0,t1){ return Math.hypot(t1.clientX-t0.clientX, t1.clientY-t0.clientY); }
+  function touchMidpoint(t0,t1){ return { clientX:(t0.clientX+t1.clientX)/2, clientY:(t0.clientY+t1.clientY)/2 }; }
+  wrap.addEventListener('touchstart', e=>{
+    if(mapMode) return; // แผนที่จริงใช้ท่าทางของ Leaflet เองอยู่แล้ว
+    if(e.touches.length === 1){
+      touchMode = 'pan';
+      const t = e.touches[0];
+      dragStart = screenToSVG(t.clientX, t.clientY); viewStart = {x:view.x, y:view.y};
+      const now = Date.now();
+      if(now - lastTapTime < 300){
+        const p = screenToSVG(t.clientX, t.clientY);
+        const newScale = Math.min(Math.max(view.scale*1.6, 0.1), 6);
+        view.x = p.x - (p.x-view.x) * (newScale/view.scale);
+        view.y = p.y - (p.y-view.y) * (newScale/view.scale);
+        view.scale = newScale;
+        applyPanZoom();
+      }
+      lastTapTime = now;
+    } else if(e.touches.length === 2){
+      touchMode = 'pinch';
+      pinchStartDist = touchDist(e.touches[0], e.touches[1]);
+      pinchStartScale = view.scale;
+      pinchStartView = {x:view.x, y:view.y};
+      pinchMid = touchMidpoint(e.touches[0], e.touches[1]);
+    }
+  }, {passive:true});
+  wrap.addEventListener('touchmove', e=>{
+    if(mapMode) return;
+    if(touchMode === 'pan' && e.touches.length === 1){
+      e.preventDefault();
+      const t = e.touches[0];
+      const p = screenToSVG(t.clientX, t.clientY);
+      view.x = viewStart.x + (p.x - dragStart.x);
+      view.y = viewStart.y + (p.y - dragStart.y);
+      applyPanZoom();
+    } else if(touchMode === 'pinch' && e.touches.length === 2){
+      e.preventDefault();
+      const dist = touchDist(e.touches[0], e.touches[1]);
+      const factor = dist / (pinchStartDist || dist);
+      const newScale = Math.min(Math.max(pinchStartScale*factor, 0.1), 6);
+      const p = screenToSVG(pinchMid.clientX, pinchMid.clientY);
+      view.x = p.x - (p.x-pinchStartView.x) * (newScale/pinchStartScale);
+      view.y = p.y - (p.y-pinchStartView.y) * (newScale/pinchStartScale);
+      view.scale = newScale;
+      applyPanZoom();
+    }
+  }, {passive:false});
+  wrap.addEventListener('touchend', e=>{
+    if(e.touches.length === 0) touchMode = null;
+    else if(e.touches.length === 1){
+      // เหลือนิ้วเดียวหลังบีบซูม กลับไปโหมดลาก
+      touchMode = 'pan';
+      const t = e.touches[0];
+      dragStart = screenToSVG(t.clientX, t.clientY); viewStart = {x:view.x, y:view.y};
+    }
+  }, {passive:true});
 }
 initPanZoomEvents();
 
@@ -1422,6 +1515,7 @@ function renderReportDrilldown(feeder, cat){
 document.getElementById('reportBtn').addEventListener('click', ()=>{
   renderReport();
   document.getElementById('reportOverlay').classList.add('show');
+  document.getElementById('moreMenuDropdown').classList.remove('open');
 });
 document.getElementById('reportCloseBtn').addEventListener('click', ()=>{
   document.getElementById('reportOverlay').classList.remove('show');
@@ -1431,6 +1525,7 @@ document.getElementById('reportOverlay').addEventListener('click', e=>{
 });
 
 document.getElementById('settingsBtn').addEventListener('click', ()=>{
+  document.getElementById('moreMenuDropdown').classList.remove('open');
   const current = GAS_URL || '';
   const val = prompt(
     'วาง Google Apps Script Web App URL (ลงท้ายด้วย /exec)\nเว้นว่างแล้วกดตกลง เพื่อยกเลิกการเชื่อมต่อ และใช้ข้อมูลที่ฝังในไฟล์แทน',
@@ -1441,6 +1536,16 @@ document.getElementById('settingsBtn').addEventListener('click', ()=>{
   if(trimmed){ localStorage.setItem('sld_gas_url', trimmed); }
   else { localStorage.removeItem('sld_gas_url'); }
   location.reload();
+});
+
+// เมนู "เพิ่มเติม" ในแถบบน — เปิด/ปิดเมื่อกด และปิดอัตโนมัติเมื่อกดที่อื่น
+document.getElementById('moreMenuBtn').addEventListener('click', e=>{
+  e.stopPropagation();
+  document.getElementById('moreMenuDropdown').classList.toggle('open');
+});
+document.addEventListener('click', e=>{
+  const wrap = document.getElementById('moreMenuWrap');
+  if(!wrap.contains(e.target)) document.getElementById('moreMenuDropdown').classList.remove('open');
 });
 
 loadData();
