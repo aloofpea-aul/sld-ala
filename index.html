@@ -1267,6 +1267,9 @@ function submitForm(f, formId){
 
 function deleteDevice(f, devId){
   if(!confirm(`ลบอุปกรณ์ ${devId} ออกจากวงจร ${f.id} ? (อุปกรณ์ที่ต่ออยู่ปลายสาขาถัดจากตัวนี้จะถูกย้ายไปต่อกับสาขาแม่ของตัวนี้แทน)`)) return;
+  deleteDeviceConfirmed(f, devId);
+}
+function deleteDeviceConfirmed(f, devId){
   const idx = f.devices.findIndex(x=>x.id===devId);
   if(idx<0) return;
   const removed = f.devices[idx];
@@ -1318,14 +1321,41 @@ function renderDeviceModalView(f, d){
     <div class="device-modal-actions">
       <button class="btn-danger" id="dmDelBtn">ลบ</button>
       <button id="dmCloseBtn2">ปิด</button>
+      <button id="dmFieldBtn">📷 ตรวจสอบภาคสนาม</button>
       <button class="btn-primary" id="dmEditBtn">✏ แก้ไข</button>
     </div>`;
   document.getElementById('deviceBody').innerHTML = html;
   document.getElementById('dmEditBtn').addEventListener('click', ()=>renderDeviceModalEdit(f, d));
   document.getElementById('dmCloseBtn2').addEventListener('click', closeDeviceModal);
+  document.getElementById('dmFieldBtn').addEventListener('click', ()=>renderDeviceModalFieldVerify(f, d));
   document.getElementById('dmDelBtn').addEventListener('click', ()=>{
+    if(!confirm(`ลบอุปกรณ์ ${d.id} ออกจากวงจร ${f.id} ? (อุปกรณ์ที่ต่ออยู่ปลายสาขาถัดจากตัวนี้จะถูกย้ายไปต่อกับสาขาแม่ของตัวนี้แทน)`)) return;
     closeDeviceModal();
-    deleteDevice(f, d.id);
+    deleteDeviceConfirmed(f, d.id);
+  });
+}
+function renderDeviceModalFieldVerify(f, d){
+  document.getElementById('deviceModalTitle').textContent = '📷 ตรวจสอบภาคสนาม: ' + d.id;
+  document.getElementById('deviceBody').innerHTML = renderFieldForm(f, d);
+  const ff = document.querySelector('#deviceBody .field-form');
+  const statusRadios = ff.querySelectorAll('input[name="fv-status"]');
+  const correctFields = ff.querySelector('.correct-fields');
+  statusRadios.forEach(r=>r.addEventListener('change', ()=>{
+    correctFields.style.display = (ff.querySelector('input[name="fv-status"]:checked').value === 'mismatch') ? 'flex' : 'none';
+  }));
+  ff.querySelector('.fv-photo').addEventListener('change', e=>{
+    const file = e.target.files[0];
+    const preview = ff.querySelector('.photo-preview');
+    if(file){
+      const reader = new FileReader();
+      reader.onload = ev=>{ preview.src = ev.target.result; preview.style.display='block'; };
+      reader.readAsDataURL(file);
+    }
+  });
+  ff.querySelector('.btn-cancel-fv').addEventListener('click', ()=>renderDeviceModalView(f, d));
+  ff.querySelector('.btn-save-fv').addEventListener('click', ()=>{
+    submitFieldVerify(f, d.id, ff);
+    closeDeviceModal();
   });
 }
 function renderDeviceModalEdit(f, d){
