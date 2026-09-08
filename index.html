@@ -788,14 +788,17 @@ function fetchOsrmRoute(lat1,lon1,lat2,lon2){
     osrmQueue.push(async ()=>{
       try{
         const url = `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=full&geometries=geojson`;
+        console.log('[OSRM] ยิงคำขอ:', url);
         const res = await fetch(url);
+        console.log('[OSRM] สถานะตอบกลับ:', res.status, res.ok);
         const json = await res.json();
+        console.log('[OSRM] ข้อมูลที่ได้:', json.code, json.routes ? json.routes.length+' เส้นทาง' : 'ไม่มี routes');
         if(json.routes && json.routes[0]){
           const coords = json.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]); // [lon,lat] -> [lat,lon]
           OSRM_CACHE[key] = coords;
           resolve(coords);
         } else { resolve(null); }
-      }catch(e){ resolve(null); }
+      }catch(e){ console.error('[OSRM] เกิดข้อผิดพลาด:', e); resolve(null); }
     });
     runOsrmQueue();
   });
@@ -813,6 +816,8 @@ function rebuildMapMarkers(){
   mapMarkers.forEach(m=>leafletMap.removeLayer(m));
   mapMarkers = [];
   const useOsrm = document.getElementById('osrmToggle').checked;
+  console.log('[OSRM] โหมดถนนจริง:', useOsrm ? 'เปิด' : 'ปิด');
+  let osrmAttemptCount = 0;
   const allowedTypes = new Set(
     Array.from(document.querySelectorAll('.typeFilterChk:checked')).map(c=>c.value)
   );
@@ -836,6 +841,7 @@ function rebuildMapMarkers(){
       mapMarkers.push(line);
       // ทดลอง: ถ้าเปิดโหมดถนนจริง ให้ยิง OSRM หาเส้นทางจริงมาแทนที่เส้นตรงนี้ (เฉพาะสายหลักเพื่อไม่ให้ยิงถี่เกินไป)
       if(useOsrm && isTrunk){
+        osrmAttemptCount++;
         fetchOsrmRoute(parent.lat, parent.lon, d.lat, d.lon).then(coords=>{
           if(!coords || !leafletMap) return;
           const routedLine = L.polyline(coords, {
@@ -865,6 +871,7 @@ function rebuildMapMarkers(){
       mapMarkers.push(marker);
     });
   });
+  if(useOsrm) console.log('[OSRM] จำนวนเส้นสายหลักที่พยายามยิงคำขอทั้งหมด:', osrmAttemptCount);
 }
 function fitMapBounds(){
   if(!leafletMap || !mapMarkers.length) return;
