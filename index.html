@@ -61,6 +61,8 @@
 
   .feeder-line{fill:none;stroke-linecap:round;cursor:pointer;transition:stroke-width .15s;}
   .feeder-line:hover{filter:brightness(1.15);}
+  .feeder-line-hit{cursor:pointer;pointer-events:stroke;}
+  .feeder-line-hit:hover + .feeder-line{filter:brightness(1.15);stroke-width:5;}
   .feeder-dot{cursor:pointer;}
   .feeder-label{font-size:13px;font-weight:700;cursor:pointer;paint-order:stroke;
     stroke:#f6f5f2;stroke-width:4px;}
@@ -499,6 +501,8 @@ function renderOverview(){
     const ey = cy + R * Math.sin(angle);
     const devCount = visibleDevices(f).length;
 
+    html += `<path class="feeder-line-hit" data-fid="${f.id}" d="M ${cx} ${cy} L ${ex} ${ey}"
+              stroke="transparent" stroke-width="26" fill="none"/>`;
     html += `<path class="feeder-line" data-fid="${f.id}" d="M ${cx} ${cy} L ${ex} ${ey}"
               stroke="${f.color}" stroke-width="3.5"/>`;
 
