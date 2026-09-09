@@ -60,9 +60,7 @@
   .leaflet-popup-content{font-family:inherit;font-size:.82rem;}
 
   .feeder-line{fill:none;stroke-linecap:round;cursor:pointer;transition:stroke-width .15s;}
-  .feeder-line:hover{filter:brightness(1.15);}
-  .feeder-line-hit{cursor:pointer;pointer-events:stroke;}
-  .feeder-line-hit:hover + .feeder-line{filter:brightness(1.15);stroke-width:5;}
+  .feeder-line:hover{filter:brightness(1.15);stroke-width:13;}
   .feeder-dot{cursor:pointer;}
   .feeder-label{font-size:13px;font-weight:700;cursor:pointer;paint-order:stroke;
     stroke:#f6f5f2;stroke-width:4px;}
@@ -494,6 +492,13 @@ function renderOverview(){
   const n = DATA.feeders.length;
   const startAngle = -90;
   let html = '';
+  const counts = DATA.feeders.map(f=>visibleDevices(f).length);
+  const minCount = Math.min(...counts), maxCount = Math.max(...counts);
+  const lineWidthFor = c => {
+    if(maxCount === minCount) return 10;
+    const t = (c - minCount) / (maxCount - minCount); // 0..1
+    return 8 + t * 6; // หนา 8px (น้อยสุด) ถึง 14px (มากสุด) ตามจำนวนอุปกรณ์ในวงจร — ปรับเองอัตโนมัติทุกครั้งที่ข้อมูลเปลี่ยน
+  };
 
   DATA.feeders.forEach((f, i) => {
     const angle = (startAngle + (360 / n) * i) * Math.PI / 180;
@@ -501,10 +506,8 @@ function renderOverview(){
     const ey = cy + R * Math.sin(angle);
     const devCount = visibleDevices(f).length;
 
-    html += `<path class="feeder-line-hit" data-fid="${f.id}" d="M ${cx} ${cy} L ${ex} ${ey}"
-              stroke="transparent" stroke-width="26" fill="none"/>`;
     html += `<path class="feeder-line" data-fid="${f.id}" d="M ${cx} ${cy} L ${ex} ${ey}"
-              stroke="${f.color}" stroke-width="3.5"/>`;
+              stroke="${f.color}" stroke-width="${lineWidthFor(devCount).toFixed(1)}"/>`;
 
     const showCount = Math.min(devCount, 14);
     for(let k=1;k<=showCount;k++){
