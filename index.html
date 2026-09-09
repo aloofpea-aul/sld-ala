@@ -1641,26 +1641,45 @@ function showSeqPreview(f, id, children){
   if(!d) return;
   const parent = d.parentId ? byId[d.parentId] : null;
   const kids = children[id] || [];
-  const nodeBox = (dev, isCurrent) => `
-    <div class="sp-node ${isCurrent?'sp-current':''}">
-      <div class="sp-node-id">${dev.id}${dev.rating?' ('+dev.rating+')':''}</div>
-      <div class="sp-node-desc">${escapeHtml(dev.desc||'-')}</div>
-    </div>`;
-  let html = '<div class="sp-center">';
+  const color = f.color;
+  const W = 640;
+  const midX = W/2, parentY = 40, curY = 130, kidsY = 230;
+  const kidGap = Math.max(120, Math.min(160, (W-80)/Math.max(kids.length,1)));
+  const kidsStartX = midX - (kidGap*(kids.length-1))/2;
+
+  const dotLabel = (x, y, dev, big) => {
+    const r = big ? 8 : 5;
+    const idShort = String(dev.id).replace(f.id,'');
+    return `
+      <circle cx="${x}" cy="${y}" r="${r}" fill="${color}" ${big?'stroke="#4b2e83" stroke-width="3"':''}/>
+      <text x="${x}" y="${y-r-8}" text-anchor="middle" font-size="${big?13:11}" font-weight="${big?700:400}" fill="#222">${escapeHtml(idShort)}${dev.rating?' ('+dev.rating+')':''}</text>
+      <text x="${x}" y="${y+r+16}" text-anchor="middle" font-size="10" fill="#777">${escapeHtml((dev.desc||'').slice(0,18))}</text>`;
+  };
+
+  let svg = `<svg viewBox="0 0 ${W} ${kids.length?300:200}" style="width:100%;height:auto;max-width:640px;">`;
+  // เส้นเชื่อมพ่อ -> ปัจจุบัน
   if(parent){
-    html += nodeBox(parent, false) + `<div class="sp-arrow">↓ ต่อจาก</div>`;
-  } else {
-    html += `<div class="sp-parent-link">(จุดเริ่มต้น — ต่อจากสถานีโดยตรง)</div>`;
+    svg += `<line x1="${midX}" y1="${parentY}" x2="${midX}" y2="${curY}" stroke="${color}" stroke-width="3"/>`;
+    svg += dotLabel(midX, parentY, parent, false);
   }
-  html += nodeBox(d, true);
-  if(kids.length){
-    html += `<div class="sp-arrow">↓ แยกออกเป็น ${kids.length} กิ่ง</div><div class="sp-children-row">`;
-    kids.forEach(k=>{ html += nodeBox(k, false); });
-    html += `</div>`;
-  } else {
-    html += `<div class="sp-arrow" style="margin-top:8px;">(ปลายสาย — ไม่มีอุปกรณ์ต่อพ่วงต่อ)</div>`;
-  }
-  html += '</div>';
+  // เส้นเชื่อมปัจจุบัน -> ลูกแต่ละกิ่ง
+  kids.forEach((k,i)=>{
+    const kx = kidsStartX + i*kidGap;
+    svg += `<line x1="${midX}" y1="${curY}" x2="${kx}" y2="${kidsY}" stroke="${color}" stroke-width="2.5"/>`;
+  });
+  kids.forEach((k,i)=>{
+    const kx = kidsStartX + i*kidGap;
+    svg += dotLabel(kx, kidsY, k, false);
+  });
+  svg += dotLabel(midX, curY, d, true);
+  svg += `</svg>`;
+
+  let html = `<div class="sp-center">`;
+  if(!parent) html += `<div class="sp-parent-link">(จุดเริ่มต้น — ต่อจากสถานีโดยตรง)</div>`;
+  html += svg;
+  if(!kids.length) html += `<div class="sp-arrow">(ปลายสาย — ไม่มีอุปกรณ์ต่อพ่วงต่อ)</div>`;
+  else html += `<div class="sp-arrow">แยกออกเป็น ${kids.length} กิ่ง จากจุดนี้</div>`;
+  html += `</div>`;
   document.getElementById('seqPreviewBody').innerHTML = html;
   document.getElementById('seqPreviewPopover').style.display = 'flex';
 }
