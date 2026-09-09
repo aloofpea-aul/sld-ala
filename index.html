@@ -219,6 +219,14 @@
   #deviceBody .frow input, #deviceBody .frow select{flex:1;padding:8px 10px;border-radius:6px;
     border:1px solid var(--line);font-family:inherit;font-size:.85rem;box-sizing:border-box;min-width:0;}
   #deviceBody label.flabel{display:block;font-size:.72rem;color:var(--muted);margin-bottom:3px;}
+  .dm-parent-suggestions{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line);
+    border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.18);max-height:220px;overflow:auto;z-index:50;margin-top:2px;}
+  .dm-suggest-item{padding:8px 12px;cursor:pointer;font-size:.82rem;border-bottom:1px solid #f2f2f2;}
+  .dm-suggest-item:last-child{border-bottom:none;}
+  .dm-suggest-item:hover, .dm-suggest-item.active{background:var(--paper);}
+  .dm-suggest-item b{color:var(--pea-purple);}
+  .dm-suggest-item .dm-suggest-desc{color:var(--muted);font-size:.75rem;margin-left:6px;}
+  .dm-suggest-empty{padding:10px 12px;color:var(--muted);font-size:.8rem;}
 
   #seqOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
     align-items:center;justify-content:center;z-index:5500;padding:20px;}
@@ -845,6 +853,10 @@ function renderFeederDetail(f){
     const labelBits = idShort + (d.rating ? ' ('+d.rating+')' : '') + (d.meterCount ? ' ⚡'+d.meterCount : '');
     // หม้อแปลง/มิเตอร์แรงกลางมีจำนวนมาก (หลักพัน) — ไม่ใส่ป้ายชื่อค้างไว้ (จะทับกันหมด) ใช้ tooltip ตอนชี้เมาส์แทน
     const isLeaf = isLeafAssetType(d.type);
+    // วงแหวนเขียว + เครื่องหมายถูก — จุดที่ยืนยันลำดับการเชื่อมต่อแล้วจากหน้า "ยืนยันลำดับการเชื่อมต่อ"
+    const verifiedSvg = (d.sequenceVerified && !isLeaf)
+      ? `<circle cx="${mx}" cy="${my}" r="6.5" fill="none" stroke="#2e7d32" stroke-width="1.6"/>
+         <text x="${mx+9}" y="${my-6}" font-size="9" fill="#2e7d32" font-weight="700">✓</text>` : '';
     const labelSvg = isLeaf ? '' : `<text class="tap-label${sel}" x="${mx+7}" y="${my+3}" fill="#333">${escapeHtml(labelBits)}</text>`;
     let tipText = labelBits + (d.desc ? ' - '+d.desc : '');
     if(opsa){
@@ -856,7 +868,7 @@ function renderFeederDetail(f){
       if(opsa.peakLoadPercent != null) tipText += `\n% โหลดสูงสุด (${opsa.peakMonth||'-'}): ${opsa.peakLoadPercent}%`;
     }
     const titleSvg = isLeaf ? `<title>${escapeHtml(tipText)}</title>` : '';
-    html += `<g class="tap-dot" data-id="${d.id}">${shapeSvg}${titleSvg}
+    html += `<g class="tap-dot" data-id="${d.id}">${shapeSvg}${verifiedSvg}${titleSvg}
       ${labelSvg}
     </g>`;
   });
@@ -1571,6 +1583,7 @@ function renderSeqList(fid){
       document.getElementById('seqProgress').textContent =
         `ยืนยันแล้ว ${f.devices.filter(x=>ordered.some(o=>o.device.id===x.id) && x.sequenceVerified).length}/${ordered.length}` +
         (orphans.length ? ` · ⚠ ลอย ${orphans.length} ตัว` : '');
+      if(selectedFeeder === f.id) renderFeederDetail(f);
     });
   });
 }
@@ -1668,6 +1681,7 @@ function showSeqPreview(f, id, children, sizeCache, fid){
     d.sequenceVerified = e.target.checked;
     persistDevice(f.id, d);
     renderSeqList(fid);
+    if(selectedFeeder === f.id) renderFeederDetail(f);
   });
   document.getElementById('spEditBtn').addEventListener('click', ()=>{
     document.getElementById('seqPreviewPopover').style.display = 'none';
@@ -1832,13 +1846,49 @@ function renderDeviceModalEdit(f, d){
       <label class="flabel">จุดติดตั้ง / ผู้ใช้ไฟ</label>
       <div class="frow"><input type="text" class="dm-desc" value="${escapeHtml(d.desc||'')}"></div>
       <label class="flabel">ต่อจากอุปกรณ์ใด (เว้นว่าง = ต่อจากสถานี)</label>
-      <div class="frow"><input type="text" class="dm-parent" value="${d.parentId||''}"></div>
+      <div class="frow" style="position:relative;">
+        <input type="text" class="dm-parent" value="${d.parentId||''}" autocomplete="off">
+        <div class="dm-parent-suggestions" style="display:none;"></div>
+      </div>
     </div>
     <div class="device-modal-actions">
       <button id="dmCancelBtn">ยกเลิก</button>
       <button class="btn-primary" id="dmSaveBtn">บันทึก</button>
     </div>`;
   document.getElementById('deviceBody').innerHTML = html;
+
+  // ค้นหาอัตโนมัติ (autocomplete) ตอนพิมพ์ในช่อง "ต่อจากอุปกรณ์ใด" — ไม่ต้องจำรหัสเป๊ะๆ พิมพ์บางส่วนแล้วเลือกจากรายการได้เลย
+  const parentInput = document.querySelector('.dm-parent');
+  const suggestBox = document.querySelector('.dm-parent-suggestions');
+  function renderParentSuggestions(){
+    const q = parentInput.value.trim().toLowerCase();
+    if(!q){ suggestBox.style.display = 'none'; return; }
+    const matches = f.devices
+      .filter(x => x.id !== d.id && !isDescendantOf(f, x.id, d.id)) // ห้ามเลือกตัวเองหรือลูกหลานตัวเอง (จะเกิดวงจรปิด)
+      .filter(x => x.id.toLowerCase().includes(q) || (x.desc||'').toLowerCase().includes(q))
+      .slice(0, 8);
+    if(!matches.length){
+      suggestBox.innerHTML = `<div class="dm-suggest-empty">ไม่พบอุปกรณ์ที่ตรงกัน</div>`;
+    } else {
+      suggestBox.innerHTML = matches.map(x=>{
+        const idHtml = escapeHtml(x.id).replace(new RegExp(escapeHtml(q).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'ig'),
+          m=>`<b>${m}</b>`);
+        return `<div class="dm-suggest-item" data-id="${x.id}">${idHtml}<span class="dm-suggest-desc">${escapeHtml(x.desc||'')}</span></div>`;
+      }).join('');
+    }
+    suggestBox.style.display = 'block';
+    suggestBox.querySelectorAll('.dm-suggest-item[data-id]').forEach(item=>{
+      item.addEventListener('mousedown', e=>{ // mousedown ก่อน blur จะได้ไม่โดนซ่อนก่อนคลิกติด
+        e.preventDefault();
+        parentInput.value = item.dataset.id;
+        suggestBox.style.display = 'none';
+      });
+    });
+  }
+  parentInput.addEventListener('input', renderParentSuggestions);
+  parentInput.addEventListener('focus', renderParentSuggestions);
+  parentInput.addEventListener('blur', ()=>{ setTimeout(()=>{ suggestBox.style.display = 'none'; }, 150); });
+
   document.getElementById('dmCancelBtn').addEventListener('click', ()=>renderDeviceModalView(f, d));
   document.getElementById('dmSaveBtn').addEventListener('click', ()=>{
     const ratingVal = document.querySelector('.dm-rating').value.trim();
