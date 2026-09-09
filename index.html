@@ -55,6 +55,11 @@
   #diagramWrap.dragging{cursor:grabbing;}
   svg{width:100%;height:100%;display:block;user-select:none;}
   #mapDiv{position:absolute;inset:0;display:none;z-index:1;}
+  /* ป้ายชื่อรหัสอุปกรณ์บนแผนที่จริง — ซ่อนไว้ตามปกติ (จุดเยอะเกินจะอ่านไม่ออก) โชว์เฉพาะตอนซูมเข้าใกล้พอ */
+  .map-device-label{display:none;background:rgba(255,255,255,.92);border:none;box-shadow:0 1px 3px rgba(0,0,0,.3);
+    font-size:10px;font-weight:700;padding:1px 4px;border-radius:3px;}
+  .map-device-label::before{display:none;}
+  #mapDiv.map-zoomed-in .map-device-label{display:block;}
   #mapDiv.active{display:block;}
   #mapDiv.active ~ svg{display:none;}
   .leaflet-popup-content{font-family:inherit;font-size:.82rem;}
@@ -219,7 +224,8 @@
     align-items:center;justify-content:center;z-index:5500;padding:20px;}
   #seqOverlay.show{display:flex;}
   #seqPanel{background:#fff;border-radius:10px;max-width:760px;width:100%;
-    max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.35);}
+    max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.35);
+    position:relative;}
   #seqHeader{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;
     align-items:center;justify-content:space-between;flex-shrink:0;}
   #seqHeader h2{margin:0;font-size:1rem;color:var(--pea-purple);}
@@ -258,6 +264,22 @@
   .seq-branch-setmain:hover{background:var(--pea-purple);color:#fff;}
   .seq-branch-reset{margin-top:6px;border:none;background:none;color:var(--muted);text-decoration:underline;
     cursor:pointer;font-size:.76rem;padding:0;}
+
+  #seqPreviewPopover{position:absolute;inset:0;background:rgba(255,255,255,.98);z-index:20;
+    display:flex;flex-direction:column;}
+  #seqPreviewHeader{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;
+    align-items:center;justify-content:space-between;font-weight:700;color:var(--pea-purple);flex-shrink:0;}
+  #seqPreviewHeader button{border:none;background:none;font-size:1.1rem;cursor:pointer;color:var(--muted);}
+  #seqPreviewBody{padding:20px;overflow:auto;flex:1;}
+  .sp-parent-link{text-align:center;color:var(--muted);font-size:.8rem;margin-bottom:4px;}
+  .sp-node{border:2px solid var(--line);border-radius:8px;padding:10px 14px;background:#fff;
+    display:inline-block;min-width:160px;}
+  .sp-node.sp-current{border-color:var(--pea-purple);background:#f5f1fa;box-shadow:0 0 0 3px rgba(75,46,131,.12);}
+  .sp-node-id{font-weight:700;font-size:.9rem;}
+  .sp-node-desc{font-size:.76rem;color:var(--muted);margin-top:2px;}
+  .sp-arrow{text-align:center;color:var(--muted);font-size:1.1rem;margin:2px 0;}
+  .sp-children-row{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;margin-top:6px;}
+  .sp-center{text-align:center;}
   .seq-orphan-tag{color:var(--bad);font-size:.72rem;font-weight:700;flex:0 0 auto;}
   #reportPanel{background:#fff;border-radius:10px;max-width:1100px;width:100%;
     max-height:88vh;display:flex;flex-direction:column;overflow:hidden;}
@@ -431,6 +453,13 @@
       <span id="seqAutosaveNote">💾 บันทึกอัตโนมัติทันทีทุกครั้งที่ติ๊ก/แก้ไข ไม่ต้องกดปุ่มบันทึกแยก</span>
     </div>
     <div id="seqBody"></div>
+    <div id="seqPreviewPopover" style="display:none;">
+      <div id="seqPreviewHeader">
+        <span>👁 ตำแหน่งในผัง</span>
+        <button id="seqPreviewCloseBtn">✕</button>
+      </div>
+      <div id="seqPreviewBody"></div>
+    </div>
   </div>
 
 </div>
@@ -1057,6 +1086,13 @@ function initLeafletMap(){
 
   rebuildMapMarkers();
 
+  const MAP_LABEL_ZOOM_THRESHOLD = 17; // ซูมเข้าใกล้ระดับนี้ขึ้นไปถึงจะเห็นป้ายชื่อรหัสอุปกรณ์
+  function updateLabelVisibility(){
+    document.getElementById('mapDiv').classList.toggle('map-zoomed-in', leafletMap.getZoom() >= MAP_LABEL_ZOOM_THRESHOLD);
+  }
+  leafletMap.on('zoomend', updateLabelVisibility);
+  setTimeout(updateLabelVisibility, 100);
+
   const stationDev = DATA.feeders.map(f=>f.devices.find(d=>d.type==='WB'&&d.lat!=null)).find(Boolean);
   if(stationDev){
     L.marker([stationDev.lat, stationDev.lon], {
@@ -1163,6 +1199,9 @@ function rebuildMapMarkers(){
         fillColor: f.color, fillOpacity: d.rating ? 0.85 : 0.35,
         interactive:false
       }).addTo(leafletMap);
+      // ป้ายชื่อรหัสอุปกรณ์ — ซ่อนไว้ปกติ (จุดเยอะมากจะรกจนอ่านไม่ออก) โชว์เฉพาะตอนซูมเข้าใกล้ๆ เท่านั้น (ดูการสลับผ่าน CSS class .map-zoomed-in)
+      const idShort = String(d.id).replace(f.id,'');
+      marker.bindTooltip(idShort, { permanent:true, direction:'top', offset:[0,-3], className:'map-device-label', opacity:1 });
       hitArea.bindPopup(
         `<b style="color:${f.color}">${d.id}</b><br>${d.rating||'(ไม่ทราบขนาด)'}<br>${escapeHtml(d.desc||'-')}`
       );
@@ -1573,11 +1612,7 @@ function renderSeqList(fid){
   });
   document.querySelectorAll('#seqBody .seq-preview-btn').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      const id = btn.dataset.id;
-      document.getElementById('seqOverlay').classList.remove('show');
-      if(mapMode) toggleMapMode();
-      showFeederDetail(f.id);
-      setTimeout(()=>highlightAndScrollTo(id), 100);
+      showSeqPreview(f, btn.dataset.id, children);
     });
   });
   document.querySelectorAll('#seqBody .seq-check input').forEach(chk=>{
@@ -1600,8 +1635,41 @@ document.getElementById('seqReviewBtn').addEventListener('click', ()=>{
   document.getElementById('moreMenuOverlay').classList.remove('show');
   openSeqReview();
 });
+function showSeqPreview(f, id, children){
+  const byId = {}; f.devices.forEach(d=>{ byId[d.id]=d; });
+  const d = byId[id];
+  if(!d) return;
+  const parent = d.parentId ? byId[d.parentId] : null;
+  const kids = children[id] || [];
+  const nodeBox = (dev, isCurrent) => `
+    <div class="sp-node ${isCurrent?'sp-current':''}">
+      <div class="sp-node-id">${dev.id}${dev.rating?' ('+dev.rating+')':''}</div>
+      <div class="sp-node-desc">${escapeHtml(dev.desc||'-')}</div>
+    </div>`;
+  let html = '<div class="sp-center">';
+  if(parent){
+    html += nodeBox(parent, false) + `<div class="sp-arrow">↓ ต่อจาก</div>`;
+  } else {
+    html += `<div class="sp-parent-link">(จุดเริ่มต้น — ต่อจากสถานีโดยตรง)</div>`;
+  }
+  html += nodeBox(d, true);
+  if(kids.length){
+    html += `<div class="sp-arrow">↓ แยกออกเป็น ${kids.length} กิ่ง</div><div class="sp-children-row">`;
+    kids.forEach(k=>{ html += nodeBox(k, false); });
+    html += `</div>`;
+  } else {
+    html += `<div class="sp-arrow" style="margin-top:8px;">(ปลายสาย — ไม่มีอุปกรณ์ต่อพ่วงต่อ)</div>`;
+  }
+  html += '</div>';
+  document.getElementById('seqPreviewBody').innerHTML = html;
+  document.getElementById('seqPreviewPopover').style.display = 'flex';
+}
+document.getElementById('seqPreviewCloseBtn').addEventListener('click', ()=>{
+  document.getElementById('seqPreviewPopover').style.display = 'none';
+});
 document.getElementById('seqCloseBtn').addEventListener('click', ()=>{
   document.getElementById('seqOverlay').classList.remove('show');
+  document.getElementById('seqPreviewPopover').style.display = 'none';
 });
 document.getElementById('seqOverlay').addEventListener('click', e=>{
   if(e.target.id === 'seqOverlay') e.currentTarget.classList.remove('show');
