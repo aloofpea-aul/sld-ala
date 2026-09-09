@@ -235,26 +235,21 @@
   #seqControls select{padding:6px 10px;border-radius:6px;border:1px solid var(--line);font-family:inherit;}
   #seqProgress{font-size:.8rem;color:var(--muted);}
   #seqAutosaveNote{font-size:.72rem;color:#2e7d32;background:#f0f9f0;padding:3px 8px;border-radius:12px;}
+  #seqUsageHint{padding:8px 18px;background:#f5f1fa;color:var(--pea-purple);font-size:.78rem;
+    border-bottom:1px solid var(--line);flex-shrink:0;}
   #seqBody{padding:10px 18px;overflow:auto;flex:1;min-height:0;}
-  .seq-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px solid #f0f0f0;font-size:.85rem;}
+  .seq-row{display:flex;align-items:center;gap:10px;padding:12px 10px;border-bottom:1px solid #f0f0f0;
+    font-size:.85rem;cursor:pointer;border-radius:6px;}
+  .seq-row:hover{background:var(--paper);}
   .seq-row.verified{background:#f3fbf3;}
+  .seq-row.verified:hover{background:#e9f7e9;}
   .seq-row.orphan{background:#fdf0f0;}
   .seq-num{font-family:monospace;font-size:.78rem;color:var(--muted);flex:0 0 90px;}
   .seq-id{font-weight:700;flex:0 0 130px;}
   .seq-parent{flex:0 0 130px;color:var(--muted);font-size:.78rem;}
   .seq-desc{flex:1;color:var(--muted);font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .seq-check{flex:0 0 auto;}
-  .seq-check input{width:18px;height:18px;cursor:pointer;}
-  .seq-edit-btn{flex:0 0 auto;border:1px solid var(--line);background:#fff;border-radius:5px;
-    padding:4px 8px;cursor:pointer;font-size:.85rem;}
-  .seq-edit-btn:hover{background:var(--paper);}
-  .seq-preview-btn{flex:0 0 auto;border:1px solid var(--line);background:#fff;border-radius:5px;
-    padding:4px 8px;cursor:pointer;font-size:.85rem;}
-  .seq-preview-btn:hover{background:var(--paper);}
-  .seq-branch-btn{flex:0 0 auto;border:1px solid #f0ad4e;background:#fff8ee;color:#a0650a;
-    border-radius:5px;padding:4px 8px;cursor:pointer;font-size:.75rem;white-space:nowrap;}
-  .seq-branch-btn:hover{background:#fdeccb;}
-  .seq-branch-panel{background:#fbf7ef;border:1px solid #f0ad4e;border-radius:6px;margin:2px 0 8px;padding:10px 12px;}
+  .seq-check input{width:20px;height:20px;cursor:pointer;}
   .seq-branch-title{font-size:.78rem;color:var(--muted);margin-bottom:8px;}
   .seq-branch-item{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:.83rem;}
   .seq-branch-id{font-weight:700;flex:0 0 130px;}
@@ -264,6 +259,14 @@
   .seq-branch-setmain:hover{background:var(--pea-purple);color:#fff;}
   .seq-branch-reset{margin-top:6px;border:none;background:none;color:var(--muted);text-decoration:underline;
     cursor:pointer;font-size:.76rem;padding:0;}
+  .sp-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:14px;margin-top:10px;background:var(--paper);border-radius:8px;flex-wrap:wrap;}
+  .sp-verify-label{display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:.88rem;}
+  .sp-verify-label input{width:20px;height:20px;cursor:pointer;}
+  #spEditBtn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:8px 14px;
+    cursor:pointer;font-family:inherit;font-size:.85rem;}
+  #spEditBtn:hover{background:var(--paper);}
+  .sp-branch-section{margin-top:14px;padding:12px 14px;background:#fbf7ef;border:1px solid #f0ad4e;border-radius:8px;}
 
   #seqPreviewPopover{position:absolute;inset:0;background:rgba(255,255,255,.98);z-index:20;
     display:flex;flex-direction:column;}
@@ -450,8 +453,9 @@
     <div id="seqControls">
       <select id="seqFeederSelect"></select>
       <span id="seqProgress"></span>
-      <span id="seqAutosaveNote">💾 บันทึกอัตโนมัติทันทีทุกครั้งที่ติ๊ก/แก้ไข ไม่ต้องกดปุ่มบันทึกแยก</span>
+      <span id="seqAutosaveNote">💾 บันทึกอัตโนมัติทันที ไม่ต้องกดปุ่มบันทึกแยก</span>
     </div>
+    <div id="seqUsageHint">👉 <b>แตะที่แถว</b> เพื่อดูตำแหน่ง/แก้ไข/จัดกิ่ง &nbsp;·&nbsp; <b>ติ๊กขวา</b> ถ้าตรวจแล้วถูกต้อง</div>
     <div id="seqBody"></div>
     <div id="seqPreviewPopover" style="display:none;">
       <div id="seqPreviewHeader">
@@ -1517,102 +1521,32 @@ function renderSeqList(fid){
 
   let html = '';
   if(orphans.length){
-    html += `<p class="report-note" style="color:var(--bad);">⚠ พบอุปกรณ์ที่ไม่เชื่อมกับสถานีเลย ${orphans.length} ตัว (ParentID ชี้ไปหารหัสที่ไม่มีอยู่จริง หรือขาดสาย) ควรแก้ก่อน:</p>`;
+    html += `<p class="report-note" style="color:var(--bad);">⚠ พบอุปกรณ์ที่ไม่เชื่อมกับสถานีเลย ${orphans.length} ตัว (ParentID ชี้ไปหารหัสที่ไม่มีอยู่จริง หรือขาดสาย) แตะเพื่อแก้ก่อน:</p>`;
     orphans.forEach(d=>{
-      html += `<div class="seq-row orphan">
+      html += `<div class="seq-row orphan" data-id="${d.id}" data-clickable="1">
         <span class="seq-orphan-tag">ลอย</span>
         <span class="seq-id">${d.id}</span>
         <span class="seq-parent">ต่อจาก: ${d.parentId || '(ไม่มี)'}</span>
         <span class="seq-desc">${escapeHtml(d.desc||'')}</span>
-        <button class="seq-edit-btn" data-id="${d.id}" title="แก้ไข">✏</button>
       </div>`;
     });
   }
   ordered.forEach(({seq, device:d})=>{
     const verified = !!d.sequenceVerified;
-    const kids = children[d.id] || [];
-    const branchBtn = kids.length >= 2
-      ? `<button class="seq-branch-btn" data-id="${d.id}" title="จัดลำดับกิ่งที่แยกจากจุดนี้">🔀 ${kids.length} กิ่ง</button>` : '';
-    html += `<div class="seq-row ${verified?'verified':''}" data-id="${d.id}">
+    html += `<div class="seq-row ${verified?'verified':''}" data-id="${d.id}" data-clickable="1">
       <span class="seq-num">${seq}</span>
       <span class="seq-id">${d.id}</span>
       <span class="seq-parent">ต่อจาก: ${d.parentId || '(สถานี)'}</span>
       <span class="seq-desc">${escapeHtml(d.desc||'')}</span>
-      ${branchBtn}
-      <button class="seq-edit-btn" data-id="${d.id}" title="แก้ไข">✏</button>
-      <button class="seq-preview-btn" data-id="${d.id}" title="ดูตำแหน่งในผัง">👁</button>
       <span class="seq-check"><input type="checkbox" ${verified?'checked':''} data-id="${d.id}"></span>
-    </div>
-    <div class="seq-branch-panel" id="branchPanel-${d.id}" style="display:none;"></div>`;
+    </div>`;
   });
   document.getElementById('seqBody').innerHTML = html || '<p class="report-note">ไม่มีอุปกรณ์ในวงจรนี้</p>';
-  document.querySelectorAll('#seqBody .seq-branch-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const parentId = btn.dataset.id;
-      const panel = document.getElementById('branchPanel-'+parentId);
-      const isOpen = panel.style.display !== 'none';
-      document.querySelectorAll('.seq-branch-panel').forEach(p=>p.style.display='none');
-      if(isOpen){ panel.style.display = 'none'; return; }
-      const parentDev = f.devices.find(x=>x.id===parentId);
-      const kids = (children[parentId]||[]).slice().sort((a,b)=>{
-        const pa=a.siblingPriority, pb=b.siblingPriority;
-        if(pa!=null && pb!=null) return pa-pb;
-        if(pa!=null) return -1; if(pb!=null) return 1;
-        return 0;
-      });
-      let phtml = `<div class="seq-branch-inner"><div class="seq-branch-title">กิ่งที่แยกจาก ${parentId} — เลือกกิ่งหลัก หรือสลับลำดับกิ่งแยก:</div>`;
-      // กิ่งที่จะถูกใช้เป็นสายหลักจริงๆ ตอนนี้ (ถ้าไม่มีใครกำหนดเอง ระบบจะเลือกกิ่งที่มีอุปกรณ์ปลายน้ำมากสุดให้อัตโนมัติ)
-      const autoMainId = kids.reduce((best,k)=> (!best || sizeCache[k.id] > sizeCache[best.id]) ? k : best, null)?.id;
-      const effectiveMainId = parentDev.mainChildId || autoMainId;
-      kids.forEach((k,i)=>{
-        const isEffectiveMain = k.id === effectiveMainId;
-        const label = isEffectiveMain
-          ? (parentDev.mainChildId ? '★ สายหลัก (กำหนดเอง)' : '★ สายหลัก (อัตโนมัติ)')
-          : 'ตั้งเป็นสายหลัก';
-        phtml += `<div class="seq-branch-item">
-          <span class="seq-branch-id">${k.id}</span>
-          <span class="seq-branch-desc">${escapeHtml(k.desc||'')}</span>
-          <button class="seq-branch-setmain" data-parent="${parentId}" data-child="${k.id}">${label}</button>
-        </div>`;
-      });
-      if(parentDev.mainChildId){
-        phtml += `<button class="seq-branch-reset" data-parent="${parentId}">↺ ล้างค่า กลับไปใช้อัตโนมัติ (เลือกจากกิ่งที่มีอุปกรณ์เยอะสุด)</button>`;
-      }
-      phtml += `</div>`;
-      panel.innerHTML = phtml;
-      panel.style.display = 'block';
-      panel.querySelectorAll('.seq-branch-setmain').forEach(b=>{
-        b.addEventListener('click', ()=>{
-          const pd = f.devices.find(x=>x.id===b.dataset.parent);
-          pd.mainChildId = b.dataset.child;
-          persistDevice(f.id, pd);
-          showToast(`ตั้ง ${b.dataset.child} เป็นสายหลักของ ${b.dataset.parent} แล้ว`,'ok');
-          renderSeqList(fid);
-          if(selectedFeeder === f.id) renderFeederDetail(f);
-        });
-      });
-      const resetBtn = panel.querySelector('.seq-branch-reset');
-      if(resetBtn) resetBtn.addEventListener('click', ()=>{
-        const pd = f.devices.find(x=>x.id===resetBtn.dataset.parent);
-        delete pd.mainChildId;
-        persistDevice(f.id, pd);
-        showToast('กลับไปใช้การเลือกอัตโนมัติแล้ว','ok');
-        renderSeqList(fid);
-        if(selectedFeeder === f.id) renderFeederDetail(f);
-      });
-    });
-  });
-  document.querySelectorAll('#seqBody .seq-edit-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const dev = f.devices.find(x=>x.id===btn.dataset.id);
-      if(!dev) return;
-      renderDeviceModalEdit(f, dev);
-      document.getElementById('deviceOverlay').classList.add('show');
-    });
-  });
-  document.querySelectorAll('#seqBody .seq-preview-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      showSeqPreview(f, btn.dataset.id, children);
+  // แตะที่ไหนก็ได้ในแถว (ยกเว้นช่องติ๊ก) เพื่อเปิดดูรายละเอียด/แก้ไข/จัดกิ่ง ในที่เดียว
+  document.querySelectorAll('#seqBody .seq-row[data-clickable]').forEach(row=>{
+    row.addEventListener('click', e=>{
+      if(e.target.closest('.seq-check')) return;
+      showSeqPreview(f, row.dataset.id, children, sizeCache, fid);
     });
   });
   document.querySelectorAll('#seqBody .seq-check input').forEach(chk=>{
@@ -1623,10 +1557,8 @@ function renderSeqList(fid){
       dev.sequenceVerified = e.target.checked;
       persistDevice(f.id, dev);
       e.target.closest('.seq-row').classList.toggle('verified', e.target.checked);
-      const vCount = f.devices.filter(x=>x.sequenceVerified).length;
-      const total = ordered.length;
       document.getElementById('seqProgress').textContent =
-        `ยืนยันแล้ว ${f.devices.filter(x=>ordered.some(o=>o.device.id===x.id) && x.sequenceVerified).length}/${total}` +
+        `ยืนยันแล้ว ${f.devices.filter(x=>ordered.some(o=>o.device.id===x.id) && x.sequenceVerified).length}/${ordered.length}` +
         (orphans.length ? ` · ⚠ ลอย ${orphans.length} ตัว` : '');
     });
   });
@@ -1635,7 +1567,7 @@ document.getElementById('seqReviewBtn').addEventListener('click', ()=>{
   document.getElementById('moreMenuOverlay').classList.remove('show');
   openSeqReview();
 });
-function showSeqPreview(f, id, children){
+function showSeqPreview(f, id, children, sizeCache, fid){
   const byId = {}; f.devices.forEach(d=>{ byId[d.id]=d; });
   const d = byId[id];
   if(!d) return;
@@ -1680,8 +1612,76 @@ function showSeqPreview(f, id, children){
   if(!kids.length) html += `<div class="sp-arrow">(ปลายสาย — ไม่มีอุปกรณ์ต่อพ่วงต่อ)</div>`;
   else html += `<div class="sp-arrow">แยกออกเป็น ${kids.length} กิ่ง จากจุดนี้</div>`;
   html += `</div>`;
+
+  // ส่วนที่ 2: ยืนยันถูกต้อง + แก้ไข (2 ปุ่มหลักที่ใช้บ่อยสุด)
+  html += `<div class="sp-actions">
+    <label class="sp-verify-label">
+      <input type="checkbox" id="spVerifyChk" ${d.sequenceVerified?'checked':''}> ✓ ตรวจสอบแล้ว ถูกต้องตรงกับแบบ A0
+    </label>
+    <button id="spEditBtn">✏ แก้ไขจุดต่อ / ข้อมูล</button>
+  </div>`;
+
+  // ส่วนที่ 3: จัดกิ่งหลัก (โชว์เฉพาะเมื่อจุดนี้มีมากกว่า 1 กิ่งแยกออกไปจริงๆ)
+  if(kids.length >= 2){
+    const sortedKids = kids.slice().sort((a,b)=>{
+      const pa=a.siblingPriority, pb=b.siblingPriority;
+      if(pa!=null && pb!=null) return pa-pb;
+      if(pa!=null) return -1; if(pb!=null) return 1;
+      return 0;
+    });
+    const autoMainId = sortedKids.reduce((best,k)=> (!best || sizeCache[k.id] > sizeCache[best.id]) ? k : best, null)?.id;
+    const effectiveMainId = d.mainChildId || autoMainId;
+    html += `<div class="sp-branch-section">
+      <div class="seq-branch-title">จุดนี้แยกเป็น ${kids.length} กิ่ง — เลือกกิ่งที่เป็นสายหลักจริงตามหน้างาน:</div>`;
+    sortedKids.forEach(k=>{
+      const isEffectiveMain = k.id === effectiveMainId;
+      const label = isEffectiveMain
+        ? (d.mainChildId ? '★ สายหลัก (กำหนดเอง)' : '★ สายหลัก (อัตโนมัติ)')
+        : 'ตั้งเป็นสายหลัก';
+      html += `<div class="seq-branch-item">
+        <span class="seq-branch-id">${k.id}</span>
+        <span class="seq-branch-desc">${escapeHtml(k.desc||'')}</span>
+        <button class="seq-branch-setmain" data-child="${k.id}">${label}</button>
+      </div>`;
+    });
+    if(d.mainChildId){
+      html += `<button class="seq-branch-reset">↺ กลับไปใช้ค่าอัตโนมัติ</button>`;
+    }
+    html += `</div>`;
+  }
+
   document.getElementById('seqPreviewBody').innerHTML = html;
   document.getElementById('seqPreviewPopover').style.display = 'flex';
+
+  document.getElementById('spVerifyChk').addEventListener('change', e=>{
+    d.sequenceVerified = e.target.checked;
+    persistDevice(f.id, d);
+    renderSeqList(fid);
+  });
+  document.getElementById('spEditBtn').addEventListener('click', ()=>{
+    document.getElementById('seqPreviewPopover').style.display = 'none';
+    renderDeviceModalEdit(f, d);
+    document.getElementById('deviceOverlay').classList.add('show');
+  });
+  document.querySelectorAll('.seq-branch-setmain').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      d.mainChildId = b.dataset.child;
+      persistDevice(f.id, d);
+      showToast(`ตั้ง ${b.dataset.child} เป็นสายหลักของ ${d.id} แล้ว`,'ok');
+      showSeqPreview(f, id, children, sizeCache, fid); // รีเฟรชป๊อปอัพเดิมให้เห็นผลทันที
+      renderSeqList(fid);
+      if(selectedFeeder === f.id) renderFeederDetail(f);
+    });
+  });
+  const resetBtn = document.querySelector('.seq-branch-reset');
+  if(resetBtn) resetBtn.addEventListener('click', ()=>{
+    delete d.mainChildId;
+    persistDevice(f.id, d);
+    showToast('กลับไปใช้การเลือกอัตโนมัติแล้ว','ok');
+    showSeqPreview(f, id, children, sizeCache, fid);
+    renderSeqList(fid);
+    if(selectedFeeder === f.id) renderFeederDetail(f);
+  });
 }
 document.getElementById('seqPreviewCloseBtn').addEventListener('click', ()=>{
   document.getElementById('seqPreviewPopover').style.display = 'none';
