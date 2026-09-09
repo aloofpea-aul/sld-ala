@@ -237,6 +237,11 @@
   #seqAutosaveNote{font-size:.72rem;color:#2e7d32;background:#f0f9f0;padding:3px 8px;border-radius:12px;}
   #seqUsageHint{padding:8px 18px;background:#f5f1fa;color:var(--pea-purple);font-size:.78rem;
     border-bottom:1px solid var(--line);flex-shrink:0;}
+  #seqSearchWrap{display:flex;align-items:center;gap:10px;padding:8px 18px;border-bottom:1px solid var(--line);flex-shrink:0;}
+  #seqSearchInput{flex:1;padding:8px 12px;border-radius:6px;border:1px solid var(--line);font-family:inherit;font-size:.85rem;}
+  #seqSearchCount{font-size:.76rem;color:var(--muted);white-space:nowrap;}
+  .seq-row.seq-hidden{display:none;}
+  .seq-row mark{background:#fff2a8;padding:0 1px;border-radius:2px;}
   #seqBody{padding:10px 18px;overflow:auto;flex:1;min-height:0;}
   .seq-row{display:flex;align-items:center;gap:10px;padding:12px 10px;border-bottom:1px solid #f0f0f0;
     font-size:.85rem;cursor:pointer;border-radius:6px;}
@@ -454,6 +459,10 @@
       <select id="seqFeederSelect"></select>
       <span id="seqProgress"></span>
       <span id="seqAutosaveNote">💾 บันทึกอัตโนมัติทันที ไม่ต้องกดปุ่มบันทึกแยก</span>
+    </div>
+    <div id="seqSearchWrap">
+      <input id="seqSearchInput" type="text" placeholder="🔍 ค้นหารหัสอุปกรณ์ หรือชื่อสถานที่...">
+      <span id="seqSearchCount"></span>
     </div>
     <div id="seqUsageHint">👉 <b>แตะที่แถว</b> เพื่อดูตำแหน่ง/แก้ไข/จัดกิ่ง &nbsp;·&nbsp; <b>ติ๊กขวา</b> ถ้าตรวจแล้วถูกต้อง</div>
     <div id="seqBody"></div>
@@ -1508,6 +1517,8 @@ function openSeqReview(){
   }
   seqCurrentFeeder = seqCurrentFeeder || DATA.feeders[0].id;
   sel.value = seqCurrentFeeder;
+  document.getElementById('seqSearchInput').value = '';
+  document.getElementById('seqSearchCount').textContent = '';
   renderSeqList(seqCurrentFeeder);
   document.getElementById('seqOverlay').classList.add('show');
 }
@@ -1694,8 +1705,24 @@ document.getElementById('seqOverlay').addEventListener('click', e=>{
   if(e.target.id === 'seqOverlay') e.currentTarget.classList.remove('show');
 });
 document.getElementById('seqFeederSelect').addEventListener('change', e=>{
+  document.getElementById('seqSearchInput').value = '';
+  document.getElementById('seqSearchCount').textContent = '';
   renderSeqList(e.target.value);
 });
+function filterSeqRows(){
+  const q = document.getElementById('seqSearchInput').value.trim().toLowerCase();
+  const rows = document.querySelectorAll('#seqBody .seq-row');
+  let shown = 0;
+  rows.forEach(row=>{
+    const idText = row.querySelector('.seq-id')?.textContent || '';
+    const descText = row.querySelector('.seq-desc')?.textContent || '';
+    const match = !q || idText.toLowerCase().includes(q) || descText.toLowerCase().includes(q);
+    row.classList.toggle('seq-hidden', !match);
+    if(match) shown++;
+  });
+  document.getElementById('seqSearchCount').textContent = q ? `พบ ${shown} รายการ` : '';
+}
+document.getElementById('seqSearchInput').addEventListener('input', filterSeqRows);
 
 function findDeviceAnyFeeder(id){
   for(const f of DATA.feeders){
