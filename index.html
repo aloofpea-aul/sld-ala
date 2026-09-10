@@ -2515,12 +2515,7 @@ document.getElementById('settingsBtn').addEventListener('click', ()=>{
 });
 document.getElementById('usernameBtn').addEventListener('click', ()=>{
   document.getElementById('moreMenuOverlay').classList.remove('show');
-  const current = localStorage.getItem('sld_username') || '';
-  const val = prompt('ชื่อของคุณ (จะถูกบันทึกไว้ทุกครั้งที่มีการแก้ไขข้อมูล เพื่อการตรวจสอบย้อนหลัง)', current);
-  if(val === null) return;
-  const trimmed = val.trim();
-  if(trimmed){ localStorage.setItem('sld_username', trimmed); showToast(`ตั้งชื่อผู้ใช้งานเป็น "${trimmed}" แล้ว`,'ok'); }
-  else { localStorage.removeItem('sld_username'); showToast('ล้างชื่อผู้ใช้งานแล้ว','ok'); }
+  showUserPicker();
 });
 
 // เมนู "เพิ่มเติม" — ใช้หน้าต่างป๊อปอัพแบบเดียวกับรายงานเปรียบเทียบ (ทำงานเสถียรกว่าดรอปดาวน์)
