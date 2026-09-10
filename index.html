@@ -321,6 +321,8 @@
   .sp-arrow{text-align:center;color:var(--muted);font-size:1.1rem;margin:2px 0;}
   .sp-children-row{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;margin-top:6px;}
   .sp-center{text-align:center;}
+  .sp-feeder-badge{display:inline-block;color:#fff;font-weight:700;font-size:.8rem;
+    padding:4px 14px;border-radius:14px;margin-bottom:10px;}
   .seq-orphan-tag{color:var(--bad);font-size:.72rem;font-weight:700;flex:0 0 auto;}
   #reportPanel{background:#fff;border-radius:10px;max-width:1100px;width:100%;
     max-height:88vh;display:flex;flex-direction:column;overflow:hidden;}
@@ -1836,14 +1838,13 @@ function showSeqPreview(f, id, children, sizeCache, fid){
 
   const dotLabel = (x, y, dev, big) => {
     const r = big ? 8 : 5;
-    const idShort = String(dev.id).replace(f.id,'');
     return `
       <circle cx="${x}" cy="${y}" r="${r}" fill="${color}" ${big?'stroke="#4b2e83" stroke-width="3"':''}/>
-      <text x="${x}" y="${y-r-8}" text-anchor="middle" font-size="${big?13:11}" font-weight="${big?700:400}" fill="#222">${escapeHtml(idShort)}${dev.rating?' ('+dev.rating+')':''}</text>
+      <text x="${x}" y="${y-r-8}" text-anchor="middle" font-size="${big?13:11}" font-weight="${big?700:400}" fill="#222">${escapeHtml(dev.id)}${dev.rating?' ('+dev.rating+')':''}</text>
       <text x="${x}" y="${y+r+16}" text-anchor="middle" font-size="10" fill="#777">${escapeHtml((dev.desc||'').slice(0,18))}</text>`;
   };
 
-  let svg = `<svg viewBox="0 0 ${W} ${kids.length?300:200}" style="width:100%;height:auto;max-width:640px;">`;
+  let svg = `<div class="sp-feeder-badge" style="background:${color}">วงจร ${f.id}</div><svg viewBox="0 0 ${W} ${kids.length?300:200}" style="width:100%;height:auto;max-width:640px;">`;
   // เส้นเชื่อมพ่อ -> ปัจจุบัน
   if(parent){
     svg += `<line x1="${midX}" y1="${parentY}" x2="${midX}" y2="${curY}" stroke="${color}" stroke-width="3"/>`;
