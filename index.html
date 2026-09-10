@@ -33,6 +33,14 @@
   .iconbtn:hover{background:rgba(255,255,255,.28);}
   #userBadge{font-size:.72rem;padding:3px 9px;border-radius:12px;background:rgba(255,255,255,.15);color:#fff;}
   #userBadge.unauth{background:#e35d5d;font-weight:700;}
+  #userPickOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
+    align-items:center;justify-content:center;z-index:7000;padding:20px;}
+  #userPickOverlay.show{display:flex;}
+  #userPickPanel{background:#fff;border-radius:10px;max-width:380px;width:100%;padding:18px 20px;
+    box-shadow:0 12px 40px rgba(0,0,0,.35);}
+  #userPickHeader{font-weight:700;color:var(--pea-purple);margin-bottom:8px;font-size:1rem;}
+  #userPickInput{width:100%;padding:9px 12px;border-radius:6px;border:1px solid var(--line);
+    font-family:inherit;font-size:.9rem;box-sizing:border-box;}
   #editToggleWrap{display:flex;align-items:center;gap:6px;font-size:.78rem;}
   #moreMenuWrap{position:relative;}
 
@@ -462,6 +470,21 @@
     </div>
   </div>
 </div>
+<div id="userPickOverlay">
+  <div id="userPickPanel">
+    <div id="userPickHeader"><span>👤 เลือกชื่อผู้ใช้งาน</span></div>
+    <p class="report-note" style="margin:0 0 10px;">ต้องเลือก/พิมพ์ชื่อจากรายชื่อที่แอดมินอนุมัติไว้ก่อน ถึงจะแก้ไข/ยืนยันข้อมูลได้ (ใช้บันทึกในประวัติการเปลี่ยนแปลงว่าใครแก้อะไร)</p>
+    <div style="position:relative;">
+      <input type="text" id="userPickInput" placeholder="พิมพ์ชื่อ..." autocomplete="off">
+      <div id="userPickList" class="dm-parent-suggestions" style="display:none;"></div>
+    </div>
+    <p id="userPickErr" style="color:var(--bad);font-size:.78rem;margin:6px 0 0;"></p>
+    <div class="device-modal-actions" style="margin-top:14px;">
+      <button id="userPickCancelBtn">ยกเลิก</button>
+      <button class="btn-primary" id="userPickConfirmBtn">ยืนยัน</button>
+    </div>
+  </div>
+</div>
 <div id="seqOverlay">
   <div id="seqPanel">
     <div id="seqHeader">
@@ -577,7 +600,7 @@ async function loadData(){
       console.warn('โหลดข้อมูลจาก GAS ไม่สำเร็จ', e);
       showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ ใช้ข้อมูลสำรองในไฟล์แทน','err');
     }
-    await checkWhoAmI();
+    await loadMemberList();
   } else {
     applyLocalOverrides();
   }
@@ -586,38 +609,97 @@ async function loadData(){
   renderOverview();
 }
 
-// ============ ระบุตัวตนผู้ใช้จากบัญชี Google จริง (ผ่าน Apps Script Session) ============
-let CURRENT_USER = { email:'', role:null, checked:false };
-async function checkWhoAmI(){
+// ============ ระบุตัวตนผู้ใช้งาน — เลือก/พิมพ์ชื่อจากรายชื่อที่แอดมินอนุมัติไว้ล่วงหน้า (Admins/Members) ============
+let MEMBER_LIST = []; // [{name, role}]
+let CURRENT_USER = { name: localStorage.getItem('sld_username') || '', role: null };
+async function loadMemberList(){
   try{
-    const url = GAS_URL + (GAS_URL.includes('?') ? '&' : '?') + 'action=whoAmI';
+    const url = GAS_URL + (GAS_URL.includes('?') ? '&' : '?') + 'action=getMemberList';
     const res = await fetch(url);
     const json = await res.json();
-    CURRENT_USER = { email: json.email||'', role: json.role||null, checked:true };
-  }catch(e){
-    CURRENT_USER = { email:'', role:null, checked:true };
-  }
+    MEMBER_LIST = json.members || [];
+  }catch(e){ MEMBER_LIST = []; }
+  const found = MEMBER_LIST.find(m => m.name.toLowerCase() === CURRENT_USER.name.toLowerCase());
+  CURRENT_USER.role = found ? found.role : null;
   updateUserBadge();
 }
 function updateUserBadge(){
   const badge = document.getElementById('userBadge');
   if(!badge) return;
-  if(!CURRENT_USER.checked || !GAS_URL){ badge.style.display='none'; return; }
+  if(!GAS_URL){ badge.style.display='none'; return; }
   badge.style.display='';
-  if(CURRENT_USER.role){
-    badge.textContent = `👤 ${CURRENT_USER.email} (${CURRENT_USER.role==='admin'?'ผู้ดูแลระบบ':'สมาชิก'})`;
+  if(CURRENT_USER.name && CURRENT_USER.role){
+    badge.textContent = `👤 ${CURRENT_USER.name} (${CURRENT_USER.role==='admin'?'ผู้ดูแลระบบ':'สมาชิก'})`;
     badge.classList.remove('unauth');
+  } else if(CURRENT_USER.name){
+    badge.textContent = `⚠ ${CURRENT_USER.name} — ไม่อยู่ในรายชื่อที่อนุมัติ`;
+    badge.classList.add('unauth');
   } else {
-    badge.textContent = `⚠ ${CURRENT_USER.email || 'ยังไม่ได้ล็อกอิน'} — ไม่มีสิทธิ์แก้ไขข้อมูล`;
+    badge.textContent = `👤 ยังไม่ได้เลือกชื่อผู้ใช้งาน`;
     badge.classList.add('unauth');
   }
+  badge.style.cursor = 'pointer';
+  badge.title = 'กดเพื่อเลือก/เปลี่ยนชื่อผู้ใช้งาน';
 }
-/** เรียกก่อนทำ action ที่ต้องมีสิทธิ์เสมอ (แก้ไข/ลบ/ตรวจสอบภาคสนาม) คืน true ถ้าผ่าน มิฉะนั้นแจ้งเตือนแล้วคืน false */
-function requireAuth(){
+document.getElementById('userBadge').addEventListener('click', ()=> showUserPicker());
+
+/** แสดงหน้าต่างเลือก/พิมพ์ชื่อผู้ใช้งาน (autocomplete จากรายชื่อ Admins/Members) คืน Promise<boolean> */
+function showUserPicker(){
+  return new Promise(resolve=>{
+    const overlay = document.getElementById('userPickOverlay');
+    const input = document.getElementById('userPickInput');
+    const list = document.getElementById('userPickList');
+    const err = document.getElementById('userPickErr');
+    input.value = CURRENT_USER.name || '';
+    err.textContent = '';
+    overlay.classList.add('show');
+    setTimeout(()=>input.focus(), 50);
+
+    function renderList(){
+      const q = input.value.trim().toLowerCase();
+      const matches = MEMBER_LIST.filter(m => !q || m.name.toLowerCase().includes(q)).slice(0, 10);
+      list.innerHTML = matches.map(m=>
+        `<div class="dm-suggest-item" data-name="${escapeHtml(m.name)}">${escapeHtml(m.name)}<span class="dm-suggest-desc">${m.role==='admin'?'ผู้ดูแลระบบ':'สมาชิก'}</span></div>`
+      ).join('') || `<div class="dm-suggest-empty">ไม่พบชื่อนี้ในรายชื่อที่อนุมัติ — ติดต่อผู้ดูแลระบบให้เพิ่มชื่อก่อน</div>`;
+      list.querySelectorAll('.dm-suggest-item[data-name]').forEach(item=>{
+        item.addEventListener('mousedown', e=>{
+          e.preventDefault();
+          input.value = item.dataset.name;
+          list.style.display = 'none';
+        });
+      });
+      list.style.display = 'block';
+    }
+    input.oninput = renderList;
+    input.onfocus = renderList;
+    input.onblur = ()=> setTimeout(()=>{ list.style.display='none'; }, 150);
+
+    function confirm(){
+      const name = input.value.trim();
+      const found = MEMBER_LIST.find(m => m.name.toLowerCase() === name.toLowerCase());
+      if(!found){
+        err.textContent = 'ชื่อนี้ไม่อยู่ในรายชื่อที่แอดมินอนุมัติไว้ กรุณาเลือกจากรายการ หรือติดต่อผู้ดูแลระบบ';
+        return;
+      }
+      CURRENT_USER = { name: found.name, role: found.role };
+      localStorage.setItem('sld_username', found.name);
+      updateUserBadge();
+      overlay.classList.remove('show');
+      resolve(true);
+    }
+    document.getElementById('userPickConfirmBtn').onclick = confirm;
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); confirm(); } });
+    document.getElementById('userPickCancelBtn').onclick = ()=>{
+      overlay.classList.remove('show');
+      resolve(false);
+    };
+  });
+}
+/** เรียกก่อนทำ action ที่ต้องมีสิทธิ์เสมอ (แก้ไข/ลบ/ตรวจสอบภาคสนาม) คืน true ถ้าผ่าน มิฉะนั้นเปิดตัวเลือกชื่อ/แจ้งเตือนแล้วคืน false */
+async function requireAuth(){
   if(!GAS_URL) return true; // โหมดยังไม่เชื่อม Sheet — บันทึกได้แค่ในเบราว์เซอร์ตัวเอง ไม่ต้องยืนยันตัวตน
-  if(CURRENT_USER.role) return true;
-  showToast(`บัญชีนี้ (${CURRENT_USER.email||'ไม่ทราบอีเมล'}) ยังไม่ได้รับสิทธิ์ กรุณาติดต่อผู้ดูแลระบบให้เพิ่มอีเมลนี้ในชีต Admins หรือ Members`, 'err');
-  return false;
+  if(CURRENT_USER.name && CURRENT_USER.role) return true;
+  return await showUserPicker();
 }
 
 function renderLegend(){
@@ -1963,13 +2045,13 @@ document.getElementById('deviceOverlay').addEventListener('click', e=>{
 
 // ============ ระบุตัวตนผู้ใช้งานจากบัญชี Google จริง — ดู checkWhoAmI()/CURRENT_USER ด้านบน ============
 async function persistDevice(feederId, device){
-  if(!requireAuth()) return;
+  if(!(await requireAuth())) return;
   if(GAS_URL){
     try{
       const res = await fetch(GAS_URL, {
         method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify({ action:'upsert', feeder:feederId, device })
+        body: JSON.stringify({ action:'upsert', feeder:feederId, device, changedBy:CURRENT_USER.name })
       });
       const json = await res.json();
       if(json.ok) showToast('บันทึกไปยัง Google Sheet แล้ว','ok');
@@ -1981,13 +2063,13 @@ async function persistDevice(feederId, device){
   }
 }
 async function persistDelete(feederId, devId){
-  if(!requireAuth()) return;
+  if(!(await requireAuth())) return;
   if(GAS_URL){
     try{
       const res = await fetch(GAS_URL, {
         method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify({ action:'delete', feeder:feederId, id:devId })
+        body: JSON.stringify({ action:'delete', feeder:feederId, id:devId, changedBy:CURRENT_USER.name })
       });
       const json = await res.json();
       if(json.ok) showToast('ลบออกจาก Google Sheet แล้ว','ok');
@@ -2097,8 +2179,8 @@ function renderFieldForm(f, d){
     </div>`;
 }
 
-function submitFieldVerify(f, devId, formEl){
-  if(!requireAuth()) return;
+async function submitFieldVerify(f, devId, formEl){
+  if(!(await requireAuth())) return;
   const status = formEl.querySelector('input[name="fv-status"]:checked').value;
   const correctedRating = formEl.querySelector('.fv-rating').value.trim();
   const correctedDesc = formEl.querySelector('.fv-desc').value.trim();
@@ -2151,7 +2233,7 @@ async function persistFieldVerification(feederId, device, verification, photoBas
         headers:{'Content-Type':'text/plain;charset=utf-8'},
         body: JSON.stringify({
           action:'fieldVerify', feeder:feederId, deviceId:device.id,
-          verification, photoBase64, photoMimeType: photoMime,
+          verification, photoBase64, photoMimeType: photoMime, changedBy:CURRENT_USER.name,
           updatedDevice: verification.status==='mismatch' ? { rating: device.rating, desc: device.desc } : null
         })
       });
@@ -2323,15 +2405,18 @@ async function renderReportTabChangeLog(){
     body.innerHTML = `<p class="report-note" style="color:var(--bad);">ต้องเชื่อมต่อ Google Sheet ก่อน (กด ⚙ ในเมนูเพิ่มเติม) ถึงจะดึงประวัติการเปลี่ยนแปลงได้ เพราะข้อมูลนี้เก็บบน Google Sheet เท่านั้น ไม่ได้ฝังอยู่ในไฟล์</p>`;
     return;
   }
-  if(!CURRENT_USER.checked) await checkWhoAmI();
+  if(!CURRENT_USER.name || !CURRENT_USER.role){
+    const ok = await showUserPicker();
+    if(!ok){ body.innerHTML = `<p class="report-note" style="color:var(--bad);">ต้องเลือกชื่อผู้ใช้งานก่อนถึงจะตรวจสอบสิทธิ์ได้</p>`; return; }
+  }
   if(CURRENT_USER.role !== 'admin'){
-    body.innerHTML = `<p class="report-note" style="color:var(--bad);">⛔ เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่ดูประวัติการเปลี่ยนแปลงได้ — บัญชีนี้ (${escapeHtml(CURRENT_USER.email||'ไม่ทราบอีเมล')}) ${CURRENT_USER.role==='member'?'เป็นสมาชิกทั่วไป ไม่ใช่ผู้ดูแลระบบ':'ยังไม่ได้รับสิทธิ์เข้าใช้งานเลย'}</p>`;
+    body.innerHTML = `<p class="report-note" style="color:var(--bad);">⛔ เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่ดูประวัติการเปลี่ยนแปลงได้ — ชื่อนี้ (${escapeHtml(CURRENT_USER.name)}) ${CURRENT_USER.role==='member'?'เป็นสมาชิกทั่วไป ไม่ใช่ผู้ดูแลระบบ':'ยังไม่ได้รับสิทธิ์เข้าใช้งานเลย'}</p>`;
     return;
   }
   try{
     const res = await fetch(GAS_URL, {
       method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'getChangeLog' })
+      body: JSON.stringify({ action:'getChangeLog', changedBy:CURRENT_USER.name })
     });
     const json = await res.json();
     if(!json.ok){
@@ -2339,7 +2424,7 @@ async function renderReportTabChangeLog(){
       return;
     }
     STATIC_REPORTS.__current = json.rows;
-    body.innerHTML = `<p class="report-note">ประวัติการเปลี่ยนแปลงทั้งหมด (ล่าสุดขึ้นก่อน) ดึงสดจาก Google Sheet — ระบุตัวตนจากอีเมลบัญชี Google จริงของผู้แก้ไขแต่ละครั้ง</p>`
+    body.innerHTML = `<p class="report-note">ประวัติการเปลี่ยนแปลงทั้งหมด (ล่าสุดขึ้นก่อน) ดึงสดจาก Google Sheet — ระบุตัวตนจากชื่อที่เลือก/พิมพ์ของผู้แก้ไขแต่ละครั้ง</p>`
       + simpleTable(json.rows, 'change_log.csv');
   }catch(e){
     body.innerHTML = `<p class="report-note" style="color:var(--bad);">เชื่อมต่อ Google Sheet ไม่สำเร็จ</p>`;
