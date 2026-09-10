@@ -31,6 +31,8 @@
   .iconbtn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;
     border-radius:6px;padding:5px 10px;font-size:.78rem;cursor:pointer;font-family:inherit;}
   .iconbtn:hover{background:rgba(255,255,255,.28);}
+  #userBadge{font-size:.72rem;padding:3px 9px;border-radius:12px;background:rgba(255,255,255,.15);color:#fff;}
+  #userBadge.unauth{background:#e35d5d;font-weight:700;}
   #editToggleWrap{display:flex;align-items:center;gap:6px;font-size:.78rem;}
   #moreMenuWrap{position:relative;}
 
@@ -360,6 +362,7 @@
     <span class="sub" id="stationSub">สถานีไฟฟ้าอ่าวลึก · กฟส.อ่าวลึก กฟต.2</span>
     <span class="meta">
       <span id="sourceMeta"></span>
+      <span id="userBadge" style="display:none;"></span>
       <button class="iconbtn" id="mapToggleBtn">🗺 แผนที่จริง (GPS)</button>
       <div id="moreMenuWrap">
         <button class="iconbtn" id="moreMenuBtn">⋮ เพิ่มเติม</button>
@@ -434,6 +437,7 @@
       <button class="report-tab" data-tab="a0gis">A0 vs GIS</button>
       <button class="report-tab" data-tab="fuseba">ก่อน-หลังฟิวส์</button>
       <button class="report-tab" data-tab="zonerank">จัดอันดับโซนฟิวส์</button>
+      <button class="report-tab" data-tab="changelog">🔒 ประวัติการเปลี่ยนแปลง</button>
     </div>
     <div id="reportBody"></div>
   </div>
@@ -451,6 +455,7 @@
       <label class="menuitem"><input type="checkbox" id="editToggle"> โหมดแก้ไข</label>
       <label class="menuitem"><input type="checkbox" id="fieldToggle"> 📷 ตรวจสอบภาคสนาม</label>
       <button class="menuitem" id="settingsBtn">⚙ ตั้งค่าการเชื่อมต่อ Google Sheet</button>
+      <button class="menuitem" id="usernameBtn">🙋 เปลี่ยนชื่อผู้ใช้งาน</button>
       <div class="menuitem" style="color:var(--muted);font-size:.78rem;cursor:default;line-height:1.4;">
         ที่มา: แบบ Single Line Diagram (AutoCAD) · เปิด "โหมดแก้ไข" เพื่อแก้ไข/เติมข้อมูลที่ขาดได้โดยตรง
       </div>
@@ -572,12 +577,47 @@ async function loadData(){
       console.warn('โหลดข้อมูลจาก GAS ไม่สำเร็จ', e);
       showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ ใช้ข้อมูลสำรองในไฟล์แทน','err');
     }
+    await checkWhoAmI();
   } else {
     applyLocalOverrides();
   }
   applyOpsaOverlay(DATA);
   renderLegend();
   renderOverview();
+}
+
+// ============ ระบุตัวตนผู้ใช้จากบัญชี Google จริง (ผ่าน Apps Script Session) ============
+let CURRENT_USER = { email:'', role:null, checked:false };
+async function checkWhoAmI(){
+  try{
+    const url = GAS_URL + (GAS_URL.includes('?') ? '&' : '?') + 'action=whoAmI';
+    const res = await fetch(url);
+    const json = await res.json();
+    CURRENT_USER = { email: json.email||'', role: json.role||null, checked:true };
+  }catch(e){
+    CURRENT_USER = { email:'', role:null, checked:true };
+  }
+  updateUserBadge();
+}
+function updateUserBadge(){
+  const badge = document.getElementById('userBadge');
+  if(!badge) return;
+  if(!CURRENT_USER.checked || !GAS_URL){ badge.style.display='none'; return; }
+  badge.style.display='';
+  if(CURRENT_USER.role){
+    badge.textContent = `👤 ${CURRENT_USER.email} (${CURRENT_USER.role==='admin'?'ผู้ดูแลระบบ':'สมาชิก'})`;
+    badge.classList.remove('unauth');
+  } else {
+    badge.textContent = `⚠ ${CURRENT_USER.email || 'ยังไม่ได้ล็อกอิน'} — ไม่มีสิทธิ์แก้ไขข้อมูล`;
+    badge.classList.add('unauth');
+  }
+}
+/** เรียกก่อนทำ action ที่ต้องมีสิทธิ์เสมอ (แก้ไข/ลบ/ตรวจสอบภาคสนาม) คืน true ถ้าผ่าน มิฉะนั้นแจ้งเตือนแล้วคืน false */
+function requireAuth(){
+  if(!GAS_URL) return true; // โหมดยังไม่เชื่อม Sheet — บันทึกได้แค่ในเบราว์เซอร์ตัวเอง ไม่ต้องยืนยันตัวตน
+  if(CURRENT_USER.role) return true;
+  showToast(`บัญชีนี้ (${CURRENT_USER.email||'ไม่ทราบอีเมล'}) ยังไม่ได้รับสิทธิ์ กรุณาติดต่อผู้ดูแลระบบให้เพิ่มอีเมลนี้ในชีต Admins หรือ Members`, 'err');
+  return false;
 }
 
 function renderLegend(){
@@ -1921,7 +1961,9 @@ document.getElementById('deviceOverlay').addEventListener('click', e=>{
   if(e.target.id === 'deviceOverlay') closeDeviceModal();
 });
 
+// ============ ระบุตัวตนผู้ใช้งานจากบัญชี Google จริง — ดู checkWhoAmI()/CURRENT_USER ด้านบน ============
 async function persistDevice(feederId, device){
+  if(!requireAuth()) return;
   if(GAS_URL){
     try{
       const res = await fetch(GAS_URL, {
@@ -1931,7 +1973,7 @@ async function persistDevice(feederId, device){
       });
       const json = await res.json();
       if(json.ok) showToast('บันทึกไปยัง Google Sheet แล้ว','ok');
-      else showToast('บันทึกไม่สำเร็จ: '+(json.error||''),'err');
+      else showToast('บันทึกไม่สำเร็จ: '+(json.error||json.message||''),'err');
     }catch(e){ showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ (เช็คการตั้งค่า ⚙)','err'); }
   } else {
     setLocalOverride(feederId, device.id, device);
@@ -1939,6 +1981,7 @@ async function persistDevice(feederId, device){
   }
 }
 async function persistDelete(feederId, devId){
+  if(!requireAuth()) return;
   if(GAS_URL){
     try{
       const res = await fetch(GAS_URL, {
@@ -1948,7 +1991,7 @@ async function persistDelete(feederId, devId){
       });
       const json = await res.json();
       if(json.ok) showToast('ลบออกจาก Google Sheet แล้ว','ok');
-      else showToast('ลบไม่สำเร็จ: '+(json.error||''),'err');
+      else showToast('ลบไม่สำเร็จ: '+(json.error||json.message||''),'err');
     }catch(e){ showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ','err'); }
   } else {
     setLocalOverride(feederId, devId, null);
@@ -2042,7 +2085,7 @@ function renderFieldForm(f, d){
         <input type="text" class="fv-rating" placeholder="ขนาดจริงที่พบ เช่น 15K">
         <input type="text" class="fv-desc" placeholder="จุดติดตั้งจริง (ถ้าต่างจากที่บันทึกไว้)">
       </div>
-      <input type="text" class="fv-inspector" placeholder="ชื่อผู้ตรวจสอบ" value="${escapeHtml(savedInspector)}">
+      <input type="text" class="fv-inspector" placeholder="ชื่อที่แสดง (ไม่บังคับ — ระบบบันทึกอีเมลบัญชีจริงของคุณไว้อยู่แล้ว)" value="${escapeHtml(savedInspector)}">
       <textarea class="fv-note" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"></textarea>
       <label style="font-size:.78rem;color:var(--muted);">📷 ถ่ายรูปอุปกรณ์จริง</label>
       <input type="file" class="fv-photo" accept="image/*" capture="environment">
@@ -2055,6 +2098,7 @@ function renderFieldForm(f, d){
 }
 
 function submitFieldVerify(f, devId, formEl){
+  if(!requireAuth()) return;
   const status = formEl.querySelector('input[name="fv-status"]:checked').value;
   const correctedRating = formEl.querySelector('.fv-rating').value.trim();
   const correctedDesc = formEl.querySelector('.fv-desc').value.trim();
@@ -2272,9 +2316,39 @@ function renderReportTabZoneRank(){
      ให้พิจารณาต่อ โดยเฉพาะจุดที่ rating_confidence = confirmed และมีหม้อแปลงในโซนเยอะ)</p>`
     + simpleTable(STATIC_REPORTS.zoneRanking, 'fuse_zone_ranking.csv');
 }
+async function renderReportTabChangeLog(){
+  const body = document.getElementById('reportBody');
+  body.innerHTML = `<p class="report-note">🔒 หน้านี้เฉพาะผู้ดูแลระบบ (Admin) เท่านั้น — กำลังตรวจสอบสิทธิ์...</p>`;
+  if(!GAS_URL){
+    body.innerHTML = `<p class="report-note" style="color:var(--bad);">ต้องเชื่อมต่อ Google Sheet ก่อน (กด ⚙ ในเมนูเพิ่มเติม) ถึงจะดึงประวัติการเปลี่ยนแปลงได้ เพราะข้อมูลนี้เก็บบน Google Sheet เท่านั้น ไม่ได้ฝังอยู่ในไฟล์</p>`;
+    return;
+  }
+  if(!CURRENT_USER.checked) await checkWhoAmI();
+  if(CURRENT_USER.role !== 'admin'){
+    body.innerHTML = `<p class="report-note" style="color:var(--bad);">⛔ เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่ดูประวัติการเปลี่ยนแปลงได้ — บัญชีนี้ (${escapeHtml(CURRENT_USER.email||'ไม่ทราบอีเมล')}) ${CURRENT_USER.role==='member'?'เป็นสมาชิกทั่วไป ไม่ใช่ผู้ดูแลระบบ':'ยังไม่ได้รับสิทธิ์เข้าใช้งานเลย'}</p>`;
+    return;
+  }
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'getChangeLog' })
+    });
+    const json = await res.json();
+    if(!json.ok){
+      body.innerHTML = `<p class="report-note" style="color:var(--bad);">⛔ ${escapeHtml(json.error||'ไม่มีสิทธิ์เข้าถึง')}</p>`;
+      return;
+    }
+    STATIC_REPORTS.__current = json.rows;
+    body.innerHTML = `<p class="report-note">ประวัติการเปลี่ยนแปลงทั้งหมด (ล่าสุดขึ้นก่อน) ดึงสดจาก Google Sheet — ระบุตัวตนจากอีเมลบัญชี Google จริงของผู้แก้ไขแต่ละครั้ง</p>`
+      + simpleTable(json.rows, 'change_log.csv');
+  }catch(e){
+    body.innerHTML = `<p class="report-note" style="color:var(--bad);">เชื่อมต่อ Google Sheet ไม่สำเร็จ</p>`;
+  }
+}
 const REPORT_TAB_RENDERERS = {
   summary: renderReport, a0gis: renderReportTabA0Gis,
-  fuseba: renderReportTabFuseBA, zonerank: renderReportTabZoneRank
+  fuseba: renderReportTabFuseBA, zonerank: renderReportTabZoneRank,
+  changelog: renderReportTabChangeLog
 };
 document.querySelectorAll('.report-tab').forEach(btn=>{
   btn.addEventListener('click', ()=>{
@@ -2353,6 +2427,15 @@ document.getElementById('settingsBtn').addEventListener('click', ()=>{
   if(trimmed){ localStorage.setItem('sld_gas_url', trimmed); }
   else { localStorage.removeItem('sld_gas_url'); }
   location.reload();
+});
+document.getElementById('usernameBtn').addEventListener('click', ()=>{
+  document.getElementById('moreMenuOverlay').classList.remove('show');
+  const current = localStorage.getItem('sld_username') || '';
+  const val = prompt('ชื่อของคุณ (จะถูกบันทึกไว้ทุกครั้งที่มีการแก้ไขข้อมูล เพื่อการตรวจสอบย้อนหลัง)', current);
+  if(val === null) return;
+  const trimmed = val.trim();
+  if(trimmed){ localStorage.setItem('sld_username', trimmed); showToast(`ตั้งชื่อผู้ใช้งานเป็น "${trimmed}" แล้ว`,'ok'); }
+  else { localStorage.removeItem('sld_username'); showToast('ล้างชื่อผู้ใช้งานแล้ว','ok'); }
 });
 
 // เมนู "เพิ่มเติม" — ใช้หน้าต่างป๊อปอัพแบบเดียวกับรายงานเปรียบเทียบ (ทำงานเสถียรกว่าดรอปดาวน์)
