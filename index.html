@@ -41,6 +41,21 @@
   #userPickHeader{font-weight:700;color:var(--pea-purple);margin-bottom:8px;font-size:1rem;}
   #userPickInput{width:100%;padding:9px 12px;border-radius:6px;border:1px solid var(--line);
     font-family:inherit;font-size:.9rem;box-sizing:border-box;}
+  #manageMembersOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
+    align-items:center;justify-content:center;z-index:5500;padding:20px;}
+  #manageMembersOverlay.show{display:flex;}
+  #manageMembersPanel{background:#fff;border-radius:10px;max-width:520px;width:100%;
+    max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.35);}
+  #manageMembersBody{padding:16px 20px;overflow:auto;flex:1;min-height:0;}
+  .mm-add-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+  .mm-add-row input{flex:1 1 160px;padding:8px 10px;border-radius:6px;border:1px solid var(--line);font-family:inherit;}
+  .mm-add-row select{flex:1 1 200px;padding:8px 10px;border-radius:6px;border:1px solid var(--line);font-family:inherit;}
+  .mm-row{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #f0f0f0;font-size:.85rem;}
+  .mm-row .mm-name{flex:1;font-weight:700;}
+  .mm-row .mm-role{flex:0 0 auto;font-size:.76rem;color:var(--muted);background:var(--paper);padding:2px 8px;border-radius:10px;}
+  .mm-row .mm-remove{flex:0 0 auto;border:1px solid var(--bad);background:#fff;color:var(--bad);
+    border-radius:5px;padding:4px 9px;cursor:pointer;font-size:.78rem;}
+  .mm-row .mm-remove:hover{background:var(--bad);color:#fff;}
   #editToggleWrap{display:flex;align-items:center;gap:6px;font-size:.78rem;}
   #moreMenuWrap{position:relative;}
 
@@ -464,9 +479,30 @@
       <label class="menuitem"><input type="checkbox" id="fieldToggle"> 📷 ตรวจสอบภาคสนาม</label>
       <button class="menuitem" id="settingsBtn">⚙ ตั้งค่าการเชื่อมต่อ Google Sheet</button>
       <button class="menuitem" id="usernameBtn">🙋 เปลี่ยนชื่อผู้ใช้งาน</button>
+      <button class="menuitem" id="manageMembersBtn">🛡 จัดการรายชื่อสมาชิก (Admin)</button>
       <div class="menuitem" style="color:var(--muted);font-size:.78rem;cursor:default;line-height:1.4;">
         ที่มา: แบบ Single Line Diagram (AutoCAD) · เปิด "โหมดแก้ไข" เพื่อแก้ไข/เติมข้อมูลที่ขาดได้โดยตรง
       </div>
+    </div>
+  </div>
+</div>
+<div id="manageMembersOverlay">
+  <div id="manageMembersPanel">
+    <div id="seqHeader">
+      <h2>🛡 จัดการรายชื่อสมาชิก</h2>
+      <button id="manageMembersCloseBtn">✕</button>
+    </div>
+    <div id="manageMembersBody">
+      <div class="mm-add-row">
+        <input type="text" id="mmNewName" placeholder="ชื่อ-นามสกุล">
+        <select id="mmNewRole">
+          <option value="member">สมาชิก (แก้ไข/ยืนยันข้อมูลได้)</option>
+          <option value="admin">ผู้ดูแลระบบ (แก้ไขได้ + ดูประวัติการเปลี่ยนแปลง + จัดการสมาชิก)</option>
+        </select>
+        <button class="btn-primary" id="mmAddBtn">+ เพิ่ม</button>
+      </div>
+      <p id="mmMsg" class="report-note"></p>
+      <div id="mmList"></div>
     </div>
   </div>
 </div>
@@ -701,6 +737,74 @@ async function requireAuth(){
   if(CURRENT_USER.name && CURRENT_USER.role) return true;
   return await showUserPicker();
 }
+
+// ============ จัดการรายชื่อสมาชิก (Admin เท่านั้น) — เพิ่ม/ลบชื่อผ่านเมนูในเว็บ ไม่ต้องเข้า Google Sheet เอง ============
+async function openManageMembers(){
+  document.getElementById('moreMenuOverlay').classList.remove('show');
+  if(!GAS_URL){ showToast('ต้องเชื่อมต่อ Google Sheet ก่อน (กด ⚙ ในเมนูเพิ่มเติม)','err'); return; }
+  if(!(await requireAuth())) return;
+  if(CURRENT_USER.role !== 'admin'){
+    showToast(`เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่จัดการรายชื่อได้ — "${CURRENT_USER.name}" เป็นสมาชิกทั่วไป`, 'err');
+    return;
+  }
+  document.getElementById('manageMembersOverlay').classList.add('show');
+  document.getElementById('mmMsg').textContent = '';
+  document.getElementById('mmNewName').value = '';
+  await renderManageMembersList();
+}
+async function renderManageMembersList(){
+  const listEl = document.getElementById('mmList');
+  listEl.innerHTML = '<p class="report-note">กำลังโหลด...</p>';
+  await loadMemberList(); // ดึงล่าสุดเสมอ กันรายชื่อที่คนอื่นเพิ่งเพิ่ม/ลบไปค้างของเก่า
+  if(!MEMBER_LIST.length){ listEl.innerHTML = '<p class="report-note">ยังไม่มีรายชื่อในระบบเลย</p>'; return; }
+  listEl.innerHTML = MEMBER_LIST.map(m => `
+    <div class="mm-row">
+      <span class="mm-name">${escapeHtml(m.name)}</span>
+      <span class="mm-role">${m.role==='admin'?'ผู้ดูแลระบบ':'สมาชิก'}</span>
+      <button class="mm-remove" data-name="${escapeHtml(m.name)}">ลบ</button>
+    </div>`).join('');
+  listEl.querySelectorAll('.mm-remove').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm(`ลบ "${btn.dataset.name}" ออกจากรายชื่อที่อนุญาตใช้งาน?`)) return;
+      try{
+        const res = await fetch(GAS_URL, {
+          method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+          body: JSON.stringify({ action:'removeMember', targetName:btn.dataset.name, changedBy:CURRENT_USER.name })
+        });
+        const json = await res.json();
+        if(json.ok){ showToast('ลบแล้ว','ok'); await renderManageMembersList(); }
+        else showToast('ลบไม่สำเร็จ: '+(json.error||''),'err');
+      }catch(e){ showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ','err'); }
+    });
+  });
+}
+document.getElementById('manageMembersBtn').addEventListener('click', openManageMembers);
+document.getElementById('manageMembersCloseBtn').addEventListener('click', ()=>{
+  document.getElementById('manageMembersOverlay').classList.remove('show');
+});
+document.getElementById('manageMembersOverlay').addEventListener('click', e=>{
+  if(e.target.id === 'manageMembersOverlay') e.currentTarget.classList.remove('show');
+});
+document.getElementById('mmAddBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('mmNewName').value.trim();
+  const role = document.getElementById('mmNewRole').value;
+  const msg = document.getElementById('mmMsg');
+  if(!name){ msg.style.color='var(--bad)'; msg.textContent = 'กรุณาระบุชื่อก่อน'; return; }
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'addMember', newName:name, newRole:role, changedBy:CURRENT_USER.name })
+    });
+    const json = await res.json();
+    if(json.ok){
+      msg.style.color='var(--good)'; msg.textContent = `เพิ่ม "${name}" แล้ว`;
+      document.getElementById('mmNewName').value = '';
+      await renderManageMembersList();
+    } else {
+      msg.style.color='var(--bad)'; msg.textContent = json.error||'เพิ่มไม่สำเร็จ';
+    }
+  }catch(e){ msg.style.color='var(--bad)'; msg.textContent = 'เชื่อมต่อ Google Sheet ไม่สำเร็จ'; }
+});
 
 function renderLegend(){
   document.getElementById('legend').innerHTML = DATA.feeders.map(f =>
