@@ -1653,18 +1653,21 @@ function submitForm(f, formId){
   renderFeederDetail(f);
 }
 
-function deleteDevice(f, devId){
+async function deleteDevice(f, devId){
   if(!confirm(`ลบอุปกรณ์ ${devId} ออกจากวงจร ${f.id} ? (อุปกรณ์ที่ต่ออยู่ปลายสาขาถัดจากตัวนี้จะถูกย้ายไปต่อกับสาขาแม่ของตัวนี้แทน)`)) return;
-  deleteDeviceConfirmed(f, devId);
+  await deleteDeviceConfirmed(f, devId);
 }
-function deleteDeviceConfirmed(f, devId){
+async function deleteDeviceConfirmed(f, devId){
+  // ต้องยืนยันตัวตนให้เสร็จก่อนเสมอ ค่อยแก้ข้อมูลจริง — กันปัญหา "ลบแล้วหายชั่วคราว แต่พอรีเฟรชกลับมาใหม่"
+  // (เพราะยังไม่ได้บันทึกขึ้น Google Sheet จริงถ้ายังไม่ผ่านขั้นตอนเลือกชื่อผู้ใช้งาน)
+  if(!(await requireAuth())) return;
   const idx = f.devices.findIndex(x=>x.id===devId);
   if(idx<0) return;
   const removed = f.devices[idx];
   // re-parent any children of the removed device to its own parent, so the branch stays connected
   f.devices.forEach(x=>{ if(x.parentId === devId) x.parentId = removed.parentId || null; });
   f.devices.splice(idx,1);
-  persistDelete(f.id, devId);
+  await persistDelete(f.id, devId);
   updateSidebar(f);
   renderFeederDetail(f);
 }
@@ -1799,13 +1802,15 @@ function renderSeqList(fid){
     });
   });
   document.querySelectorAll('#seqBody .seq-check input').forEach(chk=>{
-    chk.addEventListener('change', e=>{
+    chk.addEventListener('change', async e=>{
       const id = e.target.dataset.id;
       const dev = f.devices.find(x=>x.id===id);
       if(!dev) return;
-      dev.sequenceVerified = e.target.checked;
-      persistDevice(f.id, dev);
-      e.target.closest('.seq-row').classList.toggle('verified', e.target.checked);
+      const wasChecked = e.target.checked;
+      if(!(await requireAuth())){ e.target.checked = !wasChecked; return; } // ยกเลิกเลือกชื่อ = ย้อนช่องติ๊กกลับ ไม่บันทึกอะไรทั้งนั้น
+      dev.sequenceVerified = wasChecked;
+      await persistDevice(f.id, dev);
+      e.target.closest('.seq-row').classList.toggle('verified', wasChecked);
       document.getElementById('seqProgress').textContent =
         `ยืนยันแล้ว ${f.devices.filter(x=>ordered.some(o=>o.device.id===x.id) && x.sequenceVerified).length}/${ordered.length}` +
         (orphans.length ? ` · ⚠ ลอย ${orphans.length} ตัว` : '');
@@ -1903,9 +1908,11 @@ function showSeqPreview(f, id, children, sizeCache, fid){
   document.getElementById('seqPreviewBody').innerHTML = html;
   document.getElementById('seqPreviewPopover').style.display = 'flex';
 
-  document.getElementById('spVerifyChk').addEventListener('change', e=>{
-    d.sequenceVerified = e.target.checked;
-    persistDevice(f.id, d);
+  document.getElementById('spVerifyChk').addEventListener('change', async e=>{
+    const wasChecked = e.target.checked;
+    if(!(await requireAuth())){ e.target.checked = !wasChecked; return; }
+    d.sequenceVerified = wasChecked;
+    await persistDevice(f.id, d);
     renderSeqList(fid);
     if(selectedFeeder === f.id) renderFeederDetail(f);
   });
@@ -1915,9 +1922,10 @@ function showSeqPreview(f, id, children, sizeCache, fid){
     document.getElementById('deviceOverlay').classList.add('show');
   });
   document.querySelectorAll('.seq-branch-setmain').forEach(b=>{
-    b.addEventListener('click', ()=>{
+    b.addEventListener('click', async ()=>{
+      if(!(await requireAuth())) return;
       d.mainChildId = b.dataset.child;
-      persistDevice(f.id, d);
+      await persistDevice(f.id, d);
       showToast(`ตั้ง ${b.dataset.child} เป็นสายหลักของ ${d.id} แล้ว`,'ok');
       showSeqPreview(f, id, children, sizeCache, fid); // รีเฟรชป๊อปอัพเดิมให้เห็นผลทันที
       renderSeqList(fid);
@@ -1925,9 +1933,10 @@ function showSeqPreview(f, id, children, sizeCache, fid){
     });
   });
   const resetBtn = document.querySelector('.seq-branch-reset');
-  if(resetBtn) resetBtn.addEventListener('click', ()=>{
+  if(resetBtn) resetBtn.addEventListener('click', async ()=>{
+    if(!(await requireAuth())) return;
     delete d.mainChildId;
-    persistDevice(f.id, d);
+    await persistDevice(f.id, d);
     showToast('กลับไปใช้การเลือกอัตโนมัติแล้ว','ok');
     showSeqPreview(f, id, children, sizeCache, fid);
     renderSeqList(fid);
@@ -2116,7 +2125,7 @@ function renderDeviceModalEdit(f, d){
   parentInput.addEventListener('blur', ()=>{ setTimeout(()=>{ suggestBox.style.display = 'none'; }, 150); });
 
   document.getElementById('dmCancelBtn').addEventListener('click', ()=>renderDeviceModalView(f, d));
-  document.getElementById('dmSaveBtn').addEventListener('click', ()=>{
+  document.getElementById('dmSaveBtn').addEventListener('click', async ()=>{
     const ratingVal = document.querySelector('.dm-rating').value.trim();
     const typeVal = document.querySelector('.dm-type').value;
     const descVal = document.querySelector('.dm-desc').value.trim();
@@ -2130,10 +2139,12 @@ function renderDeviceModalEdit(f, d){
     if(parentVal && isDescendantOf(f, parentVal, d.id)){
       showToast(`ตั้งค่านี้ไม่ได้ — ${parentVal} อยู่ปลายน้ำของ ${d.id} อยู่แล้ว จะทำให้เกิดวงจรปิด`,'err'); return;
     }
+    // ต้องยืนยันตัวตนให้เสร็จก่อนเสมอ ค่อยแก้ข้อมูลจริง — กันปัญหาแก้แล้วหายชั่วคราวตอนรีเฟรช
+    if(!(await requireAuth())) return;
     const updated = Object.assign({}, d, { type:typeVal, rating:ratingVal, desc:descVal, parentId: parentVal || null, source:'manual' });
     const idx = f.devices.findIndex(x=>x.id===d.id);
     if(idx>=0) f.devices[idx] = updated;
-    persistDevice(f.id, updated);
+    await persistDevice(f.id, updated);
     updateSidebar(f);
     if(selectedFeeder === f.id) renderFeederDetail(f);
     if(seqCurrentFeeder === f.id && document.getElementById('seqOverlay').classList.contains('show')){
