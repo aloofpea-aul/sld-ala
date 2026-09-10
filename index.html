@@ -246,6 +246,8 @@
   #deviceBody label.flabel{display:block;font-size:.72rem;color:var(--muted);margin-bottom:3px;}
   .dm-parent-suggestions{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line);
     border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.18);max-height:220px;overflow:auto;z-index:50;margin-top:2px;}
+  .user-pick-suggestions{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line);
+    border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.18);max-height:220px;overflow:auto;z-index:50;margin-top:2px;}
   .dm-suggest-item{padding:8px 12px;cursor:pointer;font-size:.82rem;border-bottom:1px solid #f2f2f2;}
   .dm-suggest-item:last-child{border-bottom:none;}
   .dm-suggest-item:hover, .dm-suggest-item.active{background:var(--paper);}
@@ -514,7 +516,7 @@
     <p class="report-note" style="margin:0 0 10px;">ต้องเลือก/พิมพ์ชื่อจากรายชื่อที่แอดมินอนุมัติไว้ก่อน ถึงจะแก้ไข/ยืนยันข้อมูลได้ (ใช้บันทึกในประวัติการเปลี่ยนแปลงว่าใครแก้อะไร)</p>
     <div style="position:relative;">
       <input type="text" id="userPickInput" placeholder="พิมพ์ชื่อ..." autocomplete="off">
-      <div id="userPickList" class="dm-parent-suggestions" style="display:none;"></div>
+      <div id="userPickList" class="user-pick-suggestions" style="display:none;"></div>
     </div>
     <p id="userPickErr" style="color:var(--bad);font-size:.78rem;margin:6px 0 0;"></p>
     <div class="device-modal-actions" style="margin-top:14px;">
@@ -2094,8 +2096,9 @@ function renderDeviceModalEdit(f, d){
   document.getElementById('deviceBody').innerHTML = html;
 
   // ค้นหาอัตโนมัติ (autocomplete) ตอนพิมพ์ในช่อง "ต่อจากอุปกรณ์ใด" — ไม่ต้องจำรหัสเป๊ะๆ พิมพ์บางส่วนแล้วเลือกจากรายการได้เลย
-  const parentInput = document.querySelector('.dm-parent');
-  const suggestBox = document.querySelector('.dm-parent-suggestions');
+  // (จำกัดขอบเขตค้นหาไว้ใน #deviceBody เท่านั้น กันไปชนกับกล่องแนะนำชื่อผู้ใช้งานที่ใช้ CSS class ร่วมกัน)
+  const parentInput = document.querySelector('#deviceBody .dm-parent');
+  const suggestBox = document.querySelector('#deviceBody .dm-parent-suggestions');
   function renderParentSuggestions(){
     const q = parentInput.value.trim().toLowerCase();
     if(!q){ suggestBox.style.display = 'none'; return; }
