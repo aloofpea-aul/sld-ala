@@ -41,6 +41,8 @@
   #userPickHeader{font-weight:700;color:var(--pea-purple);margin-bottom:8px;font-size:1rem;}
   #userPickInput{width:100%;padding:9px 12px;border-radius:6px;border:1px solid var(--line);
     font-family:inherit;font-size:.9rem;box-sizing:border-box;}
+  #userPickPassword{width:100%;padding:9px 12px;border-radius:6px;border:1px solid var(--line);
+    font-family:inherit;font-size:.9rem;box-sizing:border-box;}
   #manageMembersOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
     align-items:center;justify-content:center;z-index:5500;padding:20px;}
   #manageMembersOverlay.show{display:flex;}
@@ -514,6 +516,7 @@
     <div id="manageMembersBody">
       <div class="mm-add-row">
         <input type="text" id="mmNewName" placeholder="ชื่อ-นามสกุล">
+        <input type="text" id="mmNewPassword" placeholder="ตั้งรหัสผ่านให้คนนี้">
         <select id="mmNewRole">
           <option value="member">สมาชิก (แก้ไข/ยืนยันข้อมูลได้)</option>
           <option value="admin">ผู้ดูแลระบบ (แก้ไขได้ + ดูประวัติการเปลี่ยนแปลง + จัดการสมาชิก)</option>
@@ -528,11 +531,12 @@
 <div id="userPickOverlay">
   <div id="userPickPanel">
     <div id="userPickHeader"><span>👤 เลือกชื่อผู้ใช้งาน</span></div>
-    <p class="report-note" style="margin:0 0 10px;">ต้องเลือก/พิมพ์ชื่อจากรายชื่อที่แอดมินอนุมัติไว้ก่อน ถึงจะแก้ไข/ยืนยันข้อมูลได้ (ใช้บันทึกในประวัติการเปลี่ยนแปลงว่าใครแก้อะไร)</p>
+    <p class="report-note" style="margin:0 0 10px;">ต้องเลือก/พิมพ์ชื่อจากรายชื่อที่แอดมินอนุมัติไว้ก่อน พร้อมกรอกรหัสผ่านของตัวเอง ถึงจะแก้ไข/ยืนยันข้อมูลได้ (ใช้บันทึกในประวัติการเปลี่ยนแปลงว่าใครแก้อะไร)</p>
     <div style="position:relative;">
       <input type="text" id="userPickInput" placeholder="พิมพ์ชื่อ..." autocomplete="off">
       <div id="userPickList" class="user-pick-suggestions" style="display:none;"></div>
     </div>
+    <input type="password" id="userPickPassword" placeholder="รหัสผ่าน" autocomplete="off" style="margin-top:8px;">
     <p id="userPickErr" style="color:var(--bad);font-size:.78rem;margin:6px 0 0;"></p>
     <div class="device-modal-actions" style="margin-top:14px;">
       <button id="userPickCancelBtn">ยกเลิก</button>
@@ -664,9 +668,13 @@ async function loadData(){
   renderOverview();
 }
 
-// ============ ระบุตัวตนผู้ใช้งาน — เลือก/พิมพ์ชื่อจากรายชื่อที่แอดมินอนุมัติไว้ล่วงหน้า (Admins/Members) ============
-let MEMBER_LIST = []; // [{name, role}]
-let CURRENT_USER = { name: localStorage.getItem('sld_username') || '', role: null };
+// ============ ระบุตัวตนผู้ใช้งาน — เลือก/พิมพ์ชื่อ+รหัสผ่านจากรายชื่อที่แอดมินอนุมัติไว้ล่วงหน้า (Admins/Members) ============
+let MEMBER_LIST = []; // [{name, role}] — ชื่อเท่านั้น ไม่มีรหัสผ่านส่งมาที่ฝั่งเว็บเด็ดขาด (ตรวจรหัสผ่านที่เซิร์ฟเวอร์เท่านั้น)
+let CURRENT_USER = {
+  name: localStorage.getItem('sld_username') || '',
+  password: localStorage.getItem('sld_userpass') || '', // เก็บไว้เพื่อความสะดวกบนเครื่องเดิม — ใครใช้เครื่องนี้ต่อจะแก้ไขได้โดยไม่ต้องกรอกซ้ำ
+  role: null
+};
 async function loadMemberList(){
   try{
     const url = GAS_URL + (GAS_URL.includes('?') ? '&' : '?') + 'action=getMemberList';
@@ -674,9 +682,25 @@ async function loadMemberList(){
     const json = await res.json();
     MEMBER_LIST = json.members || [];
   }catch(e){ MEMBER_LIST = []; }
-  const found = MEMBER_LIST.find(m => m.name.toLowerCase() === CURRENT_USER.name.toLowerCase());
-  CURRENT_USER.role = found ? found.role : null;
+  // ถ้ามีชื่อ+รหัสผ่านจำไว้จากเครื่องนี้อยู่แล้ว ให้ตรวจกับเซิร์ฟเวอร์อีกทีว่ายังใช้ได้จริงไหม (เผื่อถูกลบ/เปลี่ยนรหัสไปแล้ว)
+  if(CURRENT_USER.name && CURRENT_USER.password){
+    const verified = await verifyCredentials(CURRENT_USER.name, CURRENT_USER.password);
+    CURRENT_USER.role = verified;
+  } else {
+    CURRENT_USER.role = null;
+  }
   updateUserBadge();
+}
+/** ส่งชื่อ+รหัสผ่านไปตรวจกับเซิร์ฟเวอร์ คืนค่า 'admin' | 'member' | null */
+async function verifyCredentials(name, password){
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'whoAmI', changedBy:name, changedByPassword:password })
+    });
+    const json = await res.json();
+    return json.role || null;
+  }catch(e){ return null; }
 }
 function updateUserBadge(){
   const badge = document.getElementById('userBadge');
@@ -687,25 +711,27 @@ function updateUserBadge(){
     badge.textContent = `👤 ${CURRENT_USER.name} (${CURRENT_USER.role==='admin'?'ผู้ดูแลระบบ':'สมาชิก'})`;
     badge.classList.remove('unauth');
   } else if(CURRENT_USER.name){
-    badge.textContent = `⚠ ${CURRENT_USER.name} — ไม่อยู่ในรายชื่อที่อนุมัติ`;
+    badge.textContent = `⚠ ${CURRENT_USER.name} — ชื่อหรือรหัสผ่านไม่ถูกต้อง`;
     badge.classList.add('unauth');
   } else {
-    badge.textContent = `👤 ยังไม่ได้เลือกชื่อผู้ใช้งาน`;
+    badge.textContent = `👤 ยังไม่ได้เข้าสู่ระบบ`;
     badge.classList.add('unauth');
   }
   badge.style.cursor = 'pointer';
-  badge.title = 'กดเพื่อเลือก/เปลี่ยนชื่อผู้ใช้งาน';
+  badge.title = 'กดเพื่อเข้าสู่ระบบ/เปลี่ยนผู้ใช้งาน';
 }
 document.getElementById('userBadge').addEventListener('click', ()=> showUserPicker());
 
-/** แสดงหน้าต่างเลือก/พิมพ์ชื่อผู้ใช้งาน (autocomplete จากรายชื่อ Admins/Members) คืน Promise<boolean> */
+/** แสดงหน้าต่างเลือก/พิมพ์ชื่อ+รหัสผ่านผู้ใช้งาน (autocomplete ชื่อจากรายชื่อ Admins/Members) คืน Promise<boolean> */
 function showUserPicker(){
   return new Promise(resolve=>{
     const overlay = document.getElementById('userPickOverlay');
     const input = document.getElementById('userPickInput');
+    const passInput = document.getElementById('userPickPassword');
     const list = document.getElementById('userPickList');
     const err = document.getElementById('userPickErr');
     input.value = CURRENT_USER.name || '';
+    passInput.value = '';
     err.textContent = '';
     overlay.classList.add('show');
     setTimeout(()=>input.focus(), 50);
@@ -721,6 +747,7 @@ function showUserPicker(){
           e.preventDefault();
           input.value = item.dataset.name;
           list.style.display = 'none';
+          passInput.focus();
         });
       });
       list.style.display = 'block';
@@ -729,21 +756,28 @@ function showUserPicker(){
     input.onfocus = renderList;
     input.onblur = ()=> setTimeout(()=>{ list.style.display='none'; }, 150);
 
-    function confirm(){
+    async function confirm(){
       const name = input.value.trim();
-      const found = MEMBER_LIST.find(m => m.name.toLowerCase() === name.toLowerCase());
-      if(!found){
-        err.textContent = 'ชื่อนี้ไม่อยู่ในรายชื่อที่แอดมินอนุมัติไว้ กรุณาเลือกจากรายการ หรือติดต่อผู้ดูแลระบบ';
+      const password = passInput.value;
+      if(!name){ err.textContent = 'กรุณาระบุชื่อ'; return; }
+      if(!password){ err.textContent = 'กรุณากรอกรหัสผ่าน'; return; }
+      const confirmBtn = document.getElementById('userPickConfirmBtn');
+      confirmBtn.disabled = true; confirmBtn.textContent = '⏳ กำลังตรวจสอบ...';
+      const role = await verifyCredentials(name, password);
+      confirmBtn.disabled = false; confirmBtn.textContent = 'ยืนยัน';
+      if(!role){
+        err.textContent = 'ชื่อหรือรหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง หรือติดต่อผู้ดูแลระบบ';
         return;
       }
-      CURRENT_USER = { name: found.name, role: found.role };
-      localStorage.setItem('sld_username', found.name);
+      CURRENT_USER = { name, password, role };
+      localStorage.setItem('sld_username', name);
+      localStorage.setItem('sld_userpass', password);
       updateUserBadge();
       overlay.classList.remove('show');
       resolve(true);
     }
     document.getElementById('userPickConfirmBtn').onclick = confirm;
-    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); confirm(); } });
+    passInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); confirm(); } });
     document.getElementById('userPickCancelBtn').onclick = ()=>{
       overlay.classList.remove('show');
       resolve(false);
@@ -790,7 +824,7 @@ async function renderManageMembersList(){
       try{
         const res = await fetch(GAS_URL, {
           method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-          body: JSON.stringify({ action:'removeMember', targetName:btn.dataset.name, changedBy:CURRENT_USER.name })
+          body: JSON.stringify({ action:'removeMember', targetName:btn.dataset.name, changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
         });
         const json = await res.json();
         if(json.ok){ showToast('ลบแล้ว','ok'); await renderManageMembersList(); }
@@ -808,9 +842,11 @@ document.getElementById('manageMembersOverlay').addEventListener('click', e=>{
 });
 document.getElementById('mmAddBtn').addEventListener('click', async ()=>{
   const name = document.getElementById('mmNewName').value.trim();
+  const newPassword = document.getElementById('mmNewPassword').value.trim();
   const role = document.getElementById('mmNewRole').value;
   const msg = document.getElementById('mmMsg');
   if(!name){ msg.style.color='var(--bad)'; msg.textContent = 'กรุณาระบุชื่อก่อน'; return; }
+  if(!newPassword){ msg.style.color='var(--bad)'; msg.textContent = 'กรุณาตั้งรหัสผ่านให้คนนี้ก่อน'; return; }
   const addBtn = document.getElementById('mmAddBtn');
   const originalText = addBtn.textContent;
   addBtn.disabled = true; addBtn.textContent = '⏳ กำลังบันทึก...';
@@ -818,12 +854,14 @@ document.getElementById('mmAddBtn').addEventListener('click', async ()=>{
   try{
     const res = await fetch(GAS_URL, {
       method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'addMember', newName:name, newRole:role, changedBy:CURRENT_USER.name })
+      body: JSON.stringify({ action:'addMember', newName:name, newRole:role, newPassword,
+        changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
     });
     const json = await res.json();
     if(json.ok){
       msg.style.color='var(--good)'; msg.textContent = `เพิ่ม "${name}" แล้ว`;
       document.getElementById('mmNewName').value = '';
+      document.getElementById('mmNewPassword').value = '';
       await renderManageMembersList();
     } else {
       msg.style.color='var(--bad)'; msg.textContent = json.error||'เพิ่มไม่สำเร็จ';
@@ -2207,7 +2245,7 @@ async function persistDevice(feederId, device){
       const res = await fetch(GAS_URL, {
         method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify({ action:'upsert', feeder:feederId, device, changedBy:CURRENT_USER.name })
+        body: JSON.stringify({ action:'upsert', feeder:feederId, device, changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
       });
       const json = await res.json();
       if(json.ok) showToast('บันทึกไปยัง Google Sheet แล้ว','ok');
@@ -2226,7 +2264,7 @@ async function persistDelete(feederId, devId){
       const res = await fetch(GAS_URL, {
         method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify({ action:'delete', feeder:feederId, id:devId, changedBy:CURRENT_USER.name })
+        body: JSON.stringify({ action:'delete', feeder:feederId, id:devId, changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
       });
       const json = await res.json();
       if(json.ok) showToast('ลบออกจาก Google Sheet แล้ว','ok');
@@ -2458,7 +2496,7 @@ async function persistFieldVerification(feederId, device, verification, photoBas
         headers:{'Content-Type':'text/plain;charset=utf-8'},
         body: JSON.stringify({
           action:'fieldVerify', feeder:feederId, deviceId:device.id,
-          verification, photoBase64, photoMimeType: photoMime, changedBy:CURRENT_USER.name,
+          verification, photoBase64, photoMimeType: photoMime, changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password,
           updatedDevice: Object.keys(updatedDevice).length ? updatedDevice : null
         })
       });
@@ -2641,7 +2679,7 @@ async function renderReportTabChangeLog(){
   try{
     const res = await fetch(GAS_URL, {
       method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'getChangeLog', changedBy:CURRENT_USER.name })
+      body: JSON.stringify({ action:'getChangeLog', changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
     });
     const json = await res.json();
     if(!json.ok){
