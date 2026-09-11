@@ -210,6 +210,8 @@
   #toast.show{opacity:.95;}
   #toast.err{background:var(--bad);}
   #toast.ok{background:var(--good);}
+  #toast.saving{background:var(--pea-purple);}
+  button:disabled{opacity:.6;cursor:not-allowed !important;}
 
   footer{padding:6px 20px;font-size:.7rem;color:var(--muted);background:var(--paper);
     border-top:1px solid var(--line);}
@@ -783,6 +785,8 @@ async function renderManageMembersList(){
   listEl.querySelectorAll('.mm-remove').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       if(!confirm(`ลบ "${btn.dataset.name}" ออกจากรายชื่อที่อนุญาตใช้งาน?`)) return;
+      const originalText = btn.textContent;
+      btn.disabled = true; btn.textContent = '⏳ กำลังลบ...';
       try{
         const res = await fetch(GAS_URL, {
           method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -790,8 +794,8 @@ async function renderManageMembersList(){
         });
         const json = await res.json();
         if(json.ok){ showToast('ลบแล้ว','ok'); await renderManageMembersList(); }
-        else showToast('ลบไม่สำเร็จ: '+(json.error||''),'err');
-      }catch(e){ showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ','err'); }
+        else { showToast('ลบไม่สำเร็จ: '+(json.error||''),'err'); btn.disabled = false; btn.textContent = originalText; }
+      }catch(e){ showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ','err'); btn.disabled = false; btn.textContent = originalText; }
     });
   });
 }
@@ -807,6 +811,10 @@ document.getElementById('mmAddBtn').addEventListener('click', async ()=>{
   const role = document.getElementById('mmNewRole').value;
   const msg = document.getElementById('mmMsg');
   if(!name){ msg.style.color='var(--bad)'; msg.textContent = 'กรุณาระบุชื่อก่อน'; return; }
+  const addBtn = document.getElementById('mmAddBtn');
+  const originalText = addBtn.textContent;
+  addBtn.disabled = true; addBtn.textContent = '⏳ กำลังบันทึก...';
+  msg.style.color='var(--muted)'; msg.textContent = '';
   try{
     const res = await fetch(GAS_URL, {
       method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
@@ -821,6 +829,7 @@ document.getElementById('mmAddBtn').addEventListener('click', async ()=>{
       msg.style.color='var(--bad)'; msg.textContent = json.error||'เพิ่มไม่สำเร็จ';
     }
   }catch(e){ msg.style.color='var(--bad)'; msg.textContent = 'เชื่อมต่อ Google Sheet ไม่สำเร็จ'; }
+  addBtn.disabled = false; addBtn.textContent = originalText;
 });
 
 function renderLegend(){
@@ -2170,6 +2179,8 @@ function renderDeviceModalEdit(f, d){
     }
     // ต้องยืนยันตัวตนให้เสร็จก่อนเสมอ ค่อยแก้ข้อมูลจริง — กันปัญหาแก้แล้วหายชั่วคราวตอนรีเฟรช
     if(!(await requireAuth())) return;
+    const saveBtn = document.getElementById('dmSaveBtn');
+    saveBtn.disabled = true; saveBtn.textContent = '⏳ กำลังบันทึก...';
     const updated = Object.assign({}, d, { type:typeVal, rating:ratingVal, desc:descVal, parentId: parentVal || null, source:'manual' });
     const idx = f.devices.findIndex(x=>x.id===d.id);
     if(idx>=0) f.devices[idx] = updated;
@@ -2191,6 +2202,7 @@ document.getElementById('deviceOverlay').addEventListener('click', e=>{
 async function persistDevice(feederId, device){
   if(!(await requireAuth())) return;
   if(GAS_URL){
+    showToast('💾 กำลังบันทึก...', 'saving');
     try{
       const res = await fetch(GAS_URL, {
         method:'POST',
@@ -2209,6 +2221,7 @@ async function persistDevice(feederId, device){
 async function persistDelete(feederId, devId){
   if(!(await requireAuth())) return;
   if(GAS_URL){
+    showToast('💾 กำลังลบ...', 'saving');
     try{
       const res = await fetch(GAS_URL, {
         method:'POST',
@@ -2385,6 +2398,8 @@ async function submitFieldVerify(f, devId, formEl){
     showToast('กรุณาระบุค่าจริงที่พบ (ขนาดหรือจุดติดตั้ง)','err'); return;
   }
   if(inspector) localStorage.setItem('sld_inspector_name', inspector);
+  const saveBtn = formEl.querySelector('.btn-save-fv');
+  if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = '⏳ กำลังบันทึก...'; }
 
   const device = f.devices.find(x=>x.id===devId);
   const today = new Date().toISOString().slice(0,10);
@@ -2430,6 +2445,7 @@ async function submitFieldVerify(f, devId, formEl){
 
 async function persistFieldVerification(feederId, device, verification, photoBase64, photoMime){
   if(GAS_URL){
+    showToast(photoBase64 ? '💾 กำลังอัปโหลดรูปถ่ายและบันทึก... (อาจใช้เวลาสักครู่)' : '💾 กำลังบันทึก...', 'saving');
     try{
       const updatedDevice = {};
       if(verification.status==='mismatch'){ updatedDevice.rating = device.rating; updatedDevice.desc = device.desc; }
