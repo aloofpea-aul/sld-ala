@@ -135,6 +135,9 @@
   #panel{flex:1;max-width:420px;min-width:320px;background:var(--panel);
     border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;}
   #panelHeader{padding:16px 18px 10px;border-bottom:1px solid var(--line);}
+  #panelSeqBtn{margin-top:8px;background:var(--pea-purple);color:#fff;border:none;border-radius:6px;
+    padding:8px 14px;font-family:inherit;font-size:.8rem;cursor:pointer;}
+  #panelSeqBtn:hover{opacity:.9;}
   #panelHeader h2{margin:0 0 4px;font-size:1.05rem;}
   #panelHeader .tie{font-size:.78rem;color:var(--muted);}
   #panelHeader .count-badge{display:inline-block;background:var(--paper);border:1px solid var(--line);
@@ -185,6 +188,15 @@
   .field-form textarea{resize:vertical;min-height:44px;}
   .field-form .photo-preview{max-width:160px;max-height:160px;border-radius:6px;border:1px solid var(--line);
     display:block;margin-top:4px;}
+  .fv-gps-section{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px;}
+  .fv-gps-label{font-size:.78rem;font-weight:700;color:var(--ink);margin-bottom:6px;}
+  .fv-gps-recorded{font-size:.76rem;color:var(--muted);margin-bottom:8px;}
+  .fv-gps-btn{background:var(--pea-purple);color:#fff;border:none;border-radius:6px;
+    padding:7px 12px;font-family:inherit;font-size:.8rem;cursor:pointer;}
+  .fv-gps-btn:hover{opacity:.9;}
+  .fv-gps-result{font-size:.78rem;margin-top:8px;line-height:1.5;}
+  .fv-gps-ok{color:var(--good);font-weight:700;}
+  .fv-gps-bad{color:var(--bad);font-weight:700;}
   .field-form .btns{display:flex;gap:6px;justify-content:flex-end;margin-top:4px;}
 
   #legend{padding:10px 18px;border-top:1px solid var(--line);font-size:.72rem;color:var(--muted);
@@ -441,6 +453,7 @@
         <h2 id="panelTitle">เลือกวงจรเพื่อดูรายละเอียด</h2>
         <div class="tie" id="panelTie"></div>
         <div class="count-badge" id="panelCount" style="display:none;"></div>
+        <button id="panelSeqBtn" style="display:none;">🔢 ยืนยันลำดับการเชื่อมต่อ</button>
       </div>
       <div id="deviceList">
         <div class="empty-state">
@@ -1490,6 +1503,9 @@ function updateSidebar(f){
   badge.textContent = hidden > 0
     ? `${shown} อุปกรณ์สวิตช์ (+${hidden} หม้อแปลง/มิเตอร์ ซ่อนอยู่)`
     : `${shown} อุปกรณ์`;
+  const seqBtn = document.getElementById('panelSeqBtn');
+  seqBtn.style.display = '';
+  seqBtn.onclick = ()=> openSeqReview(f.id); // เปิดหน้ายืนยันลำดับ พร้อมเลือกวงจรนี้ไว้ให้เลย ไม่ต้องเลือกซ้ำ
   renderDeviceList(f);
 }
 
@@ -1537,6 +1553,8 @@ function renderDeviceList(f){
     const ff = document.querySelector('.field-form');
     if(ff){
       const devId = ff.dataset.deviceId;
+      const ffDevice = f.devices.find(x=>x.id===devId);
+      if(ffDevice) wireFieldFormGps(ff, ffDevice);
       const statusRadios = ff.querySelectorAll('input[name="fv-status"]');
       const correctFields = ff.querySelector('.correct-fields');
       statusRadios.forEach(r=>r.addEventListener('change', ()=>{
@@ -1751,7 +1769,7 @@ function computeSeqNumbers(f){
 }
 
 let seqCurrentFeeder = null;
-function openSeqReview(){
+function openSeqReview(preselectFeederId){
   const sel = document.getElementById('seqFeederSelect');
   if(!sel.options.length){
     DATA.feeders.forEach(f=>{
@@ -1760,7 +1778,7 @@ function openSeqReview(){
       sel.appendChild(opt);
     });
   }
-  seqCurrentFeeder = seqCurrentFeeder || DATA.feeders[0].id;
+  seqCurrentFeeder = preselectFeederId || seqCurrentFeeder || DATA.feeders[0].id;
   sel.value = seqCurrentFeeder;
   document.getElementById('seqSearchInput').value = '';
   document.getElementById('seqSearchCount').textContent = '';
@@ -2034,6 +2052,7 @@ function renderDeviceModalFieldVerify(f, d){
   document.getElementById('deviceModalTitle').textContent = '📷 ตรวจสอบภาคสนาม: ' + d.id;
   document.getElementById('deviceBody').innerHTML = renderFieldForm(f, d);
   const ff = document.querySelector('#deviceBody .field-form');
+  wireFieldFormGps(ff, d);
   const statusRadios = ff.querySelectorAll('input[name="fv-status"]');
   const correctFields = ff.querySelector('.correct-fields');
   statusRadios.forEach(r=>r.addEventListener('change', ()=>{
@@ -2272,6 +2291,7 @@ document.getElementById('leafToggle').addEventListener('change', e=>{
 
 function renderFieldForm(f, d){
   const savedInspector = localStorage.getItem('sld_inspector_name') || '';
+  const hasRecordedGps = d.lat != null && d.lon != null;
   return `
     <div class="field-form" data-device-id="${d.id}">
       <div class="current">
@@ -2279,6 +2299,14 @@ function renderFieldForm(f, d){
         จุดติดตั้ง: <b>${escapeHtml(d.desc || '(ไม่ทราบ)')}</b>
         ${d.phase ? `<br>เฟสที่บันทึกไว้: <b>${d.phase}</b>` : ''}
         ${d.customerImpact != null ? `<br>ผู้ใช้ไฟที่ได้รับผลกระทบ (ถ้าอุปกรณ์นี้ตัด/ทำงาน): <b>${d.customerImpact} ราย</b>` : ''}
+      </div>
+      <div class="fv-gps-section">
+        <div class="fv-gps-label">📍 ตรวจสอบพิกัดตำแหน่ง (ยอมรับคลาดเคลื่อนได้ไม่เกิน 10 เมตร)</div>
+        ${hasRecordedGps
+          ? `<div class="fv-gps-recorded">พิกัดที่บันทึกไว้: ${d.lat.toFixed(6)}, ${d.lon.toFixed(6)}</div>`
+          : `<div class="fv-gps-recorded" style="color:var(--bad);">⚠ อุปกรณ์นี้ยังไม่มีพิกัดบันทึกไว้ในระบบเลย — กดตรวจสอบเพื่อบันทึกพิกัดจริงเป็นครั้งแรกได้</div>`}
+        <button type="button" class="fv-gps-btn">📍 จับพิกัดตำแหน่งปัจจุบัน</button>
+        <div class="fv-gps-result"></div>
       </div>
       <label class="radio-opt"><input type="radio" name="fv-status" value="match" checked> ✅ ตรงกับข้อมูลที่บันทึกไว้</label>
       <label class="radio-opt"><input type="radio" name="fv-status" value="mismatch"> ❌ ไม่ตรง (ระบุค่าจริงที่พบหน้างาน)</label>
@@ -2298,6 +2326,43 @@ function renderFieldForm(f, d){
     </div>`;
 }
 
+/** ระยะทางระหว่าง 2 พิกัด GPS หน่วยเมตร (สูตร Haversine) */
+function gpsDistanceMeters(lat1, lon1, lat2, lon2){
+  const R = 6371000;
+  const toRad = x => x * Math.PI / 180;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+const GPS_TOLERANCE_M = 10;
+function wireFieldFormGps(formEl, d){
+  const btn = formEl.querySelector('.fv-gps-btn');
+  const resultEl = formEl.querySelector('.fv-gps-result');
+  btn.addEventListener('click', ()=>{
+    if(!navigator.geolocation){ resultEl.innerHTML = '<span class="fv-gps-bad">อุปกรณ์นี้ไม่รองรับการระบุตำแหน่ง GPS</span>'; return; }
+    resultEl.textContent = 'กำลังค้นหาตำแหน่ง...';
+    navigator.geolocation.getCurrentPosition(pos=>{
+      const { latitude, longitude, accuracy } = pos.coords;
+      formEl.dataset.gpsLat = latitude;
+      formEl.dataset.gpsLon = longitude;
+      formEl.dataset.gpsAccuracy = accuracy || '';
+      if(d.lat != null && d.lon != null){
+        const dist = gpsDistanceMeters(latitude, longitude, d.lat, d.lon);
+        const ok = dist <= GPS_TOLERANCE_M;
+        resultEl.innerHTML = `พิกัดที่จับได้: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (ความแม่นยำ ~${Math.round(accuracy||0)}ม.)<br>` +
+          `ห่างจากพิกัดที่บันทึกไว้ <b>${dist.toFixed(1)} เมตร</b> — ` +
+          (ok ? `<span class="fv-gps-ok">✅ ตำแหน่งตรงกัน (อยู่ในเกณฑ์ ${GPS_TOLERANCE_M} เมตร)</span>`
+              : `<span class="fv-gps-bad">⚠ ตำแหน่งคลาดเคลื่อนเกินเกณฑ์ (${GPS_TOLERANCE_M} เมตร)</span>`);
+      } else {
+        resultEl.innerHTML = `พิกัดที่จับได้: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (ความแม่นยำ ~${Math.round(accuracy||0)}ม.)<br>` +
+          `<span class="fv-gps-ok">จะบันทึกเป็นพิกัดแรกของอุปกรณ์นี้เมื่อกดบันทึกผลตรวจสอบ</span>`;
+      }
+    }, err=>{
+      resultEl.innerHTML = '<span class="fv-gps-bad">ไม่สามารถระบุตำแหน่งได้ — ตรวจสอบว่าอนุญาตให้เว็บเข้าถึงตำแหน่งแล้วหรือยัง</span>';
+    }, { enableHighAccuracy:true, timeout:10000 });
+  });
+}
+
 async function submitFieldVerify(f, devId, formEl){
   if(!(await requireAuth())) return;
   const status = formEl.querySelector('input[name="fv-status"]:checked').value;
@@ -2306,6 +2371,8 @@ async function submitFieldVerify(f, devId, formEl){
   const inspector = formEl.querySelector('.fv-inspector').value.trim();
   const note = formEl.querySelector('.fv-note').value.trim();
   const photoFile = formEl.querySelector('.fv-photo').files[0];
+  const gpsLat = formEl.dataset.gpsLat ? parseFloat(formEl.dataset.gpsLat) : null;
+  const gpsLon = formEl.dataset.gpsLon ? parseFloat(formEl.dataset.gpsLon) : null;
 
   if(status === 'mismatch' && !correctedRating && !correctedDesc){
     showToast('กรุณาระบุค่าจริงที่พบ (ขนาดหรือจุดติดตั้ง)','err'); return;
@@ -2314,9 +2381,15 @@ async function submitFieldVerify(f, devId, formEl){
 
   const device = f.devices.find(x=>x.id===devId);
   const today = new Date().toISOString().slice(0,10);
+  let gpsDistance = null, gpsWithinTolerance = null;
+  if(gpsLat != null && gpsLon != null && device.lat != null && device.lon != null){
+    gpsDistance = gpsDistanceMeters(gpsLat, gpsLon, device.lat, device.lon);
+    gpsWithinTolerance = gpsDistance <= GPS_TOLERANCE_M;
+  }
 
   const finish = (photoBase64, photoMime)=>{
-    const verification = { status, correctedRating, correctedDesc, inspector, note, date: today };
+    const verification = { status, correctedRating, correctedDesc, inspector, note, date: today,
+      gpsLat, gpsLon, gpsDistanceMeters: gpsDistance, gpsWithinTolerance };
     // update in-memory immediately for instant feedback
     device.verified = { status, date: today };
     if(status === 'mismatch'){
@@ -2324,6 +2397,10 @@ async function submitFieldVerify(f, devId, formEl){
       if(correctedDesc) device.desc = correctedDesc;
       device.ratingConfidence = 'confirmed';
       device.source = 'field-verified';
+    }
+    // ถ้าอุปกรณ์นี้ยังไม่มีพิกัดบันทึกไว้เลย ให้ใช้พิกัดที่จับได้ครั้งนี้เป็นค่าตั้งต้น (ไม่ทับพิกัดเดิมถ้ามีอยู่แล้ว แม้จะห่างเกินเกณฑ์ก็ตาม — ให้ไปแก้ผ่านปุ่ม "แก้ไข" แทนถ้ามั่นใจว่าของเดิมผิด)
+    if(gpsLat != null && gpsLon != null && device.lat == null){
+      device.lat = gpsLat; device.lon = gpsLon;
     }
     fieldVerifyDeviceId = null;
     updateSidebar(f);
@@ -2347,13 +2424,19 @@ async function submitFieldVerify(f, devId, formEl){
 async function persistFieldVerification(feederId, device, verification, photoBase64, photoMime){
   if(GAS_URL){
     try{
+      const updatedDevice = {};
+      if(verification.status==='mismatch'){ updatedDevice.rating = device.rating; updatedDevice.desc = device.desc; }
+      if(verification.gpsLat != null && device.lat === verification.gpsLat){
+        // gps ที่จับได้ถูกใช้เป็นพิกัดตั้งต้นของอุปกรณ์นี้ (กรณีที่ยังไม่เคยมีพิกัดมาก่อน) — ส่งไปอัปเดตในชีต Devices ด้วย
+        updatedDevice.lat = device.lat; updatedDevice.lon = device.lon;
+      }
       const res = await fetch(GAS_URL, {
         method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
         body: JSON.stringify({
           action:'fieldVerify', feeder:feederId, deviceId:device.id,
           verification, photoBase64, photoMimeType: photoMime, changedBy:CURRENT_USER.name,
-          updatedDevice: verification.status==='mismatch' ? { rating: device.rating, desc: device.desc } : null
+          updatedDevice: Object.keys(updatedDevice).length ? updatedDevice : null
         })
       });
       const json = await res.json();
