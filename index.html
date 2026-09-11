@@ -962,7 +962,8 @@ function layoutTree(root){
     const horizontal = (level % 2 === 0);
     const step = stepFor(level);
 
-    // แกนหลักของกิ่งนี้: ปกติเลือกอุปกรณ์ที่มีอุปกรณ์ต่อพ่วงมากสุด แต่ถ้าผู้ใช้กำหนด mainChildId ไว้เอง ให้ใช้ตามนั้นก่อนเสมอ
+    // แกนหลักของกิ่งนี้: ปกติเลือกอุปกรณ์ที่มีอุปกรณ์ต่อพ่วงมากสุด (สะท้อนสายเมนไฟฟ้าจริง) กิ่งแยกที่เหลือเรียงตามเลขรหัสแทน
+    // ถ้าผู้ใช้กำหนด mainChildId ไว้เอง ให้ใช้ตามนั้นก่อนเสมอ
     const trunk = [node];
     let cur = node;
     while(cur.children.length){
@@ -992,13 +993,13 @@ function layoutTree(root){
     trunk.forEach((n,i)=>{
       const nextTrunkNode = trunk[i+1];
       const laterals = n.children.filter(c => c !== nextTrunkNode);
-      // เรียงลำดับกิ่งแยกตาม siblingPriority ที่ผู้ใช้กำหนดเอง (ถ้ามี) ก่อน แล้วค่อย fallback ตามขนาดกิ่ง
+      // เรียงลำดับกิ่งแยกตาม siblingPriority ที่ผู้ใช้กำหนดเอง (ถ้ามี) ก่อน แล้วค่อย fallback เรียงตามเลขรหัสอุปกรณ์จากน้อยไปมาก
       laterals.sort((a,b)=>{
         const pa = a.dev.siblingPriority, pb = b.dev.siblingPriority;
         if(pa != null && pb != null) return pa - pb;
         if(pa != null) return -1;
         if(pb != null) return 1;
-        return a._size - b._size;
+        return a.dev.id.localeCompare(b.dev.id, undefined, {numeric:true, sensitivity:'base'});
       });
       let cursor = 0;
       laterals.forEach((lat,j)=>{
@@ -1722,7 +1723,9 @@ function computeSeqNumbers(f){
   function walkBranch(node, prefix, counter){
     if(visited.has(node.id)) return;
     visited.add(node.id);
-    // สร้างสายหลักของกิ่งนี้ (ปกติเลือกลูกที่มีอุปกรณ์ปลายน้ำมากสุด แต่ถ้าผู้ใช้กำหนด mainChildId ไว้เอง ให้ใช้ตามนั้นก่อนเสมอ)
+    // สร้างสายหลักของกิ่งนี้ (ปกติเลือกลูกที่มีอุปกรณ์ปลายน้ำมากสุดให้ต่อเนื่องไปก่อน เพราะสะท้อนสายเมนไฟฟ้าจริงได้ดีกว่าการเรียงเลข
+    // ส่วนกิ่งแยกที่ไม่ได้ไปต่อเป็นสายหลัก จะเรียงตามเลขรหัสแทน — ดูค่า sort กิ่งแยกด้านล่าง)
+    // ถ้าผู้ใช้กำหนด mainChildId ไว้เอง ให้ใช้ตามนั้นก่อนเสมอ
     const chain = [node];
     let cur = node;
     while(true){
@@ -1746,13 +1749,13 @@ function computeSeqNumbers(f){
     });
     chain.forEach(n=>{
       let laterals = (children[n.id]||[]).filter(k=>!visited.has(k.id));
-      // เรียงลำดับกิ่งแยกตาม siblingPriority ที่ผู้ใช้กำหนดเอง (ถ้ามี) ก่อน แล้วค่อย fallback ตามขนาดกิ่ง
+      // เรียงลำดับกิ่งแยกตาม siblingPriority ที่ผู้ใช้กำหนดเอง (ถ้ามี) ก่อน แล้วค่อย fallback เรียงตามเลขรหัสอุปกรณ์จากน้อยไปมาก
       laterals = laterals.slice().sort((a,b)=>{
         const pa = a.siblingPriority, pb = b.siblingPriority;
         if(pa != null && pb != null) return pa - pb;
         if(pa != null) return -1;
         if(pb != null) return 1;
-        return sizeCache[b.id] - sizeCache[a.id];
+        return a.id.localeCompare(b.id, undefined, {numeric:true, sensitivity:'base'});
       });
       laterals.forEach((lat, li)=>{
         const foundEntry = ordered.find(o=>o.device.id===n.id);
@@ -1903,7 +1906,7 @@ function showSeqPreview(f, id, children, sizeCache, fid){
       const pa=a.siblingPriority, pb=b.siblingPriority;
       if(pa!=null && pb!=null) return pa-pb;
       if(pa!=null) return -1; if(pb!=null) return 1;
-      return 0;
+      return a.id.localeCompare(b.id, undefined, {numeric:true, sensitivity:'base'});
     });
     const autoMainId = sortedKids.reduce((best,k)=> (!best || sizeCache[k.id] > sizeCache[best.id]) ? k : best, null)?.id;
     const effectiveMainId = d.mainChildId || autoMainId;
@@ -2122,12 +2125,14 @@ function renderDeviceModalEdit(f, d){
     const q = parentInput.value.trim().toLowerCase();
     if(!q){ suggestBox.style.display = 'none'; return; }
     const allMatches = f.devices
-      .filter(x => x.id !== d.id && !isDescendantOf(f, x.id, d.id)) // ห้ามเลือกตัวเองหรือลูกหลานตัวเอง (จะเกิดวงจรปิด)
-      .filter(x => x.id.toLowerCase().includes(q) || (x.desc||'').toLowerCase().includes(q))
+      // ค่าที่ตั้งไว้อยู่แล้วตอนนี้ (d.parentId) ต้องเลือกใหม่ซ้ำได้เสมอ ไม่ว่าจะเช็ควงจรปิดแล้วผลเป็นอย่างไร
+      // (เพราะเป็นค่าที่ใช้งานอยู่แล้วจริง ไม่ใช่การสร้างความสัมพันธ์ใหม่ที่จะทำให้เกิดปัญหาเพิ่ม)
+      .filter(x => x.id !== d.id && (x.id === d.parentId || !isDescendantOf(f, x.id, d.id)))
+      .filter(x => x.id.trim().toLowerCase().includes(q) || (x.desc||'').toLowerCase().includes(q))
       .sort((a,b)=> a.id.localeCompare(b.id, undefined, {numeric:true, sensitivity:'base'})); // เรียงตามเลขอุปกรณ์ (ไม่ใช่เรียงตัวอักษรตรงๆ กัน WF-2 ไปโผล่หลัง WF-117)
     const matches = allMatches.slice(0, 15);
     if(!matches.length){
-      suggestBox.innerHTML = `<div class="dm-suggest-empty">ไม่พบอุปกรณ์ที่ตรงกัน</div>`;
+      suggestBox.innerHTML = `<div class="dm-suggest-empty">ไม่พบอุปกรณ์ที่ตรงกัน (ถ้ามั่นใจว่ามีอยู่จริง อาจมีช่องว่างแฝงในข้อมูล — ลองพิมพ์แค่บางส่วนของรหัสแทนการพิมพ์เต็ม)</div>`;
     } else {
       suggestBox.innerHTML = matches.map(x=>{
         const idHtml = escapeHtml(x.id).replace(new RegExp(escapeHtml(q).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'ig'),
