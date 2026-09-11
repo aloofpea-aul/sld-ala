@@ -2121,10 +2121,11 @@ function renderDeviceModalEdit(f, d){
   function renderParentSuggestions(){
     const q = parentInput.value.trim().toLowerCase();
     if(!q){ suggestBox.style.display = 'none'; return; }
-    const matches = f.devices
+    const allMatches = f.devices
       .filter(x => x.id !== d.id && !isDescendantOf(f, x.id, d.id)) // ห้ามเลือกตัวเองหรือลูกหลานตัวเอง (จะเกิดวงจรปิด)
       .filter(x => x.id.toLowerCase().includes(q) || (x.desc||'').toLowerCase().includes(q))
-      .slice(0, 8);
+      .sort((a,b)=> a.id.localeCompare(b.id, undefined, {numeric:true, sensitivity:'base'})); // เรียงตามเลขอุปกรณ์ (ไม่ใช่เรียงตัวอักษรตรงๆ กัน WF-2 ไปโผล่หลัง WF-117)
+    const matches = allMatches.slice(0, 15);
     if(!matches.length){
       suggestBox.innerHTML = `<div class="dm-suggest-empty">ไม่พบอุปกรณ์ที่ตรงกัน</div>`;
     } else {
@@ -2132,7 +2133,7 @@ function renderDeviceModalEdit(f, d){
         const idHtml = escapeHtml(x.id).replace(new RegExp(escapeHtml(q).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'ig'),
           m=>`<b>${m}</b>`);
         return `<div class="dm-suggest-item" data-id="${x.id}">${idHtml}<span class="dm-suggest-desc">${escapeHtml(x.desc||'')}</span></div>`;
-      }).join('');
+      }).join('') + (allMatches.length > 15 ? `<div class="dm-suggest-empty">พบทั้งหมด ${allMatches.length} รายการ — พิมพ์ให้เจาะจงขึ้นเพื่อเห็นตัวที่ต้องการ</div>` : '');
     }
     suggestBox.style.display = 'block';
     suggestBox.querySelectorAll('.dm-suggest-item[data-id]').forEach(item=>{
@@ -2236,6 +2237,7 @@ function doSearch(q){
       }
     });
   });
+  results.sort((a,b)=> a.id.localeCompare(b.id, undefined, {numeric:true, sensitivity:'base'}));
   results = results.slice(0, 40);
   if(!results.length){
     list.innerHTML = '<div style="color:#999;">ไม่พบผลลัพธ์</div>';
