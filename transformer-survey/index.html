@@ -14,6 +14,8 @@
 <meta name="apple-mobile-web-app-title" content="สำรวจหม้อแปลง">
 <meta name="mobile-web-app-capable" content="yes">
 
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root{
     --pea-purple:#4b2e83; --pea-purple-dark:#341f5c;
@@ -111,19 +113,47 @@
   #toast.err{background:var(--bad);}
   #toast.ok{background:var(--good);}
   #toast.saving{background:var(--pea-purple);}
+
+  #viewToggleBtn{background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:6px;
+    padding:8px 12px;font-family:inherit;font-size:.8rem;cursor:pointer;white-space:nowrap;}
+  #viewToggleBtn:hover{background:rgba(255,255,255,.32);}
+  #mapView{flex:1;display:flex;flex-direction:column;position:relative;min-height:0;}
+  #mapEl{flex:1;min-height:0;}
+  #locateBtn{position:absolute;bottom:70px;right:14px;z-index:500;background:#fff;border:1px solid var(--line);
+    border-radius:8px;padding:9px 14px;font-family:inherit;font-size:.8rem;cursor:pointer;
+    box-shadow:0 2px 8px rgba(0,0,0,.2);}
+  #locateBtn:hover{background:var(--paper);}
+  #mapLegend{position:absolute;bottom:14px;left:14px;right:14px;background:rgba(255,255,255,.95);
+    border-radius:8px;padding:8px 12px;display:flex;gap:14px;flex-wrap:wrap;font-size:.72rem;
+    box-shadow:0 2px 8px rgba(0,0,0,.15);z-index:500;}
+  #mapLegend span{display:flex;align-items:center;gap:5px;}
+  #mapLegend .dot{width:10px;height:10px;border-radius:50%;display:inline-block;}
+  #mapLegend .dot.verified{background:var(--good);}
+  #mapLegend .dot.mismatch{background:var(--bad);}
+  #mapLegend .dot.unverified{background:#999;}
+  #mapLegend .dot.me{background:#1a73e8;}
+  .tr-marker{border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);}
+  .tr-marker.unverified{background:#999;}
+  .tr-marker.verified{background:var(--good);}
+  .tr-marker.mismatch{background:var(--bad);}
+  .me-marker{background:#1a73e8;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 4px rgba(26,115,232,.35);}
+  .leaflet-popup-content b{color:var(--pea-purple);}
+  .map-popup-btn{margin-top:6px;background:var(--pea-purple);color:#fff;border:none;border-radius:5px;
+    padding:6px 10px;font-family:inherit;font-size:.78rem;cursor:pointer;width:100%;}
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <h1>🔌 สำรวจหม้อแปลง</h1>
-    <a class="homeLink" href="../index.html">🏠 หน้าหลัก</a>
+    <a class="homeLink" href="../../index.html">🏠 หน้าหลัก</a>
     <span id="userBadge">👤 ยังไม่ได้เข้าสู่ระบบ</span>
   </header>
 
   <div id="controls">
     <select id="feederSelect"></select>
     <input id="searchInput" type="text" placeholder="🔍 ค้นหาหมายเลขหม้อแปลง หรือชื่อสถานที่...">
+    <button id="viewToggleBtn">🗺 ดูแผนที่</button>
     <span id="progressBadge"></span>
   </div>
   <div id="filterRow">
@@ -134,6 +164,16 @@
   </div>
 
   <main id="listBody"></main>
+  <div id="mapView" style="display:none;">
+    <div id="mapEl"></div>
+    <button id="locateBtn">📍 ตำแหน่งของฉัน</button>
+    <div id="mapLegend">
+      <span><i class="dot unverified"></i>ยังไม่ตรวจ</span>
+      <span><i class="dot verified"></i>ตรวจแล้ว</span>
+      <span><i class="dot mismatch"></i>คลาดเคลื่อน</span>
+      <span><i class="dot me"></i>ตำแหน่งฉัน</span>
+    </div>
+  </div>
 </div>
 
 <div id="detailOverlay">
@@ -302,7 +342,7 @@ function trStatus(d){
   if(d.verified && d.verified.status) return 'verified';
   return 'unverified';
 }
-function renderList(){
+function getFilteredTransformers(){
   const list = getTransformers(currentFeeder);
   const q = document.getElementById('searchInput').value.trim().toLowerCase();
   const filtered = list.filter(d=>{
@@ -311,6 +351,10 @@ function renderList(){
     const matchFilter = currentFilter==='all' || status===currentFilter;
     return matchQ && matchFilter;
   });
+  return { list, filtered };
+}
+function renderList(){
+  const { list, filtered } = getFilteredTransformers();
   const verifiedCount = list.filter(d=>trStatus(d)!=='unverified').length;
   document.getElementById('progressBadge').textContent = `ตรวจแล้ว ${verifiedCount}/${list.length}`;
   const body = document.getElementById('listBody');
@@ -330,19 +374,100 @@ function renderList(){
     row.addEventListener('click', ()=>openDetail(row.dataset.id));
   });
 }
+function refreshView(){
+  if(isMapView){ renderMapMarkers(); } else { renderList(); }
+}
 document.getElementById('feederSelect').addEventListener('change', e=>{
   currentFeeder = e.target.value;
   document.getElementById('searchInput').value = '';
-  renderList();
+  refreshView();
+  if(isMapView) fitMapToMarkers();
 });
-document.getElementById('searchInput').addEventListener('input', renderList);
+document.getElementById('searchInput').addEventListener('input', refreshView);
 document.querySelectorAll('.filter-chip').forEach(chip=>{
   chip.addEventListener('click', ()=>{
     document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
     chip.classList.add('active');
     currentFilter = chip.dataset.filter;
-    renderList();
+    refreshView();
   });
+});
+
+// ============ มุมมองแผนที่ — แสดงจุดหม้อแปลงตามสถานะ + ตำแหน่งปัจจุบันของผู้สำรวจ ============
+let isMapView = false;
+let leafletMap = null;
+let markerLayer = null;
+let meMarker = null;
+let meWatchId = null;
+
+document.getElementById('viewToggleBtn').addEventListener('click', ()=>{
+  isMapView = !isMapView;
+  document.getElementById('listBody').style.display = isMapView ? 'none' : '';
+  document.getElementById('mapView').style.display = isMapView ? 'flex' : 'none';
+  document.getElementById('viewToggleBtn').textContent = isMapView ? '📋 ดูรายการ' : '🗺 ดูแผนที่';
+  if(isMapView){
+    if(!leafletMap) initMap();
+    setTimeout(()=>{ leafletMap.invalidateSize(); renderMapMarkers(); fitMapToMarkers(); }, 50);
+  }
+});
+function initMap(){
+  leafletMap = L.map('mapEl', { zoomControl:true }).setView([8.35, 98.76], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 20, attribution: '© OpenStreetMap'
+  }).addTo(leafletMap);
+  markerLayer = L.layerGroup().addTo(leafletMap);
+}
+function renderMapMarkers(){
+  if(!leafletMap) return;
+  markerLayer.clearLayers();
+  const { filtered } = getFilteredTransformers();
+  const withGps = filtered.filter(d=>d.lat != null && d.lon != null);
+  withGps.forEach(d=>{
+    const status = trStatus(d);
+    const icon = L.divIcon({ className:'', html:`<div class="tr-marker ${status}" style="width:18px;height:18px;"></div>`,
+      iconSize:[18,18], iconAnchor:[9,9] });
+    const marker = L.marker([d.lat, d.lon], { icon }).addTo(markerLayer);
+    const popupHtml = `<b>${escapeHtml(d.id)}</b><br>${escapeHtml(d.desc||'')}<br>${escapeHtml(d.rating||'')}
+      <button class="map-popup-btn" onclick="openDetail('${d.id.replace(/'/g,"\\'")}')">📍 ตรวจสอบ / ดูรายละเอียด</button>`;
+    marker.bindPopup(popupHtml);
+  });
+  const noGpsCount = filtered.length - withGps.length;
+  if(noGpsCount > 0 && !document.getElementById('mapNoGpsNote')){
+    const note = document.createElement('div');
+    note.id = 'mapNoGpsNote';
+    note.style.cssText = 'position:absolute;top:10px;left:14px;right:14px;background:#fff3cd;color:#7a5c00;'+
+      'padding:6px 12px;border-radius:6px;font-size:.75rem;z-index:500;box-shadow:0 2px 6px rgba(0,0,0,.15);';
+    document.getElementById('mapView').appendChild(note);
+  }
+  const existingNote = document.getElementById('mapNoGpsNote');
+  if(existingNote){
+    if(noGpsCount > 0){ existingNote.textContent = `⚠ มี ${noGpsCount} ตัวที่ยังไม่มีพิกัดบันทึกไว้ ไม่แสดงบนแผนที่ (ตรวจสอบเพื่อบันทึกพิกัดแรกได้จากหน้ารายการ)`; existingNote.style.display=''; }
+    else existingNote.style.display = 'none';
+  }
+}
+function fitMapToMarkers(){
+  const { filtered } = getFilteredTransformers();
+  const withGps = filtered.filter(d=>d.lat != null && d.lon != null);
+  if(!withGps.length) return;
+  const bounds = L.latLngBounds(withGps.map(d=>[d.lat, d.lon]));
+  leafletMap.fitBounds(bounds, { padding:[30,30], maxZoom:17 });
+}
+document.getElementById('locateBtn').addEventListener('click', ()=>{
+  if(!navigator.geolocation){ showToast('อุปกรณ์นี้ไม่รองรับ GPS','err'); return; }
+  const btn = document.getElementById('locateBtn');
+  btn.textContent = '⏳ กำลังค้นหา...';
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const { latitude, longitude } = pos.coords;
+    btn.textContent = '📍 ตำแหน่งของฉัน';
+    if(meMarker) leafletMap.removeLayer(meMarker);
+    const icon = L.divIcon({ className:'', html:'<div class="me-marker" style="width:16px;height:16px;"></div>',
+      iconSize:[16,16], iconAnchor:[8,8] });
+    meMarker = L.marker([latitude, longitude], { icon, zIndexOffset:1000 }).addTo(leafletMap);
+    leafletMap.setView([latitude, longitude], 17);
+  }, ()=>{
+    btn.textContent = '📍 ตำแหน่งของฉัน';
+    showToast('ไม่สามารถระบุตำแหน่งได้ — ตรวจสอบการอนุญาตเข้าถึงตำแหน่ง','err');
+  }, { enableHighAccuracy:true, timeout:10000 });
 });
 
 // ============ หน้ารายละเอียด + ตรวจสอบพิกัด + ถ่ายรูป + บันทึก ============
@@ -444,7 +569,7 @@ function openDetail(id){
           if(updatedDevice.lat != null){ d.lat = updatedDevice.lat; d.lon = updatedDevice.lon; }
           showToast('บันทึกผลตรวจสอบแล้ว','ok');
           document.getElementById('detailOverlay').classList.remove('show');
-          renderList();
+          refreshView();
         } else {
           showToast('บันทึกไม่สำเร็จ: '+(json.error||json.message||''),'err');
         }
