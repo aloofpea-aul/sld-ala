@@ -313,9 +313,12 @@
   #seqSearchWrap{display:flex;align-items:center;gap:10px;padding:8px 18px;border-bottom:1px solid var(--line);flex-shrink:0;}
   #seqBulkWrap{display:flex;align-items:center;gap:8px;padding:6px 18px;border-bottom:1px solid var(--line);
     flex-shrink:0;flex-wrap:wrap;}
-  #seqSelectAllBtn, #seqClearAllBtn{border:1px solid var(--pea-purple);background:#fff;color:var(--pea-purple);
+  #seqSelectAllBtn{border:1px solid var(--pea-purple);background:#fff;color:var(--pea-purple);
     border-radius:6px;padding:6px 12px;font-family:inherit;font-size:.78rem;cursor:pointer;}
-  #seqSelectAllBtn:hover, #seqClearAllBtn:hover{background:var(--pea-purple);color:#fff;}
+  #seqSelectAllBtn:hover{background:var(--pea-purple);color:#fff;}
+  #seqClearAllBtn{border:1px solid var(--bad);background:#fff;color:var(--bad);
+    border-radius:6px;padding:6px 12px;font-family:inherit;font-size:.78rem;cursor:pointer;}
+  #seqClearAllBtn:hover{background:var(--bad);color:#fff;}
   #seqBulkNote{font-size:.72rem;color:var(--muted);}
   #seqSearchInput{flex:1;padding:8px 12px;border-radius:6px;border:1px solid var(--line);font-family:inherit;font-size:.85rem;}
   #seqSearchCount{font-size:.76rem;color:var(--muted);white-space:nowrap;}
@@ -2225,18 +2228,32 @@ async function bulkSetSeqVerified(checked){
   if(!f) return;
   const visibleRows = [...document.querySelectorAll('#seqBody .seq-row:not(.seq-hidden)')].filter(r=>r.dataset.id);
   if(!visibleRows.length){ showToast('ไม่มีรายการให้ตั้งค่า','err'); return; }
-  const label = checked ? 'เลือกทั้งหมด' : 'ล้างทั้งหมด';
-  if(!confirm(`${label}: จะตั้งค่ายืนยันลำดับของอุปกรณ์ที่กำลังแสดงอยู่ ${visibleRows.length} รายการ เป็น "${checked?'ตรวจสอบแล้ว':'ยังไม่ได้ตรวจสอบ'}" ต้องการดำเนินการต่อหรือไม่?`)) return;
-  let done = 0;
-  for(const row of visibleRows){
+  // นับว่าในรายการที่กำลังแสดงอยู่ มีกี่ตัวที่ "ค่าจะเปลี่ยนจริง" (ของเดิมตรงข้ามกับที่จะตั้งใหม่) เพื่อโชว์ให้เห็นผลกระทบจริงก่อนกดยืนยัน
+  const willChange = visibleRows.filter(row=>{
     const dev = f.devices.find(x=>x.id===row.dataset.id);
-    if(!dev || !!dev.sequenceVerified === checked){ done++; continue; } // ข้ามตัวที่ค่าตรงอยู่แล้ว ไม่ต้องยิงซ้ำ
+    return dev && !!dev.sequenceVerified !== checked;
+  });
+  if(!willChange.length){
+    showToast(checked ? 'ทุกรายการที่แสดงอยู่ยืนยันไว้แล้วทั้งหมด ไม่มีอะไรต้องเปลี่ยน' : 'ทุกรายการที่แสดงอยู่ยังไม่ได้ยืนยันอยู่แล้ว ไม่มีอะไรต้องเปลี่ยน', 'ok');
+    return;
+  }
+  const label = checked ? 'เลือกทั้งหมด' : 'ล้างทั้งหมด';
+  let msg;
+  if(checked){
+    msg = `จะตั้งค่า "ตรวจสอบแล้ว" ให้อุปกรณ์ ${willChange.length} รายการ (จากทั้งหมดที่แสดงอยู่ ${visibleRows.length} รายการ) ต้องการดำเนินการต่อหรือไม่?`;
+  } else {
+    msg = `⚠️ คำเตือน: ใน ${willChange.length} รายการที่จะถูกล้าง มีบางส่วนที่เคย "ยืนยันถูกต้องแล้ว" ไว้ก่อนหน้านี้ — การกดล้างจะทำให้สถานะยืนยันของอุปกรณ์เหล่านั้นหายไป ต้องไปติ๊กยืนยันใหม่เองทีละตัวอีกครั้ง (ข้อมูลอื่นของอุปกรณ์ เช่น จุดต่อ/ขนาด จะไม่หายไปด้วย กระทบแค่สถานะยืนยันเท่านั้น)\n\nต้องการล้างค่ายืนยันของ ${willChange.length} รายการนี้จริงหรือไม่?`;
+  }
+  if(!confirm(msg)) return;
+  let done = 0;
+  for(const row of willChange){
+    const dev = f.devices.find(x=>x.id===row.dataset.id);
     dev.sequenceVerified = checked;
-    showToast(`💾 กำลังบันทึก... (${done+1}/${visibleRows.length})`, 'saving');
+    showToast(`💾 กำลังบันทึก... (${done+1}/${willChange.length})`, 'saving');
     await persistDeviceQuiet(f.id, dev); // เวอร์ชันเงียบ ไม่โชว์ toast ซ้อนทับทีละตัวระหว่างทำเป็นชุด
     done++;
   }
-  showToast(`${label}เสร็จแล้ว (${visibleRows.length} รายการ)`, 'ok');
+  showToast(`${label}เสร็จแล้ว (${willChange.length} รายการ)`, 'ok');
   renderSeqList(f.id);
   if(selectedFeeder === f.id) renderFeederDetail(f);
 }
