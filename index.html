@@ -2259,15 +2259,47 @@ async function bulkSetSeqVerified(checked){
     msg = `⚠️ คำเตือน: ใน ${willChange.length} รายการที่จะถูกล้าง มีบางส่วนที่เคย "ยืนยันถูกต้องแล้ว" ไว้ก่อนหน้านี้ — การกดล้างจะทำให้สถานะยืนยันของอุปกรณ์เหล่านั้นหายไป ต้องไปติ๊กยืนยันใหม่เองทีละตัวอีกครั้ง (ข้อมูลอื่นของอุปกรณ์ เช่น จุดต่อ/ขนาด จะไม่หายไปด้วย กระทบแค่สถานะยืนยันเท่านั้น)\n\nต้องการล้างค่ายืนยันของ ${willChange.length} รายการนี้จริงหรือไม่?`;
   }
   if(!confirm(msg)) return;
-  let done = 0;
-  for(const row of willChange){
-    const dev = f.devices.find(x=>x.id===row.dataset.id);
-    dev.sequenceVerified = checked;
-    showToast(`💾 กำลังบันทึก... (${done+1}/${willChange.length})`, 'saving');
-    await persistDeviceQuiet(f.id, dev); // เวอร์ชันเงียบ ไม่โชว์ toast ซ้อนทับทีละตัวระหว่างทำเป็นชุด
-    done++;
+
+  const deviceIds = willChange.map(row=>row.dataset.id);
+  if(!GAS_URL){
+    // โหมดยังไม่เชื่อม Sheet — อัปเดตในเบราว์เซอร์นี้ทีละตัวได้เลย (ไม่มี network round-trip ให้ต้องกังวลเรื่องพลาดกลางทาง)
+    deviceIds.forEach(id=>{
+      const dev = f.devices.find(x=>x.id===id);
+      if(dev){ dev.sequenceVerified = checked; setLocalOverride(f.id, id, dev); }
+    });
+    showToast(`${label}เสร็จแล้ว (${deviceIds.length} รายการ) — บันทึกไว้ในเบราว์เซอร์นี้`, 'ok');
+    renderSeqList(f.id);
+    if(selectedFeeder === f.id) renderFeederDetail(f);
+    return;
   }
-  showToast(`${label}เสร็จแล้ว (${willChange.length} รายการ)`, 'ok');
+
+  showToast(`💾 กำลังบันทึก ${deviceIds.length} รายการพร้อมกัน...`, 'saving');
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'bulkSetVerified', feeder:f.id, deviceIds, verified:checked,
+        changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
+    });
+    const json = await res.json();
+    if(json.ok){
+      // อัปเดตในหน่วยความจำเฉพาะตัวที่เซิร์ฟเวอร์ยืนยันว่าเจอและบันทึกจริง — ตัวที่ "notFound" จะไม่ถูกอัปเดตค่าในจอ กันข้อมูลจอไม่ตรงกับ Sheet จริง
+      const notFoundSet = new Set(json.notFound || []);
+      deviceIds.forEach(id=>{
+        if(notFoundSet.has(id)) return;
+        const dev = f.devices.find(x=>x.id===id);
+        if(dev) dev.sequenceVerified = checked;
+      });
+      if(json.notFound && json.notFound.length){
+        showToast(`${label}สำเร็จ ${json.updatedCount} รายการ — แต่หา ${json.notFound.length} รายการไม่เจอใน Google Sheet (อาจถูกลบ/เปลี่ยนรหัสไปแล้ว) กรุณารีเฟรชหน้าเว็บแล้วลองใหม่`, 'err');
+      } else {
+        showToast(`${label}เสร็จแล้ว (${json.updatedCount} รายการ) — ยืนยันบันทึกสำเร็จครบทุกตัวจาก Google Sheet`, 'ok');
+      }
+    } else {
+      showToast('บันทึกไม่สำเร็จทั้งชุด: '+(json.error||json.message||'')+' — ไม่มีตัวไหนถูกเปลี่ยนค่าเลย ลองใหม่อีกครั้ง','err');
+    }
+  }catch(e){
+    showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ — ไม่มีตัวไหนถูกบันทึกเลย (ปลอดภัย ไม่มีข้อมูลครึ่งๆ กลางๆ) ลองใหม่อีกครั้ง','err');
+  }
   renderSeqList(f.id);
   if(selectedFeeder === f.id) renderFeederDetail(f);
 }
