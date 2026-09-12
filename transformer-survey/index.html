@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>สำรวจหม้อแปลง - กฟส.อ่าวลึก</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#4b2e83">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="สำรวจหม้อแปลง">
+<meta name="mobile-web-app-capable" content="yes">
+
+<style>
+  :root{
+    --pea-purple:#4b2e83; --pea-purple-dark:#341f5c;
+    --paper:#f4f1ea; --ink:#222; --muted:#777; --line:#e3ddd0;
+    --good:#2e7d32; --bad:#c0392b; --warn:#a0650a;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--paper);color:var(--ink);
+    font-family:"Noto Sans Thai","TH Sarabun New","Segoe UI",sans-serif;overflow-x:hidden;}
+  #app{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow-x:hidden;}
+
+  header{background:var(--pea-purple);color:#fff;padding:12px 20px;padding-top:calc(12px + env(safe-area-inset-top));
+    padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right));
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0;}
+  header h1{font-size:1rem;margin:0;font-weight:700;flex:1 1 auto;}
+  header a.homeLink{color:#fff;text-decoration:none;font-size:.8rem;opacity:.85;}
+  #userBadge{font-size:.72rem;padding:4px 10px;border-radius:12px;background:rgba(255,255,255,.15);
+    color:#fff;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;}
+  #userBadge.unauth{background:#e35d5d;font-weight:700;}
+
+  #controls{display:flex;gap:8px;padding:10px 16px;flex-wrap:wrap;align-items:center;background:var(--pea-purple-dark);flex-shrink:0;}
+  #feederSelect{padding:8px 10px;border-radius:6px;border:none;font-family:inherit;font-size:.85rem;}
+  #searchInput{flex:1;min-width:140px;padding:8px 12px;border-radius:6px;border:none;font-family:inherit;font-size:16px;}
+  #progressBadge{color:#fff;font-size:.78rem;background:rgba(255,255,255,.15);padding:5px 10px;border-radius:12px;white-space:nowrap;}
+
+  #filterRow{display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap;background:#fff;border-bottom:1px solid var(--line);flex-shrink:0;}
+  .filter-chip{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:14px;
+    padding:5px 12px;font-size:.75rem;cursor:pointer;font-family:inherit;}
+  .filter-chip.active{background:var(--pea-purple);color:#fff;border-color:var(--pea-purple);}
+
+  main{flex:1;overflow:auto;padding:6px 0 calc(6px + env(safe-area-inset-bottom));}
+  .tr-row{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #f0f0f0;cursor:pointer;}
+  .tr-row:hover{background:#fbfaf7;}
+  .tr-row .tr-status-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
+  .tr-status-dot.verified{background:var(--good);}
+  .tr-status-dot.mismatch{background:var(--bad);}
+  .tr-status-dot.unverified{background:#ccc;}
+  .tr-info{flex:1;min-width:0;}
+  .tr-id{font-weight:700;font-size:.88rem;}
+  .tr-desc{font-size:.78rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .tr-rating{font-size:.75rem;color:var(--pea-purple);font-weight:700;flex-shrink:0;}
+  .empty-note{padding:30px 20px;text-align:center;color:var(--muted);font-size:.85rem;}
+
+  #detailOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
+    align-items:center;justify-content:center;z-index:6000;padding:16px;}
+  #detailOverlay.show{display:flex;}
+  #detailPanel{background:#fff;border-radius:12px;max-width:440px;width:100%;max-height:88vh;
+    display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.35);}
+  #detailHeader{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;
+    align-items:center;justify-content:space-between;flex-shrink:0;}
+  #detailHeader h2{margin:0;font-size:1rem;color:var(--pea-purple);}
+  #detailHeader button{border:none;background:none;font-size:1.2rem;cursor:pointer;color:var(--muted);}
+  #detailBody{padding:16px 18px;overflow:auto;flex:1;}
+  .detail-info{font-size:.85rem;background:var(--paper);border-radius:8px;padding:10px 12px;margin-bottom:12px;line-height:1.7;}
+  .detail-info b{color:var(--ink);}
+  .gps-section{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px;}
+  .gps-label{font-weight:700;font-size:.82rem;margin-bottom:8px;}
+  .gps-recorded{font-size:.76rem;color:var(--muted);margin-bottom:8px;}
+  .gps-btn{background:var(--pea-purple);color:#fff;border:none;border-radius:6px;padding:9px 14px;
+    font-family:inherit;font-size:.82rem;cursor:pointer;width:100%;}
+  .gps-result{font-size:.8rem;margin-top:10px;line-height:1.5;}
+  .gps-ok{color:var(--good);font-weight:700;}
+  .gps-bad{color:var(--bad);font-weight:700;}
+  .status-row{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;}
+  .status-row label{display:flex;align-items:center;gap:8px;font-size:.85rem;cursor:pointer;padding:8px 10px;
+    border:1px solid var(--line);border-radius:6px;}
+  .status-row input[type=text], textarea, input[type=file]{width:100%;padding:8px 10px;border-radius:6px;
+    border:1px solid var(--line);font-family:inherit;font-size:.85rem;box-sizing:border-box;margin-bottom:10px;}
+  .photo-preview{max-width:150px;border-radius:6px;border:1px solid var(--line);display:block;margin-bottom:10px;}
+  .save-btn{background:var(--pea-purple);color:#fff;border:none;border-radius:6px;padding:10px 16px;
+    font-family:inherit;font-size:.88rem;cursor:pointer;width:100%;font-weight:700;}
+  button:disabled{opacity:.6;cursor:not-allowed !important;}
+
+  #userPickOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
+    align-items:center;justify-content:center;z-index:7000;padding:20px;}
+  #userPickOverlay.show{display:flex;}
+  #userPickPanel{background:#fff;border-radius:10px;max-width:380px;width:100%;padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.35);}
+  #userPickHeader{font-weight:700;color:var(--pea-purple);margin-bottom:8px;font-size:1rem;}
+  #userPickInput, #userPickPassword{width:100%;padding:9px 12px;border-radius:6px;border:1px solid var(--line);
+    font-family:inherit;font-size:.9rem;box-sizing:border-box;}
+  #userPickSuggest{position:relative;}
+  .suggest-list{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line);
+    border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.18);max-height:200px;overflow:auto;z-index:50;margin-top:2px;}
+  .suggest-item{padding:8px 12px;cursor:pointer;font-size:.85rem;border-bottom:1px solid #f2f2f2;}
+  .suggest-item:hover{background:var(--paper);}
+  #userPickErr{color:var(--bad);font-size:.78rem;margin:6px 0 0;}
+  .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;}
+  .modal-actions button{padding:9px 16px;border-radius:6px;border:1px solid var(--line);background:#fff;
+    cursor:pointer;font-family:inherit;font-size:.85rem;}
+  .modal-actions .btn-primary{background:var(--pea-purple);color:#fff;border-color:var(--pea-purple);}
+
+  #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#222;color:#fff;
+    padding:9px 18px;border-radius:20px;font-size:.8rem;z-index:8000;opacity:0;transition:opacity .25s;pointer-events:none;}
+  #toast.show{opacity:.95;}
+  #toast.err{background:var(--bad);}
+  #toast.ok{background:var(--good);}
+  #toast.saving{background:var(--pea-purple);}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🔌 สำรวจหม้อแปลง</h1>
+    <a class="homeLink" href="../index.html">🏠 หน้าหลัก</a>
+    <span id="userBadge">👤 ยังไม่ได้เข้าสู่ระบบ</span>
+  </header>
+
+  <div id="controls">
+    <select id="feederSelect"></select>
+    <input id="searchInput" type="text" placeholder="🔍 ค้นหาหมายเลขหม้อแปลง หรือชื่อสถานที่...">
+    <span id="progressBadge"></span>
+  </div>
+  <div id="filterRow">
+    <button class="filter-chip active" data-filter="all">ทั้งหมด</button>
+    <button class="filter-chip" data-filter="unverified">ยังไม่ตรวจ</button>
+    <button class="filter-chip" data-filter="verified">ตรวจแล้ว</button>
+    <button class="filter-chip" data-filter="mismatch">ตำแหน่งคลาดเคลื่อน</button>
+  </div>
+
+  <main id="listBody"></main>
+</div>
+
+<div id="detailOverlay">
+  <div id="detailPanel">
+    <div id="detailHeader">
+      <h2 id="detailTitle"></h2>
+      <button id="detailCloseBtn">✕</button>
+    </div>
+    <div id="detailBody"></div>
+  </div>
+</div>
+
+<div id="userPickOverlay">
+  <div id="userPickPanel">
+    <div id="userPickHeader"><span>👤 เข้าสู่ระบบ</span></div>
+    <p style="font-size:.8rem;color:var(--muted);margin:0 0 10px;">บัญชีเดียวกับที่ใช้ในทุกแอปของหน่วยงาน</p>
+    <div id="userPickSuggest">
+      <input type="text" id="userPickInput" placeholder="พิมพ์ชื่อ..." autocomplete="off">
+      <div id="userPickList" class="suggest-list" style="display:none;"></div>
+    </div>
+    <input type="password" id="userPickPassword" placeholder="รหัสผ่าน" autocomplete="off" style="margin-top:8px;">
+    <p id="userPickErr"></p>
+    <div class="modal-actions">
+      <button id="userPickCancelBtn">ยกเลิก</button>
+      <button class="btn-primary" id="userPickConfirmBtn">ยืนยัน</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbzqsOqJJQlF4SS1UX_YM6hmhd3lUXCVocAJiK7l28Tzddms9SQ9Z7p-iYgrrgd2B2meWw/exec";
+let GAS_URL = localStorage.getItem('sld_gas_url') || DEFAULT_GAS_URL;
+const GPS_TOLERANCE_M = 10;
+
+function showToast(msg, kind){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'show ' + (kind||'');
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(()=>{ t.className=''; }, 3200);
+}
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function gpsDistanceMeters(lat1, lon1, lat2, lon2){
+  const R = 6371000;
+  const toRad = x => x * Math.PI / 180;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ============ ระบุตัวตนผู้ใช้งาน — ใช้บัญชีเดียวกับทุกแอปในหน่วยงาน (localStorage ร่วมกัน) ============
+let MEMBER_LIST = [];
+let CURRENT_USER = {
+  name: localStorage.getItem('pea_aoluek_username') || '',
+  password: localStorage.getItem('pea_aoluek_password') || '',
+  role: null
+};
+async function loadMemberList(){
+  try{
+    const url = GAS_URL + (GAS_URL.includes('?') ? '&' : '?') + 'action=getMemberList';
+    const res = await fetch(url);
+    const json = await res.json();
+    MEMBER_LIST = json.members || [];
+  }catch(e){ MEMBER_LIST = []; }
+  if(CURRENT_USER.name && CURRENT_USER.password){
+    CURRENT_USER.role = await verifyCredentials(CURRENT_USER.name, CURRENT_USER.password);
+  }
+  updateUserBadge();
+}
+async function verifyCredentials(name, password){
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'whoAmI', changedBy:name, changedByPassword:password })
+    });
+    const json = await res.json();
+    return json.role || null;
+  }catch(e){ return null; }
+}
+function updateUserBadge(){
+  const badge = document.getElementById('userBadge');
+  if(CURRENT_USER.name && CURRENT_USER.role){
+    badge.textContent = `👤 ${CURRENT_USER.name} (${CURRENT_USER.role==='admin'?'ผู้ดูแลระบบ':'สมาชิก'})`;
+    badge.classList.remove('unauth');
+  } else if(CURRENT_USER.name){
+    badge.textContent = `⚠ ${CURRENT_USER.name} — ชื่อหรือรหัสผ่านไม่ถูกต้อง`;
+    badge.classList.add('unauth');
+  } else {
+    badge.textContent = '👤 ยังไม่ได้เข้าสู่ระบบ';
+    badge.classList.add('unauth');
+  }
+}
+document.getElementById('userBadge').addEventListener('click', showUserPicker);
+function showUserPicker(){
+  return new Promise(resolve=>{
+    const overlay = document.getElementById('userPickOverlay');
+    const input = document.getElementById('userPickInput');
+    const passInput = document.getElementById('userPickPassword');
+    const list = document.getElementById('userPickList');
+    const err = document.getElementById('userPickErr');
+    input.value = CURRENT_USER.name || ''; passInput.value = ''; err.textContent = '';
+    overlay.classList.add('show');
+    setTimeout(()=>input.focus(), 50);
+    function renderList(){
+      const q = input.value.trim().toLowerCase();
+      const matches = MEMBER_LIST.filter(m => !q || m.name.toLowerCase().includes(q)).slice(0, 10);
+      list.innerHTML = matches.map(m=>
+        `<div class="suggest-item" data-name="${escapeHtml(m.name)}">${escapeHtml(m.name)} <span style="color:var(--muted);font-size:.75rem;">${m.role==='admin'?'ผู้ดูแลระบบ':'สมาชิก'}</span></div>`
+      ).join('') || `<div class="suggest-item" style="color:var(--muted);">ไม่พบชื่อนี้</div>`;
+      list.querySelectorAll('.suggest-item[data-name]').forEach(item=>{
+        item.addEventListener('mousedown', e=>{ e.preventDefault(); input.value = item.dataset.name; list.style.display='none'; passInput.focus(); });
+      });
+      list.style.display = 'block';
+    }
+    input.oninput = renderList; input.onfocus = renderList;
+    input.onblur = ()=> setTimeout(()=>{ list.style.display='none'; }, 150);
+    async function confirmLogin(){
+      const name = input.value.trim(); const password = passInput.value;
+      if(!name){ err.textContent = 'กรุณาระบุชื่อ'; return; }
+      if(!password){ err.textContent = 'กรุณากรอกรหัสผ่าน'; return; }
+      const btn = document.getElementById('userPickConfirmBtn');
+      btn.disabled = true; btn.textContent = '⏳ กำลังตรวจสอบ...';
+      const role = await verifyCredentials(name, password);
+      btn.disabled = false; btn.textContent = 'ยืนยัน';
+      if(!role){ err.textContent = 'ชื่อหรือรหัสผ่านไม่ถูกต้อง'; return; }
+      CURRENT_USER = { name, password, role };
+      localStorage.setItem('pea_aoluek_username', name);
+      localStorage.setItem('pea_aoluek_password', password);
+      updateUserBadge(); overlay.classList.remove('show'); resolve(true);
+    }
+    document.getElementById('userPickConfirmBtn').onclick = confirmLogin;
+    passInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); confirmLogin(); } });
+    document.getElementById('userPickCancelBtn').onclick = ()=>{ overlay.classList.remove('show'); resolve(false); };
+  });
+}
+async function requireAuth(){
+  if(CURRENT_USER.name && CURRENT_USER.role) return true;
+  return await showUserPicker();
+}
+
+// ============ ข้อมูลหม้อแปลง — ดึงจากฐานข้อมูลเดียวกับ Single Line Diagram ============
+let DATA = { feeders: [] };
+let currentFeeder = null;
+let currentFilter = 'all';
+
+async function loadData(){
+  try{
+    const res = await fetch(GAS_URL);
+    const json = await res.json();
+    if(json && json.feeders) DATA = json;
+  }catch(e){ showToast('โหลดข้อมูลจาก Google Sheet ไม่สำเร็จ','err'); }
+  const sel = document.getElementById('feederSelect');
+  sel.innerHTML = DATA.feeders.map(f=>`<option value="${f.id}">${f.id}</option>`).join('');
+  currentFeeder = DATA.feeders[0]?.id;
+  renderList();
+}
+function getTransformers(feederId){
+  const f = DATA.feeders.find(x=>x.id===feederId);
+  if(!f) return [];
+  return f.devices.filter(d=>d.type==='TRANSFORMER');
+}
+function trStatus(d){
+  if(d.verified && d.verified.status === 'mismatch') return 'mismatch';
+  if(d.verified && d.verified.status) return 'verified';
+  return 'unverified';
+}
+function renderList(){
+  const list = getTransformers(currentFeeder);
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const filtered = list.filter(d=>{
+    const matchQ = !q || d.id.toLowerCase().includes(q) || (d.desc||'').toLowerCase().includes(q);
+    const status = trStatus(d);
+    const matchFilter = currentFilter==='all' || status===currentFilter;
+    return matchQ && matchFilter;
+  });
+  const verifiedCount = list.filter(d=>trStatus(d)!=='unverified').length;
+  document.getElementById('progressBadge').textContent = `ตรวจแล้ว ${verifiedCount}/${list.length}`;
+  const body = document.getElementById('listBody');
+  if(!filtered.length){ body.innerHTML = '<div class="empty-note">ไม่พบหม้อแปลงที่ตรงเงื่อนไข</div>'; return; }
+  body.innerHTML = filtered.map(d=>{
+    const status = trStatus(d);
+    return `<div class="tr-row" data-id="${d.id}">
+      <span class="tr-status-dot ${status}"></span>
+      <div class="tr-info">
+        <div class="tr-id">${escapeHtml(d.id)}</div>
+        <div class="tr-desc">${escapeHtml(d.desc||'(ไม่ทราบจุดติดตั้ง)')}</div>
+      </div>
+      <span class="tr-rating">${escapeHtml(d.rating||'')}</span>
+    </div>`;
+  }).join('');
+  body.querySelectorAll('.tr-row').forEach(row=>{
+    row.addEventListener('click', ()=>openDetail(row.dataset.id));
+  });
+}
+document.getElementById('feederSelect').addEventListener('change', e=>{
+  currentFeeder = e.target.value;
+  document.getElementById('searchInput').value = '';
+  renderList();
+});
+document.getElementById('searchInput').addEventListener('input', renderList);
+document.querySelectorAll('.filter-chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+    chip.classList.add('active');
+    currentFilter = chip.dataset.filter;
+    renderList();
+  });
+});
+
+// ============ หน้ารายละเอียด + ตรวจสอบพิกัด + ถ่ายรูป + บันทึก ============
+function openDetail(id){
+  const f = DATA.feeders.find(x=>x.id===currentFeeder);
+  const d = f.devices.find(x=>x.id===id);
+  if(!d) return;
+  document.getElementById('detailTitle').textContent = d.id;
+  const hasGps = d.lat != null && d.lon != null;
+  const verified = d.verified || {};
+  const html = `
+    <div class="detail-info">
+      ขนาด: <b>${escapeHtml(d.rating||'ไม่ทราบ')}</b><br>
+      จุดติดตั้ง: <b>${escapeHtml(d.desc||'ไม่ทราบ')}</b><br>
+      วงจร: <b>${f.id}</b> · เฟส: <b>${escapeHtml(d.phase||'-')}</b>
+      ${verified.status ? `<br>ผลตรวจล่าสุด: <b>${verified.status==='mismatch'?'⚠ ตำแหน่งคลาดเคลื่อน':'✓ ถูกต้อง'}</b> (${escapeHtml(verified.date||'')})` : ''}
+    </div>
+    <div class="gps-section">
+      <div class="gps-label">📍 ตรวจสอบพิกัดตำแหน่ง (ยอมรับคลาดเคลื่อนได้ไม่เกิน ${GPS_TOLERANCE_M} เมตร)</div>
+      ${hasGps ? `<div class="gps-recorded">พิกัดที่บันทึกไว้: ${d.lat.toFixed(6)}, ${d.lon.toFixed(6)}</div>`
+               : `<div class="gps-recorded" style="color:var(--bad);">⚠ ยังไม่มีพิกัดบันทึกไว้ในระบบ — ตรวจสอบเพื่อบันทึกพิกัดแรกได้เลย</div>`}
+      <button type="button" class="gps-btn" id="gpsCheckBtn">📍 จับพิกัดตำแหน่งปัจจุบัน</button>
+      <div class="gps-result" id="gpsResult"></div>
+    </div>
+    <div class="status-row">
+      <label><input type="radio" name="tr-status" value="match" checked> ✅ ตรวจแล้ว ถูกต้องตรงกับข้อมูล</label>
+      <label><input type="radio" name="tr-status" value="mismatch"> ❌ ไม่ถูกต้อง (ระบุปัญหาที่พบ)</label>
+    </div>
+    <textarea id="trNote" placeholder="หมายเหตุ (ถ้ามี)" rows="2"></textarea>
+    <label style="font-size:.78rem;color:var(--muted);display:block;margin-bottom:6px;">📷 ถ่ายรูปหม้อแปลงจริง</label>
+    <input type="file" id="trPhoto" accept="image/*" capture="environment">
+    <img class="photo-preview" id="trPhotoPreview" style="display:none;">
+    <button class="save-btn" id="trSaveBtn" style="margin-top:8px;">บันทึกผลตรวจสอบ</button>
+  `;
+  document.getElementById('detailBody').innerHTML = html;
+  document.getElementById('detailOverlay').classList.add('show');
+
+  const gpsResult = document.getElementById('gpsResult');
+  let capturedLat = null, capturedLon = null;
+  document.getElementById('gpsCheckBtn').addEventListener('click', ()=>{
+    if(!navigator.geolocation){ gpsResult.innerHTML = '<span class="gps-bad">อุปกรณ์นี้ไม่รองรับ GPS</span>'; return; }
+    gpsResult.textContent = 'กำลังค้นหาตำแหน่ง...';
+    navigator.geolocation.getCurrentPosition(pos=>{
+      const { latitude, longitude, accuracy } = pos.coords;
+      capturedLat = latitude; capturedLon = longitude;
+      if(hasGps){
+        const dist = gpsDistanceMeters(latitude, longitude, d.lat, d.lon);
+        const ok = dist <= GPS_TOLERANCE_M;
+        gpsResult.innerHTML = `พิกัดที่จับได้: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (~${Math.round(accuracy||0)}ม.)<br>` +
+          `ห่างจากที่บันทึกไว้ <b>${dist.toFixed(1)} เมตร</b> — ` +
+          (ok ? `<span class="gps-ok">✅ ตำแหน่งตรงกัน</span>` : `<span class="gps-bad">⚠ คลาดเคลื่อนเกินเกณฑ์</span>`);
+      } else {
+        gpsResult.innerHTML = `พิกัดที่จับได้: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (~${Math.round(accuracy||0)}ม.)<br><span class="gps-ok">จะบันทึกเป็นพิกัดแรกของหม้อแปลงนี้</span>`;
+      }
+    }, ()=>{ gpsResult.innerHTML = '<span class="gps-bad">ไม่สามารถระบุตำแหน่งได้ — ตรวจสอบการอนุญาตเข้าถึงตำแหน่ง</span>'; },
+    { enableHighAccuracy:true, timeout:10000 });
+  });
+
+  let photoFile = null;
+  document.getElementById('trPhoto').addEventListener('change', e=>{
+    photoFile = e.target.files[0];
+    const preview = document.getElementById('trPhotoPreview');
+    if(photoFile){
+      const reader = new FileReader();
+      reader.onload = ev=>{ preview.src = ev.target.result; preview.style.display='block'; };
+      reader.readAsDataURL(photoFile);
+    }
+  });
+
+  document.getElementById('trSaveBtn').addEventListener('click', async ()=>{
+    if(!(await requireAuth())) return;
+    const status = document.querySelector('input[name="tr-status"]:checked').value;
+    const note = document.getElementById('trNote').value.trim();
+    const saveBtn = document.getElementById('trSaveBtn');
+    saveBtn.disabled = true; saveBtn.textContent = '⏳ กำลังบันทึก...';
+    showToast(photoFile ? '💾 กำลังอัปโหลดรูปถ่ายและบันทึก...' : '💾 กำลังบันทึก...', 'saving');
+
+    const finish = async (photoBase64, photoMime)=>{
+      let gpsDistance = null, gpsWithinTolerance = null;
+      if(capturedLat != null && d.lat != null){
+        gpsDistance = gpsDistanceMeters(capturedLat, capturedLon, d.lat, d.lon);
+        gpsWithinTolerance = gpsDistance <= GPS_TOLERANCE_M;
+      }
+      const verification = { status, note, inspector: CURRENT_USER.name,
+        gpsLat: capturedLat, gpsLon: capturedLon, gpsDistanceMeters: gpsDistance, gpsWithinTolerance,
+        date: new Date().toISOString().slice(0,10) };
+      const updatedDevice = {};
+      if(capturedLat != null && d.lat == null){ updatedDevice.lat = capturedLat; updatedDevice.lon = capturedLon; }
+      try{
+        const res = await fetch(GAS_URL, {
+          method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+          body: JSON.stringify({ action:'fieldVerify', feeder:currentFeeder, deviceId:d.id, verification,
+            photoBase64, photoMimeType: photoMime, changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password,
+            updatedDevice: Object.keys(updatedDevice).length ? updatedDevice : null })
+        });
+        const json = await res.json();
+        if(json.ok){
+          d.verified = { status, date: verification.date };
+          if(updatedDevice.lat != null){ d.lat = updatedDevice.lat; d.lon = updatedDevice.lon; }
+          showToast('บันทึกผลตรวจสอบแล้ว','ok');
+          document.getElementById('detailOverlay').classList.remove('show');
+          renderList();
+        } else {
+          showToast('บันทึกไม่สำเร็จ: '+(json.error||json.message||''),'err');
+        }
+      }catch(e){ showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ','err'); }
+      saveBtn.disabled = false; saveBtn.textContent = 'บันทึกผลตรวจสอบ';
+    };
+
+    if(photoFile){
+      const reader = new FileReader();
+      reader.onload = async ev=>{
+        const base64 = ev.target.result.split(',')[1];
+        await finish(base64, photoFile.type);
+      };
+      reader.readAsDataURL(photoFile);
+    } else {
+      await finish(null, null);
+    }
+  });
+}
+document.getElementById('detailCloseBtn').addEventListener('click', ()=>{
+  document.getElementById('detailOverlay').classList.remove('show');
+});
+document.getElementById('detailOverlay').addEventListener('click', e=>{
+  if(e.target.id === 'detailOverlay') e.currentTarget.classList.remove('show');
+});
+
+loadMemberList();
+loadData();
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+</script>
+</body>
+</html>
