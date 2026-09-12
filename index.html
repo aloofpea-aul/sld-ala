@@ -2,8 +2,21 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Single Line Diagram - สถานีไฟฟ้าอ่าวลึก</title>
+
+<!-- PWA: ติดตั้งขึ้นหน้าจอโฮมได้เหมือนแอปจริง -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#4b2e83">
+<link rel="icon" type="image/png" href="icon-192.png">
+<!-- iOS Safari ต้องใช้ tag เฉพาะเหล่านี้ถึงจะ "เพิ่มไปยังหน้าจอโฮม" แล้วเปิดแบบเต็มจอไม่มีแถบ Safari -->
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SLD อ่าวลึก">
+<!-- Android/Chrome -->
+<meta name="mobile-web-app-capable" content="yes">
+
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
@@ -536,6 +549,7 @@
       <button class="menuitem" id="settingsBtn">⚙ ตั้งค่าการเชื่อมต่อ Google Sheet</button>
       <button class="menuitem" id="usernameBtn">🙋 เปลี่ยนชื่อผู้ใช้งาน</button>
       <button class="menuitem" id="manageMembersBtn">🛡 จัดการรายชื่อสมาชิก (Admin)</button>
+      <button class="menuitem" id="installAppBtn" style="display:none;">📲 เพิ่มไปยังหน้าจอโฮม (ติดตั้งเป็นแอป)</button>
       <div class="menuitem" style="color:var(--muted);font-size:.78rem;cursor:default;line-height:1.4;">
         ที่มา: แบบ Single Line Diagram (AutoCAD) · เปิด "โหมดแก้ไข" เพื่อแก้ไข/เติมข้อมูลที่ขาดได้โดยตรง
       </div>
@@ -3025,6 +3039,42 @@ document.getElementById('moreMenuOverlay').addEventListener('click', e=>{
 });
 
 loadData();
+
+// ============ PWA: ลงทะเบียน Service Worker + คำแนะนำ "เพิ่มไปยังหน้าจอโฮม" ============
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{}); // เงียบๆ พอ ถ้าล้มเหลวไม่กระทบการใช้งานหลัก
+  });
+}
+// Android/Chrome: ดักจับ prompt ของเบราว์เซอร์เอง แล้วเอามาผูกกับปุ่มของเราเอง (ดูสวยงามกว่าแบบเริ่มต้น)
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', e=>{
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const btn = document.getElementById('installAppBtn');
+  if(btn) btn.style.display = '';
+});
+function triggerInstallPrompt(){
+  if(deferredInstallPrompt){
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt = null;
+    const btn = document.getElementById('installAppBtn');
+    if(btn) btn.style.display = 'none';
+  } else {
+    // iOS Safari ไม่รองรับ prompt อัตโนมัติ — ต้องสอนขั้นตอนเอง
+    showIosInstallHint();
+  }
+}
+function showIosInstallHint(){
+  alert('วิธีติดตั้งบน iPhone/iPad:\n\n1. แตะปุ่มแชร์ (สี่เหลี่ยมมีลูกศรชี้ขึ้น) แถบด้านล่างของ Safari\n2. เลื่อนหาแล้วแตะ "เพิ่มไปยังหน้าจอโฮม" (Add to Home Screen)\n3. แตะ "เพิ่ม" มุมขวาบน\n\nจะมีไอคอนแอปขึ้นที่หน้าจอโฮมเหมือนแอปทั่วไปเลยครับ');
+}
+const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+if(isIos && !isStandalone){
+  const btn = document.getElementById('installAppBtn');
+  if(btn) btn.style.display = '';
+}
+document.getElementById('installAppBtn')?.addEventListener('click', triggerInstallPrompt);
 </script>
 </body>
 </html>
