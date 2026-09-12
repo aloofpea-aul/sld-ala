@@ -36,13 +36,18 @@
   #userPickOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
     align-items:center;justify-content:center;z-index:7000;padding:20px;}
   #userPickOverlay.show{display:flex;}
-  #userPickPanel{background:#fff;border-radius:10px;max-width:380px;width:100%;padding:18px 20px;
+  #registerOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
+    align-items:center;justify-content:center;z-index:7100;padding:20px;}
+  #registerOverlay.show{display:flex;}
+  #userPickPanel, .user-pick-panel-style{background:#fff;border-radius:10px;max-width:380px;width:100%;padding:18px 20px;
     box-shadow:0 12px 40px rgba(0,0,0,.35);}
   #userPickHeader{font-weight:700;color:var(--pea-purple);margin-bottom:8px;font-size:1rem;}
   #userPickInput{width:100%;padding:9px 12px;border-radius:6px;border:1px solid var(--line);
     font-family:inherit;font-size:.9rem;box-sizing:border-box;}
-  #userPickPassword{width:100%;padding:9px 12px;border-radius:6px;border:1px solid var(--line);
+  #userPickPassword, #regName, #regPassword, #regPasswordConfirm{width:100%;padding:9px 12px;border-radius:6px;border:1px solid var(--line);
     font-family:inherit;font-size:.9rem;box-sizing:border-box;}
+  #userPickRegisterLink{margin-top:14px;text-align:center;font-size:.8rem;color:var(--muted);}
+  #userPickRegisterLink a{color:var(--pea-purple);font-weight:700;text-decoration:underline;cursor:pointer;}
   #manageMembersOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
     align-items:center;justify-content:center;z-index:5500;padding:20px;}
   #manageMembersOverlay.show{display:flex;}
@@ -50,6 +55,23 @@
     max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.35);}
   #manageMembersBody{padding:16px 20px;overflow:auto;flex:1;min-height:0;}
   .mm-add-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+  .mm-section-title{font-weight:700;font-size:.85rem;color:var(--pea-purple);margin:14px 0 8px;}
+  .mm-section-title:first-child{margin-top:0;}
+  #mmPendingSection{background:#fff8ee;border:1px solid #f0ad4e;border-radius:8px;padding:10px 12px;margin-bottom:14px;}
+  #mmPendingSection .mm-section-title{margin-top:0;color:#a0650a;}
+  .mm-pending-row{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid #f5e2c0;
+    font-size:.83rem;flex-wrap:wrap;}
+  .mm-pending-row:last-child{border-bottom:none;}
+  .mm-pending-name{font-weight:700;flex:1 1 auto;}
+  .mm-pending-time{font-size:.72rem;color:var(--muted);flex:0 0 auto;}
+  .mm-pending-actions{display:flex;gap:6px;flex:0 0 auto;}
+  .mm-pending-actions select{padding:4px 6px;border-radius:5px;border:1px solid var(--line);font-family:inherit;font-size:.76rem;}
+  .mm-approve-btn{border:1px solid var(--good);background:#fff;color:var(--good);border-radius:5px;
+    padding:4px 10px;cursor:pointer;font-size:.78rem;}
+  .mm-approve-btn:hover{background:var(--good);color:#fff;}
+  .mm-reject-btn{border:1px solid var(--bad);background:#fff;color:var(--bad);border-radius:5px;
+    padding:4px 10px;cursor:pointer;font-size:.78rem;}
+  .mm-reject-btn:hover{background:var(--bad);color:#fff;}
   .mm-add-row input{flex:1 1 160px;padding:8px 10px;border-radius:6px;border:1px solid var(--line);font-family:inherit;}
   .mm-add-row select{flex:1 1 200px;padding:8px 10px;border-radius:6px;border:1px solid var(--line);font-family:inherit;}
   .mm-row{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #f0f0f0;font-size:.85rem;}
@@ -514,6 +536,11 @@
       <button id="manageMembersCloseBtn">✕</button>
     </div>
     <div id="manageMembersBody">
+      <div id="mmPendingSection">
+        <div class="mm-section-title">🕐 คำขอสมัครที่รออนุมัติ</div>
+        <div id="mmPendingList"></div>
+      </div>
+      <div class="mm-section-title">สมาชิกทั้งหมด</div>
       <div class="mm-add-row">
         <input type="text" id="mmNewName" placeholder="ชื่อ-นามสกุล">
         <input type="text" id="mmNewPassword" placeholder="ตั้งรหัสผ่านให้คนนี้">
@@ -530,7 +557,7 @@
 </div>
 <div id="userPickOverlay">
   <div id="userPickPanel">
-    <div id="userPickHeader"><span>👤 เลือกชื่อผู้ใช้งาน</span></div>
+    <div id="userPickHeader"><span>👤 เข้าสู่ระบบ</span></div>
     <p class="report-note" style="margin:0 0 10px;">ต้องเลือก/พิมพ์ชื่อจากรายชื่อที่แอดมินอนุมัติไว้ก่อน พร้อมกรอกรหัสผ่านของตัวเอง ถึงจะแก้ไข/ยืนยันข้อมูลได้ (ใช้บันทึกในประวัติการเปลี่ยนแปลงว่าใครแก้อะไร)</p>
     <div style="position:relative;">
       <input type="text" id="userPickInput" placeholder="พิมพ์ชื่อ..." autocomplete="off">
@@ -541,6 +568,21 @@
     <div class="device-modal-actions" style="margin-top:14px;">
       <button id="userPickCancelBtn">ยกเลิก</button>
       <button class="btn-primary" id="userPickConfirmBtn">ยืนยัน</button>
+    </div>
+    <div id="userPickRegisterLink">ยังไม่มีชื่อในระบบ? <a href="#" id="showRegisterLink">สมัครสมาชิกใหม่</a></div>
+  </div>
+</div>
+<div id="registerOverlay">
+  <div class="user-pick-panel-style" id="registerPanel">
+    <div id="userPickHeader"><span>📝 สมัครสมาชิกใหม่</span></div>
+    <p class="report-note" style="margin:0 0 10px;">สมัครแล้วต้อง<b>รอผู้ดูแลระบบอนุมัติก่อน</b> ถึงจะแก้ไข/ยืนยันข้อมูลได้ (ระหว่างรออนุมัติ ยังดูผังได้ตามปกติ)</p>
+    <input type="text" id="regName" placeholder="ชื่อ-นามสกุล" autocomplete="off">
+    <input type="password" id="regPassword" placeholder="ตั้งรหัสผ่าน" autocomplete="off" style="margin-top:8px;">
+    <input type="password" id="regPasswordConfirm" placeholder="ยืนยันรหัสผ่านอีกครั้ง" autocomplete="off" style="margin-top:8px;">
+    <p id="registerErr" style="color:var(--bad);font-size:.78rem;margin:6px 0 0;"></p>
+    <div class="device-modal-actions" style="margin-top:14px;">
+      <button id="registerCancelBtn">ยกเลิก</button>
+      <button class="btn-primary" id="registerSubmitBtn">ส่งคำขอสมัคร</button>
     </div>
   </div>
 </div>
@@ -791,6 +833,48 @@ async function requireAuth(){
   return await showUserPicker();
 }
 
+// ============ สมัครสมาชิกใหม่ — ส่งคำขอแล้วต้องรอแอดมินอนุมัติก่อนถึงจะแก้ไขข้อมูลได้ ============
+document.getElementById('showRegisterLink').addEventListener('click', e=>{
+  e.preventDefault();
+  document.getElementById('userPickOverlay').classList.remove('show');
+  document.getElementById('regName').value = document.getElementById('userPickInput').value || '';
+  document.getElementById('regPassword').value = '';
+  document.getElementById('regPasswordConfirm').value = '';
+  document.getElementById('registerErr').textContent = '';
+  document.getElementById('registerOverlay').classList.add('show');
+});
+document.getElementById('registerCancelBtn').addEventListener('click', ()=>{
+  document.getElementById('registerOverlay').classList.remove('show');
+  document.getElementById('userPickOverlay').classList.add('show');
+});
+document.getElementById('registerSubmitBtn').addEventListener('click', async ()=>{
+  const name = document.getElementById('regName').value.trim();
+  const password = document.getElementById('regPassword').value;
+  const passwordConfirm = document.getElementById('regPasswordConfirm').value;
+  const err = document.getElementById('registerErr');
+  if(!name){ err.textContent = 'กรุณาระบุชื่อ'; return; }
+  if(!password){ err.textContent = 'กรุณาตั้งรหัสผ่าน'; return; }
+  if(password !== passwordConfirm){ err.textContent = 'รหัสผ่านทั้ง 2 ช่องไม่ตรงกัน'; return; }
+  const btn = document.getElementById('registerSubmitBtn');
+  const originalText = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ กำลังส่งคำขอ...';
+  err.textContent = '';
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'register', newName:name, newPassword:password })
+    });
+    const json = await res.json();
+    if(json.ok){
+      document.getElementById('registerOverlay').classList.remove('show');
+      showToast(`ส่งคำขอสมัครสำหรับ "${name}" แล้ว — รอผู้ดูแลระบบอนุมัติก่อนถึงจะแก้ไขข้อมูลได้`, 'ok');
+    } else {
+      err.textContent = json.error || 'สมัครไม่สำเร็จ';
+    }
+  }catch(e){ err.textContent = 'เชื่อมต่อ Google Sheet ไม่สำเร็จ'; }
+  btn.disabled = false; btn.textContent = originalText;
+});
+
 // ============ จัดการรายชื่อสมาชิก (Admin เท่านั้น) — เพิ่ม/ลบชื่อผ่านเมนูในเว็บ ไม่ต้องเข้า Google Sheet เอง ============
 async function openManageMembers(){
   document.getElementById('moreMenuOverlay').classList.remove('show');
@@ -803,7 +887,67 @@ async function openManageMembers(){
   document.getElementById('manageMembersOverlay').classList.add('show');
   document.getElementById('mmMsg').textContent = '';
   document.getElementById('mmNewName').value = '';
+  await renderPendingList();
   await renderManageMembersList();
+}
+async function renderPendingList(){
+  const el = document.getElementById('mmPendingList');
+  el.innerHTML = '<p class="report-note">กำลังโหลด...</p>';
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'getPendingList', changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
+    });
+    const json = await res.json();
+    if(!json.ok){ el.innerHTML = `<p class="report-note" style="color:var(--bad);">${escapeHtml(json.error||'โหลดไม่สำเร็จ')}</p>`; return; }
+    if(!json.pending.length){ el.innerHTML = '<p class="report-note">ไม่มีคำขอค้างรออนุมัติ</p>'; return; }
+    el.innerHTML = json.pending.map(p => `
+      <div class="mm-pending-row" data-name="${escapeHtml(p.name)}">
+        <span class="mm-pending-name">${escapeHtml(p.name)}</span>
+        <span class="mm-pending-time">${escapeHtml(p.timestamp)}</span>
+        <div class="mm-pending-actions">
+          <select class="mm-pending-role">
+            <option value="member" ${p.requestedRole==='member'?'selected':''}>สมาชิก</option>
+            <option value="admin" ${p.requestedRole==='admin'?'selected':''}>ผู้ดูแลระบบ</option>
+          </select>
+          <button class="mm-approve-btn">✓ อนุมัติ</button>
+          <button class="mm-reject-btn">✕ ปฏิเสธ</button>
+        </div>
+      </div>`).join('');
+    el.querySelectorAll('.mm-pending-row').forEach(row=>{
+      const name = row.dataset.name;
+      row.querySelector('.mm-approve-btn').addEventListener('click', async ()=>{
+        const role = row.querySelector('.mm-pending-role').value;
+        const btn = row.querySelector('.mm-approve-btn');
+        btn.disabled = true; btn.textContent = '⏳...';
+        try{
+          const res = await fetch(GAS_URL, {
+            method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+            body: JSON.stringify({ action:'approvePending', targetName:name, approvedRole:role,
+              changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
+          });
+          const json2 = await res.json();
+          if(json2.ok){ showToast(`อนุมัติ "${name}" แล้ว`,'ok'); await renderPendingList(); await renderManageMembersList(); }
+          else { showToast('อนุมัติไม่สำเร็จ: '+(json2.error||''),'err'); btn.disabled=false; btn.textContent='✓ อนุมัติ'; }
+        }catch(e){ showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ','err'); btn.disabled=false; btn.textContent='✓ อนุมัติ'; }
+      });
+      row.querySelector('.mm-reject-btn').addEventListener('click', async ()=>{
+        if(!confirm(`ปฏิเสธคำขอสมัครของ "${name}" ?`)) return;
+        const btn = row.querySelector('.mm-reject-btn');
+        btn.disabled = true; btn.textContent = '⏳...';
+        try{
+          const res = await fetch(GAS_URL, {
+            method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+            body: JSON.stringify({ action:'rejectPending', targetName:name,
+              changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
+          });
+          const json2 = await res.json();
+          if(json2.ok){ showToast(`ปฏิเสธ "${name}" แล้ว`,'ok'); await renderPendingList(); }
+          else { showToast('ปฏิเสธไม่สำเร็จ: '+(json2.error||''),'err'); btn.disabled=false; btn.textContent='✕ ปฏิเสธ'; }
+        }catch(e){ showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ','err'); btn.disabled=false; btn.textContent='✕ ปฏิเสธ'; }
+      });
+    });
+  }catch(e){ el.innerHTML = '<p class="report-note" style="color:var(--bad);">เชื่อมต่อ Google Sheet ไม่สำเร็จ</p>'; }
 }
 async function renderManageMembersList(){
   const listEl = document.getElementById('mmList');
