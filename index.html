@@ -311,6 +311,12 @@
   #seqUsageHint{padding:8px 18px;background:#f5f1fa;color:var(--pea-purple);font-size:.78rem;
     border-bottom:1px solid var(--line);flex-shrink:0;}
   #seqSearchWrap{display:flex;align-items:center;gap:10px;padding:8px 18px;border-bottom:1px solid var(--line);flex-shrink:0;}
+  #seqBulkWrap{display:flex;align-items:center;gap:8px;padding:6px 18px;border-bottom:1px solid var(--line);
+    flex-shrink:0;flex-wrap:wrap;}
+  #seqSelectAllBtn, #seqClearAllBtn{border:1px solid var(--pea-purple);background:#fff;color:var(--pea-purple);
+    border-radius:6px;padding:6px 12px;font-family:inherit;font-size:.78rem;cursor:pointer;}
+  #seqSelectAllBtn:hover, #seqClearAllBtn:hover{background:var(--pea-purple);color:#fff;}
+  #seqBulkNote{font-size:.72rem;color:var(--muted);}
   #seqSearchInput{flex:1;padding:8px 12px;border-radius:6px;border:1px solid var(--line);font-family:inherit;font-size:.85rem;}
   #seqSearchCount{font-size:.76rem;color:var(--muted);white-space:nowrap;}
   .seq-row.seq-hidden{display:none;}
@@ -341,6 +347,10 @@
     padding:14px;margin-top:10px;background:var(--paper);border-radius:8px;flex-wrap:wrap;}
   .sp-verify-label{display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:.88rem;}
   .sp-verify-label input{width:20px;height:20px;cursor:pointer;}
+  #spVerifyConfirm{font-size:.8rem;margin-top:5px;margin-left:28px;min-height:1.2em;}
+  #spVerifyConfirm.sp-verify-confirm-ok{color:var(--good);font-weight:700;}
+  #spVerifyConfirm.sp-verify-confirm-cleared{color:var(--muted);}
+  #spVerifyConfirm.sp-verify-confirm-err{color:var(--bad);font-weight:700;}
   #spEditBtn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:8px 14px;
     cursor:pointer;font-family:inherit;font-size:.85rem;}
   #spEditBtn:hover{background:var(--paper);}
@@ -600,6 +610,11 @@
     <div id="seqSearchWrap">
       <input id="seqSearchInput" type="text" placeholder="🔍 ค้นหารหัสอุปกรณ์ หรือชื่อสถานที่...">
       <span id="seqSearchCount"></span>
+    </div>
+    <div id="seqBulkWrap">
+      <button id="seqSelectAllBtn">✓ เลือกทั้งหมด</button>
+      <button id="seqClearAllBtn">☐ ล้างทั้งหมด</button>
+      <span id="seqBulkNote">(ใช้ได้กับรายการที่กำลังแสดงอยู่ตอนนี้เท่านั้น — ถ้ากำลังค้นหาอยู่ จะมีผลแค่ผลลัพธ์ที่กรองไว้)</span>
     </div>
     <div id="seqUsageHint">👉 <b>แตะที่แถว</b> เพื่อดูตำแหน่ง/แก้ไข/จัดกิ่ง &nbsp;·&nbsp; <b>ติ๊กขวา</b> ถ้าตรวจแล้วถูกต้อง</div>
     <div id="seqBody"></div>
@@ -2085,9 +2100,12 @@ function showSeqPreview(f, id, children, sizeCache, fid){
 
   // ส่วนที่ 2: ยืนยันถูกต้อง + แก้ไข (2 ปุ่มหลักที่ใช้บ่อยสุด)
   html += `<div class="sp-actions">
-    <label class="sp-verify-label">
-      <input type="checkbox" id="spVerifyChk" ${d.sequenceVerified?'checked':''}> ✓ ตรวจสอบแล้ว ถูกต้องตรงกับแบบ A0
-    </label>
+    <div>
+      <label class="sp-verify-label">
+        <input type="checkbox" id="spVerifyChk" ${d.sequenceVerified?'checked':''}> ✓ ตรวจสอบแล้ว ถูกต้องตรงกับแบบ A0
+      </label>
+      <div id="spVerifyConfirm" class="${d.sequenceVerified?'sp-verify-confirm-ok':''}">${d.sequenceVerified?'✅ ยืนยันถูกต้องแล้ว':''}</div>
+    </div>
     <button id="spEditBtn">✏ แก้ไขจุดต่อ / ข้อมูล</button>
   </div>`;
 
@@ -2125,9 +2143,21 @@ function showSeqPreview(f, id, children, sizeCache, fid){
 
   document.getElementById('spVerifyChk').addEventListener('change', async e=>{
     const wasChecked = e.target.checked;
+    const confirmEl = document.getElementById('spVerifyConfirm');
     if(!(await requireAuth())){ e.target.checked = !wasChecked; return; }
     d.sequenceVerified = wasChecked;
-    await persistDevice(f.id, d);
+    confirmEl.textContent = wasChecked ? '⏳ กำลังบันทึก...' : '';
+    confirmEl.className = '';
+    const result = await persistDeviceQuiet(f.id, d);
+    if(result.ok){
+      confirmEl.textContent = wasChecked ? '✅ ยืนยันถูกต้องแล้ว' : '↺ ยกเลิกการยืนยันแล้ว';
+      confirmEl.className = wasChecked ? 'sp-verify-confirm-ok' : 'sp-verify-confirm-cleared';
+    } else {
+      confirmEl.textContent = '⚠ บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง';
+      confirmEl.className = 'sp-verify-confirm-err';
+      e.target.checked = !wasChecked;
+      d.sequenceVerified = !wasChecked;
+    }
     renderSeqList(fid);
     if(selectedFeeder === f.id) renderFeederDetail(f);
   });
@@ -2187,6 +2217,31 @@ function filterSeqRows(){
   document.getElementById('seqSearchCount').textContent = q ? `พบ ${shown} รายการ` : '';
 }
 document.getElementById('seqSearchInput').addEventListener('input', filterSeqRows);
+
+/** ตั้งค่ายืนยันลำดับ (ติ๊ก/ล้าง) ให้ทุกแถวที่กำลังแสดงอยู่ตอนนี้พร้อมกัน (เคารพตัวกรองค้นหาถ้ากำลังค้นหาอยู่) */
+async function bulkSetSeqVerified(checked){
+  if(!(await requireAuth())) return;
+  const f = DATA.feeders.find(x=>x.id===seqCurrentFeeder);
+  if(!f) return;
+  const visibleRows = [...document.querySelectorAll('#seqBody .seq-row:not(.seq-hidden)')].filter(r=>r.dataset.id);
+  if(!visibleRows.length){ showToast('ไม่มีรายการให้ตั้งค่า','err'); return; }
+  const label = checked ? 'เลือกทั้งหมด' : 'ล้างทั้งหมด';
+  if(!confirm(`${label}: จะตั้งค่ายืนยันลำดับของอุปกรณ์ที่กำลังแสดงอยู่ ${visibleRows.length} รายการ เป็น "${checked?'ตรวจสอบแล้ว':'ยังไม่ได้ตรวจสอบ'}" ต้องการดำเนินการต่อหรือไม่?`)) return;
+  let done = 0;
+  for(const row of visibleRows){
+    const dev = f.devices.find(x=>x.id===row.dataset.id);
+    if(!dev || !!dev.sequenceVerified === checked){ done++; continue; } // ข้ามตัวที่ค่าตรงอยู่แล้ว ไม่ต้องยิงซ้ำ
+    dev.sequenceVerified = checked;
+    showToast(`💾 กำลังบันทึก... (${done+1}/${visibleRows.length})`, 'saving');
+    await persistDeviceQuiet(f.id, dev); // เวอร์ชันเงียบ ไม่โชว์ toast ซ้อนทับทีละตัวระหว่างทำเป็นชุด
+    done++;
+  }
+  showToast(`${label}เสร็จแล้ว (${visibleRows.length} รายการ)`, 'ok');
+  renderSeqList(f.id);
+  if(selectedFeeder === f.id) renderFeederDetail(f);
+}
+document.getElementById('seqSelectAllBtn').addEventListener('click', ()=>bulkSetSeqVerified(true));
+document.getElementById('seqClearAllBtn').addEventListener('click', ()=>bulkSetSeqVerified(false));
 
 function findDeviceAnyFeeder(id){
   for(const f of DATA.feeders){
@@ -2398,6 +2453,22 @@ async function persistDevice(feederId, device){
   } else {
     setLocalOverride(feederId, device.id, device);
     showToast('บันทึกไว้ในเบราว์เซอร์นี้ (ยังไม่เชื่อม Google Sheet — กด ⚙ เพื่อเชื่อมต่อ)','ok');
+  }
+}
+/** เหมือน persistDevice แต่ไม่โชว์ toast ของตัวเอง (เอาไว้ใช้ตอนบันทึกหลายรายการติดกันเป็นชุด จะได้ไม่มี toast ซ้อนตีกัน) — ไม่เช็ค auth ซ้ำ (ให้ผู้เรียกเช็คครั้งเดียวก่อนเข้า loop) */
+async function persistDeviceQuiet(feederId, device){
+  if(GAS_URL){
+    try{
+      const res = await fetch(GAS_URL, {
+        method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({ action:'upsert', feeder:feederId, device, changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
+      });
+      return await res.json();
+    }catch(e){ return { ok:false, error:'connection failed' }; }
+  } else {
+    setLocalOverride(feederId, device.id, device);
+    return { ok:true };
   }
 }
 async function persistDelete(feederId, devId){
