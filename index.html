@@ -1582,7 +1582,8 @@ function initLeafletMap(){
     return;
   }
   try{
-  leafletMap = new longdo.Map({ placeholder: document.getElementById('mapDiv'), zoom:14, lastView:false });
+  leafletMap = new longdo.Map({ placeholder: document.getElementById('mapDiv'),
+    location: { lon: 98.76, lat: 8.35 }, zoom:12, lastView:false });
   leafletMap.Ui.DPad.visible(false);
   leafletMap.Ui.Zoombar.visible(false); // ใช้ปุ่มซูมของเราเอง (มุมล่างขวา) แทนปุ่มเริ่มต้นของ Longdo
 
@@ -1729,10 +1730,12 @@ function hexToRgba(hex, alpha){
 }
 function fitMapBounds(){
   if(!leafletMap || !mapMarkers.length) return;
-  const pts = [];
-  DATA.feeders.forEach(f=> f.devices.forEach(d=>{ if(d.lat!=null && d.lon!=null) pts.push({lon:d.lon, lat:d.lat}); }));
-  if(!pts.length) return;
-  leafletMap.bound(pts);
+  try{
+    const pts = [];
+    DATA.feeders.forEach(f=> f.devices.forEach(d=>{ if(d.lat!=null && d.lon!=null) pts.push({lon:d.lon, lat:d.lat}); }));
+    if(!pts.length) return;
+    leafletMap.bound(pts);
+  }catch(e){ console.warn('fitMapBounds ปรับกรอบอัตโนมัติไม่สำเร็จ (ไม่กระทบการใช้งานหลัก — แผนที่ยังอยู่ตำแหน่งอ่าวลึกที่ตั้งไว้ตอนเริ่มต้น)', e); }
 }
 function selectFeederForSidebar(fid){
   selectedFeeder = fid;
