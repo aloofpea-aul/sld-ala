@@ -318,6 +318,8 @@
     border-bottom:1px solid #f0f0f0;font-size:.88rem;}
   .device-view-row .k{color:var(--muted);flex:0 0 auto;}
   .device-view-row .v{font-weight:600;text-align:right;}
+  .device-view-row .v-warn{font-weight:700;text-align:right;color:#e0a030;}
+  .device-view-row .v-bad{font-weight:700;text-align:right;color:#c62828;}
   .device-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
   .device-modal-actions button{padding:9px 16px;border-radius:6px;border:1px solid var(--line);
     background:#fff;cursor:pointer;font-family:inherit;font-size:.85rem;}
@@ -2468,11 +2470,18 @@ function renderDeviceModalView(f, d){
     rows.push(['ตรวจสอบภาคสนาม', (d.verified.status==='mismatch'?'⚠ แก้ไขแล้ว':'✓ ตรวจแล้ว') + ' ('+(d.verified.date||'')+')']);
   }
   if(d.opsa){
-    rows.push(['% โหลด (OPSA)', d.opsa.loadPercent!=null ? d.opsa.loadPercent+'%' : '-']);
+    const lp = d.opsa.loadPercent;
+    let lpLabel = lp!=null ? lp+'%' : '-';
+    let lpClass = '';
+    if(lp!=null){
+      if(lp >= 100){ lpLabel += ' ⚠️ เกินพิกัด'; lpClass = ' class="v v-bad"'; }
+      else if(lp >= 80){ lpLabel += ' ⚠️ ใกล้เกิน'; lpClass = ' class="v v-warn"'; }
+    }
+    rows.push(['% โหลด (OPSA)', lpLabel, lpClass]);
     rows.push(['กระแส Ia/Ib/Ic', `${d.opsa.ia??'-'}/${d.opsa.ib??'-'}/${d.opsa.ic??'-'} A`]);
   }
   const html = `
-    <div>${rows.map(([k,v])=>`<div class="device-view-row"><span class="k">${escapeHtml(k)}</span><span class="v">${escapeHtml(String(v))}</span></div>`).join('')}</div>
+    <div>${rows.map(([k,v,cls])=>`<div class="device-view-row"><span class="k">${escapeHtml(k)}</span><span${cls||' class="v"'}>${escapeHtml(String(v))}</span></div>`).join('')}</div>
     <div class="device-modal-actions">
       <button class="btn-danger" id="dmDelBtn">ลบ</button>
       <button id="dmCloseBtn2">ปิด</button>
