@@ -453,6 +453,15 @@
   .report-table tr.total-row td{font-weight:700;background:#faf9f6;}
   .report-table td.drill:hover{background:#efe9fa;text-decoration:underline;color:var(--pea-purple-dark);}
   .report-table tr.drill-row:hover{background:#faf9f6;}
+  #a0gisFilterBar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px;}
+  .a0gis-filter-btn{border:1px solid var(--line);background:#fff;border-radius:16px;padding:5px 12px;
+    font-size:.76rem;cursor:pointer;color:var(--ink);white-space:nowrap;}
+  .a0gis-filter-btn:hover{border-color:var(--pea-purple);}
+  .a0gis-filter-btn.active{background:var(--pea-purple);color:#fff;border-color:var(--pea-purple);font-weight:700;}
+  #a0gisSearchBox{flex:1;min-width:160px;padding:6px 10px;border:1px solid var(--line);border-radius:16px;font-size:.78rem;}
+  .a0gis-fix-btn{border:1px solid var(--pea-purple);background:#fff;color:var(--pea-purple-dark);
+    border-radius:6px;padding:4px 10px;font-size:.75rem;cursor:pointer;white-space:nowrap;}
+  .a0gis-fix-btn:hover{background:var(--pea-purple);color:#fff;}
   .report-stat.drill:hover{border-color:var(--pea-purple);box-shadow:0 2px 8px rgba(75,46,131,.15);}
   .report-card{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px;}
   .report-stat{flex:1;min-width:140px;background:var(--paper);border:1px solid var(--line);
@@ -3037,12 +3046,83 @@ function simpleTable(rows, downloadName){
     ${rows.map(r=>`<tr>${headers.map(h=>`<td>${escapeHtml(String(r[h]==null?'':r[h]))}</td>`).join('')}</tr>`).join('')}
     </table>`;
 }
+function fixDeviceFromReport(deviceId){
+  let targetFeeder = null;
+  for(const f of DATA.feeders){
+    if(f.devices.some(d=>d.id===deviceId)){ targetFeeder = f.id; break; }
+  }
+  if(!targetFeeder){ showToast('ไม่พบอุปกรณ์นี้ในระบบปัจจุบัน (อาจถูกลบไปแล้ว)','err'); return; }
+  document.getElementById('reportOverlay').classList.remove('show');
+  editMode = true;
+  document.getElementById('editToggle').checked = true;
+  selectFeederForSidebar(targetFeeder);
+  openEditForm(deviceId);
+  setTimeout(()=>highlightAndScrollTo(deviceId), 80);
+}
+
+const A0GIS_STATUS_ORDER = { 'ไม่ตรงกัน':0, 'ไม่ระบุในแบบ':1, 'ไม่มีข้อมูล GIS':2, 'ตรงกัน':3 };
+let a0gisFilter = 'ไม่ตรงกัน'; // เปิดมาโฟกัสจุดที่ต้องแก้ก่อนเลย ไม่ต้องกรองเอง
+let a0gisSearch = '';
 function renderReportTabA0Gis(){
-  STATIC_REPORTS.__current = STATIC_REPORTS.a0vsGis;
-  document.getElementById('reportBody').innerHTML =
-    `<p class="report-note">เปรียบเทียบรหัส/ขนาดฟิวส์ระหว่างแบบ AutoCAD (A0) ต้นฉบับ กับฐานข้อมูล GIS ของ กฟภ. — 405 รายการ
-     (ไม่ตรงกัน 204 · ตรงกัน 56 · ไม่ระบุในแบบ 93 · ไม่มีข้อมูล GIS 52) ระบบใช้ค่าจากแบบ A0 เป็นหลักเมื่อไม่ตรงกัน</p>`
-    + simpleTable(STATIC_REPORTS.a0vsGis, 'a0_vs_gis_comparison.csv');
+  const all = STATIC_REPORTS.a0vsGis;
+  const counts = {};
+  all.forEach(r=>{ const s=r['สถานะเทียบ']; counts[s]=(counts[s]||0)+1; });
+  const filterDefs = [
+    {key:'all', label:'ทั้งหมด', count: all.length},
+    {key:'ไม่ตรงกัน', label:'🔴 ไม่ตรงกัน', count: counts['ไม่ตรงกัน']||0},
+    {key:'ตรงกัน', label:'🟢 ตรงกัน', count: counts['ตรงกัน']||0},
+    {key:'ไม่ระบุในแบบ', label:'⚪ ไม่ระบุในแบบ', count: counts['ไม่ระบุในแบบ']||0},
+    {key:'ไม่มีข้อมูล GIS', label:'⚪ ไม่มีข้อมูล GIS', count: counts['ไม่มีข้อมูล GIS']||0},
+  ];
+  let rows = a0gisFilter==='all' ? all.slice() : all.filter(r=>r['สถานะเทียบ']===a0gisFilter);
+  if(a0gisSearch.trim()){
+    const q = a0gisSearch.trim().toLowerCase();
+    rows = rows.filter(r => String(r['รหัสอุปกรณ์']).toLowerCase().includes(q)
+      || String(r['คำอธิบาย(แบบ A0)']).toLowerCase().includes(q));
+  }
+  rows.sort((a,b)=> (A0GIS_STATUS_ORDER[a['สถานะเทียบ']]??9) - (A0GIS_STATUS_ORDER[b['สถานะเทียบ']]??9)
+    || String(a['รหัสอุปกรณ์']).localeCompare(String(b['รหัสอุปกรณ์'])));
+  STATIC_REPORTS.__current = rows;
+
+  const statusBadge = s => {
+    if(s==='ไม่ตรงกัน') return `<span style="color:var(--bad);font-weight:700;">🔴 ${escapeHtml(s)}</span>`;
+    if(s==='ตรงกัน') return `<span style="color:var(--good,#2e7d32);font-weight:700;">🟢 ${escapeHtml(s)}</span>`;
+    return `<span style="color:var(--muted);">${escapeHtml(s)}</span>`;
+  };
+
+  const headers = ['รหัสอุปกรณ์','ประเภท','คำอธิบาย(แบบ A0)','ขนาดในแบบ_A0','ขนาดดิบจาก_GIS','สถานะเทียบ','ขนาดที่ใช้จริงตอนนี้'];
+  const tableHtml = !rows.length ? '<p class="report-note">ไม่พบรายการที่ตรงเงื่อนไข</p>' : `
+    <table class="report-table"><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}<th>แก้ไข</th></tr>
+    ${rows.map(r=>`<tr>
+        <td>${escapeHtml(r['รหัสอุปกรณ์'])}</td>
+        <td>${escapeHtml(r['ประเภท'])}</td>
+        <td>${escapeHtml(r['คำอธิบาย(แบบ A0)']||'')}</td>
+        <td>${escapeHtml(r['ขนาดในแบบ_A0'])}</td>
+        <td>${escapeHtml(r['ขนาดดิบจาก_GIS'])}</td>
+        <td>${statusBadge(r['สถานะเทียบ'])}</td>
+        <td>${escapeHtml(r['ขนาดที่ใช้จริงตอนนี้']||'')}</td>
+        <td><button class="a0gis-fix-btn" data-id="${escapeHtml(r['รหัสอุปกรณ์'])}">🔧 แก้ไข</button></td>
+      </tr>`).join('')}
+    </table>`;
+
+  document.getElementById('reportBody').innerHTML = `
+    <p class="report-note">เปรียบเทียบรหัส/ขนาดฟิวส์ระหว่างแบบ AutoCAD (A0) ต้นฉบับ กับฐานข้อมูล GIS ของ กฟภ. — ${all.length} รายการทั้งหมด
+     ระบบใช้ค่าจากแบบ A0 เป็นหลักเมื่อไม่ตรงกัน กด "🔧 แก้ไข" ที่แถวไหนก็ได้เพื่อเปิดหน้าแก้ไขอุปกรณ์นั้นทันที</p>
+    <div id="a0gisFilterBar">
+      ${filterDefs.map(fd=>`<button class="a0gis-filter-btn${a0gisFilter===fd.key?' active':''}" data-key="${fd.key}">${fd.label} (${fd.count})</button>`).join('')}
+      <input id="a0gisSearchBox" type="text" placeholder="ค้นหารหัสอุปกรณ์ / ชื่อสถานที่..." value="${escapeHtml(a0gisSearch)}">
+    </div>
+    <button class="report-download-btn" onclick="csvDownload('a0_vs_gis_comparison.csv', STATIC_REPORTS.__current)">⬇ ดาวน์โหลด CSV (เฉพาะที่กรองอยู่)</button>
+    ${tableHtml}`;
+
+  document.querySelectorAll('.a0gis-filter-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ a0gisFilter = btn.dataset.key; renderReportTabA0Gis(); });
+  });
+  const searchBox = document.getElementById('a0gisSearchBox');
+  searchBox.addEventListener('input', ()=>{ a0gisSearch = searchBox.value; renderReportTabA0Gis(); });
+  document.querySelectorAll('.a0gis-fix-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=> fixDeviceFromReport(btn.dataset.id));
+  });
 }
 function renderReportTabFuseBA(){
   STATIC_REPORTS.__current = STATIC_REPORTS.fuseBeforeAfter;
