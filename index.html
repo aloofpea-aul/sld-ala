@@ -120,6 +120,33 @@
   #diagramWrap.dragging{cursor:grabbing;}
   svg{width:100%;height:100%;display:block;user-select:none;}
   #mapDiv{position:absolute;inset:0;display:none;z-index:1;}
+
+  #loadingOverlay{position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%, #ffffff 0%, #f0eee8 75%);
+    padding:20px;text-align:center;transition:opacity .35s ease;}
+  #loadingOverlay.hide{opacity:0;pointer-events:none;}
+  #loadingIcon{font-size:3rem;margin-bottom:6px;animation:loadingPulse 1.6s ease-in-out infinite;}
+  @keyframes loadingPulse{0%,100%{transform:scale(1);opacity:.85;}50%{transform:scale(1.12);opacity:1;}}
+  #loadingOverlay h2{margin:0 0 4px;color:var(--pea-purple);font-size:1.15rem;}
+  .loading-sub{margin:0 0 18px;color:var(--muted);font-size:.85rem;}
+  #loadingSpinner{display:flex;gap:6px;margin-bottom:18px;}
+  #loadingSpinner span{width:8px;height:8px;border-radius:50%;background:var(--pea-purple);
+    animation:loadingDot 1s ease-in-out infinite;}
+  #loadingSpinner span:nth-child(2){animation-delay:.15s;}
+  #loadingSpinner span:nth-child(3){animation-delay:.3s;}
+  @keyframes loadingDot{0%,80%,100%{opacity:.25;transform:translateY(0);}40%{opacity:1;transform:translateY(-5px);}}
+  .loading-status{margin:0 0 22px;font-size:.8rem;color:var(--pea-purple);font-weight:600;}
+  #loadingTips{display:flex;flex-direction:column;gap:12px;max-width:420px;text-align:left;}
+  .tip-item{display:flex;align-items:flex-start;gap:10px;font-size:.8rem;color:var(--ink);
+    background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+    box-shadow:0 1px 4px rgba(0,0,0,.05);}
+  .tip-item span{flex:1;line-height:1.5;}
+  @media (max-width:600px){
+    #loadingIcon{font-size:2.3rem;}
+    #loadingOverlay h2{font-size:1rem;}
+    #loadingTips{max-width:100%;}
+    .tip-item{font-size:.75rem;padding:8px 10px;}
+  }
   /* ป้ายชื่อรหัสอุปกรณ์บนแผนที่จริง — ซ่อนไว้ตามปกติ (จุดเยอะเกินจะอ่านไม่ออก) โชว์เฉพาะตอนซูมเข้าใกล้พอ */
   .tr-map-hit{position:relative;}
   .map-device-label{display:none;position:absolute;top:-3px;left:50%;transform:translate(-50%,-100%);
@@ -518,6 +545,19 @@
         <button id="zoomOut">−</button>
       </div>
       <div id="hint">ลากเพื่อเลื่อนภาพ · หมุนล้อเมาส์เพื่อซูม</div>
+      <div id="loadingOverlay">
+        <div id="loadingIcon">⚡</div>
+        <h2>Single Line Diagram</h2>
+        <p class="loading-sub">สถานีไฟฟ้าอ่าวลึก · กฟส.อ่าวลึก กฟต.2</p>
+        <div id="loadingSpinner"><span></span><span></span><span></span></div>
+        <p class="loading-status">กำลังโหลดข้อมูลจาก Google Sheet...</p>
+        <div id="loadingTips">
+          <div class="tip-item">🖱 <span>คลิกเส้นวงจรในผัง เพื่อดูรายการอุปกรณ์ทั้งหมด</span></div>
+          <div class="tip-item">🔍 <span>พิมพ์รหัสอุปกรณ์หรือชื่อสถานที่ในช่องค้นหาด้านบนได้เลย</span></div>
+          <div class="tip-item">🗺 <span>กดปุ่ม "แผนที่จริง (GPS)" เพื่อดูตำแหน่งอุปกรณ์บนแผนที่จริง</span></div>
+          <div class="tip-item">📷 <span>เปิดโหมด "ตรวจสอบภาคสนาม" จากเมนู ⋮ เพื่อยืนยันข้อมูลหน้างานพร้อมถ่ายรูป</span></div>
+        </div>
+      </div>
     </div>
     <div id="panel">
       <div id="panelHeader">
@@ -762,6 +802,11 @@ async function loadData(){
   applyOpsaOverlay(DATA);
   renderLegend();
   renderOverview();
+  const loadingEl = document.getElementById('loadingOverlay');
+  if(loadingEl){
+    loadingEl.classList.add('hide');
+    setTimeout(()=>{ loadingEl.style.display = 'none'; }, 400); // รอ transition จางหายจบก่อนค่อยเอาออกจริง กันมันไปบังคลิกตอนกำลังจาง
+  }
 }
 
 // ============ ระบุตัวตนผู้ใช้งาน — เลือก/พิมพ์ชื่อ+รหัสผ่านจากรายชื่อที่แอดมินอนุมัติไว้ล่วงหน้า (Admins/Members) ============
