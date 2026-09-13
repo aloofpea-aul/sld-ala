@@ -17,8 +17,7 @@
 <!-- Android/Chrome -->
 <meta name="mobile-web-app-capable" content="yes">
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://api.longdo.com/map/?key=f61a87ff70c39e610385809783d5a1b3"></script>
 <style>
   :root{
     --pea-purple:#4b2e83;
@@ -119,9 +118,10 @@
   svg{width:100%;height:100%;display:block;user-select:none;}
   #mapDiv{position:absolute;inset:0;display:none;z-index:1;}
   /* ป้ายชื่อรหัสอุปกรณ์บนแผนที่จริง — ซ่อนไว้ตามปกติ (จุดเยอะเกินจะอ่านไม่ออก) โชว์เฉพาะตอนซูมเข้าใกล้พอ */
-  .map-device-label{display:none;background:rgba(255,255,255,.92);border:none;box-shadow:0 1px 3px rgba(0,0,0,.3);
-    font-size:10px;font-weight:700;padding:1px 4px;border-radius:3px;}
-  .map-device-label::before{display:none;}
+  .tr-map-hit{position:relative;}
+  .map-device-label{display:none;position:absolute;top:-3px;left:50%;transform:translate(-50%,-100%);
+    background:rgba(255,255,255,.92);border:none;box-shadow:0 1px 3px rgba(0,0,0,.3);
+    font-size:10px;font-weight:700;padding:1px 4px;border-radius:3px;white-space:nowrap;}
   #mapDiv.map-zoomed-in .map-device-label{display:block;}
   #mapDiv.active{display:block;}
   #mapDiv.active ~ svg{display:none;}
@@ -1372,9 +1372,8 @@ function highlightAndScrollTo(id){
     const f = DATA.feeders.find(x=>x.id===selectedFeeder);
     const dev = f && f.devices.find(d=>d.id===id);
     if(dev && dev.lat!=null && dev.lon!=null && leafletMap){
-      leafletMap.setView([dev.lat, dev.lon], 17);
-      const marker = mapMarkers.find(m=>m.getLatLng && Math.abs(m.getLatLng().lat-dev.lat)<1e-6 && Math.abs(m.getLatLng().lng-dev.lon)<1e-6);
-      if(marker && marker.openPopup) marker.openPopup();
+      leafletMap.location({ lon: dev.lon, lat: dev.lat }, true);
+      leafletMap.zoom(17, true);
     }
   } else {
     const pos = CURRENT_NODE_POS[id];
@@ -1443,10 +1442,10 @@ function initPanZoomEvents(){
     applyPanZoom();
   }
   document.getElementById('zoomIn').addEventListener('click', ()=>{
-    if(mapMode){ leafletMap && leafletMap.zoomIn(); return; } zoomAtCenter(1.25);
+    if(mapMode){ leafletMap && leafletMap.zoom(leafletMap.zoom()+1, true); return; } zoomAtCenter(1.25);
   });
   document.getElementById('zoomOut').addEventListener('click', ()=>{
-    if(mapMode){ leafletMap && leafletMap.zoomOut(); return; } zoomAtCenter(0.8);
+    if(mapMode){ leafletMap && leafletMap.zoom(leafletMap.zoom()-1, true); return; } zoomAtCenter(0.8);
   });
   document.getElementById('zoomReset').addEventListener('click', ()=>{
     if(mapMode){ fitMapBounds(); return; }
@@ -1537,7 +1536,7 @@ function toggleMapMode(){
     panel.style.display = '';
     locateBtn.style.display = '';
     if(!leafletMap) initLeafletMap();
-    setTimeout(()=>{ if(leafletMap){ leafletMap.invalidateSize(); fitMapBounds(); } }, 50);
+    setTimeout(()=>{ if(leafletMap){ fitMapBounds(); } }, 50);
   } else {
     mapDiv.classList.remove('active');
     btn.textContent = '🗺 แผนที่จริง (GPS)';
@@ -1561,10 +1560,14 @@ document.getElementById('locateBtn').addEventListener('click', ()=>{
   if(!leafletMap || !navigator.geolocation) { showToast('อุปกรณ์นี้ไม่รองรับการระบุตำแหน่ง','err'); return; }
   navigator.geolocation.getCurrentPosition(pos=>{
     const { latitude, longitude } = pos.coords;
-    leafletMap.setView([latitude, longitude], 16);
-    L.circleMarker([latitude, longitude], {
-      radius:8, color:'#1a73e8', weight:2, fillColor:'#4285f4', fillOpacity:0.9
-    }).addTo(leafletMap).bindPopup('ตำแหน่งปัจจุบันของคุณ').openPopup();
+    leafletMap.location({ lon: longitude, lat: latitude }, true);
+    leafletMap.zoom(16, true);
+    const meMarker = new longdo.Marker(
+      { lon: longitude, lat: latitude },
+      { icon: { html: '<div style="width:16px;height:16px;border-radius:50%;background:#4285f4;border:2px solid #1a73e8;"></div>', offset:{x:8,y:8} },
+        popup: { html: 'ตำแหน่งปัจจุบันของคุณ' } }
+    );
+    leafletMap.Overlays.add(meMarker);
   }, ()=>{ showToast('ไม่สามารถระบุตำแหน่งได้ — ตรวจสอบการอนุญาตเข้าถึงตำแหน่ง','err'); },
   { enableHighAccuracy:true, timeout:8000 });
 });
@@ -1574,34 +1577,34 @@ document.querySelectorAll('.typeFilterChk').forEach(chk=>{
 document.getElementById('osrmToggle').addEventListener('change', ()=>{ rebuildMapMarkers(); });
 
 function initLeafletMap(){
-  if(typeof L === 'undefined'){
+  if(typeof longdo === 'undefined'){
     showToast('โหลดแผนที่ไม่สำเร็จ — ต้องมีอินเทอร์เน็ตเพื่อดูแผนที่จริง','err');
     return;
   }
   try{
-  leafletMap = L.map('mapDiv', { zoomControl:false, preferCanvas:true });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors', maxZoom: 19
-  }).addTo(leafletMap);
-  L.control.zoom({ position:'bottomright' }).addTo(leafletMap);
+  leafletMap = new longdo.Map({ placeholder: document.getElementById('mapDiv'), zoom:14, lastView:false });
+  leafletMap.Ui.DPad.visible(false);
+  leafletMap.Ui.Zoombar.visible(false); // ใช้ปุ่มซูมของเราเอง (มุมล่างขวา) แทนปุ่มเริ่มต้นของ Longdo
 
   rebuildMapMarkers();
 
   const MAP_LABEL_ZOOM_THRESHOLD = 17; // ซูมเข้าใกล้ระดับนี้ขึ้นไปถึงจะเห็นป้ายชื่อรหัสอุปกรณ์
   function updateLabelVisibility(){
-    document.getElementById('mapDiv').classList.toggle('map-zoomed-in', leafletMap.getZoom() >= MAP_LABEL_ZOOM_THRESHOLD);
+    document.getElementById('mapDiv').classList.toggle('map-zoomed-in', leafletMap.zoom() >= MAP_LABEL_ZOOM_THRESHOLD);
   }
-  leafletMap.on('zoomend', updateLabelVisibility);
+  leafletMap.Event.bind('zoom', updateLabelVisibility);
   setTimeout(updateLabelVisibility, 100);
 
   const stationDev = DATA.feeders.map(f=>f.devices.find(d=>d.type==='WB'&&d.lat!=null)).find(Boolean);
   if(stationDev){
-    L.marker([stationDev.lat, stationDev.lon], {
-      icon: L.divIcon({className:'', html:'<div style="background:#4b2e83;color:#fff;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">สถานีไฟฟ้าอ่าวลึก</div>'})
-    }).addTo(leafletMap);
+    const stationMarker = new longdo.Marker(
+      { lon: stationDev.lon, lat: stationDev.lat },
+      { icon: { html: '<div style="background:#4b2e83;color:#fff;padding:3px 8px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap;">สถานีไฟฟ้าอ่าวลึก</div>', offset:{x:0,y:0} } }
+    );
+    leafletMap.Overlays.add(stationMarker);
   }
   }catch(e){
-    console.warn('Leaflet map init failed', e);
+    console.warn('Longdo map init failed', e);
     showToast('โหลดแผนที่ไม่สำเร็จ','err');
   }
 }
@@ -1628,7 +1631,7 @@ function fetchOsrmRoute(lat1,lon1,lat2,lon2){
         const json = await res.json();
         console.log('[OSRM] ข้อมูลที่ได้:', json.code, json.routes ? json.routes.length+' เส้นทาง' : 'ไม่มี routes');
         if(json.routes && json.routes[0]){
-          const coords = json.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]); // [lon,lat] -> [lat,lon]
+          const coords = json.routes[0].geometry.coordinates.map(c=>({lon:c[0], lat:c[1]})); // geojson [lon,lat] -> {lon,lat} สำหรับ longdo.Polyline
           OSRM_CACHE[key] = coords;
           resolve(coords);
         } else { resolve(null); }
@@ -1647,7 +1650,7 @@ function runOsrmQueue(){
 
 function rebuildMapMarkers(){
   if(!leafletMap) return;
-  mapMarkers.forEach(m=>leafletMap.removeLayer(m));
+  leafletMap.Overlays.clear();
   mapMarkers = [];
   const useOsrm = document.getElementById('osrmToggle').checked;
   console.log('[OSRM] โหมดถนนจริง:', useOsrm ? 'เปิด' : 'ปิด');
@@ -1669,19 +1672,22 @@ function rebuildMapMarkers(){
       const isTrunk = TRUNK_TYPES.has(d.type);
       const endLat = parent.lat + (d.lat - parent.lat) * scale;
       const endLon = parent.lon + (d.lon - parent.lon) * scale;
-      const line = L.polyline([[parent.lat,parent.lon],[endLat,endLon]], {
-        color: f.color, weight: isTrunk?2.5:1.2, opacity:0.6, dashArray: isTrunk?null:'4,3'
-      }).addTo(leafletMap);
+      const line = new longdo.Polyline(
+        [{lon:parent.lon, lat:parent.lat}, {lon:endLon, lat:endLat}],
+        { lineWidth: isTrunk?3:1, lineColor: hexToRgba(f.color, isTrunk?0.6:0.5) }
+      );
+      leafletMap.Overlays.add(line);
       mapMarkers.push(line);
       // ทดลอง: ถ้าเปิดโหมดถนนจริง ให้ยิง OSRM หาเส้นทางจริงมาแทนที่เส้นตรงนี้ (ทุกเส้นยกเว้นหม้อแปลง/มิเตอร์)
       if(useOsrm && !isLeafAssetType(d.type)){
         osrmAttemptCount++;
         fetchOsrmRoute(parent.lat, parent.lon, d.lat, d.lon).then(coords=>{
           if(!coords || !leafletMap) return;
-          const routedLine = L.polyline(coords, {
-            color: f.color, weight: isTrunk?2.5:1.2, opacity: isTrunk?0.75:0.55
-          }).addTo(leafletMap);
-          leafletMap.removeLayer(line);
+          const routedLine = new longdo.Polyline(coords, {
+            lineWidth: isTrunk?3:1, lineColor: hexToRgba(f.color, isTrunk?0.75:0.55)
+          });
+          leafletMap.Overlays.add(routedLine);
+          leafletMap.Overlays.remove(line);
           const idx = mapMarkers.indexOf(line);
           if(idx>=0) mapMarkers[idx] = routedLine; else mapMarkers.push(routedLine);
         });
@@ -1690,35 +1696,43 @@ function rebuildMapMarkers(){
     shown.forEach(d=>{
       if(d.lat == null || d.lon == null) return;
       const isTrunk = TRUNK_TYPES.has(d.type);
-      // วงกลมโปร่งใสขนาดใหญ่กว่าซ้อนอยู่ด้านล่าง เพื่อให้พื้นที่กดสัมผัสง่ายขึ้นบนมือถือ โดยไม่ทำให้จุดดูใหญ่เกินจริง
-      const hitArea = L.circleMarker([d.lat, d.lon], {
-        radius: isTrunk ? 16 : 13, stroke:false, fillOpacity:0.01, fillColor:'#000'
-      }).addTo(leafletMap);
-      const marker = L.circleMarker([d.lat, d.lon], {
-        radius: isTrunk ? 7 : 4.5,
-        color: f.color, weight: isTrunk?2:1,
-        fillColor: f.color, fillOpacity: d.rating ? 0.85 : 0.35,
-        interactive:false
-      }).addTo(leafletMap);
-      // ป้ายชื่อรหัสอุปกรณ์ — ซ่อนไว้ปกติ (จุดเยอะมากจะรกจนอ่านไม่ออก) โชว์เฉพาะตอนซูมเข้าใกล้ๆ เท่านั้น (ดูการสลับผ่าน CSS class .map-zoomed-in)
       const idShort = String(d.id).replace(f.id,'');
-      marker.bindTooltip(idShort, { permanent:true, direction:'top', offset:[0,-3], className:'map-device-label', opacity:1 });
-      hitArea.bindPopup(
-        `<b style="color:${f.color}">${d.id}</b><br>${d.rating||'(ไม่ทราบขนาด)'}<br>${escapeHtml(d.desc||'-')}`
+      const dotSize = isTrunk ? 14 : 9;
+      const fillOpacity = d.rating ? 0.85 : 0.35;
+      // จุด + ป้ายชื่อรวมอยู่ใน div เดียว (HTML marker ของ Longdo) — ป้ายชื่อซ่อนไว้ปกติด้วย CSS .map-zoomed-in (จุดเยอะมากจะรกจนอ่านไม่ออกถ้าโชว์ตลอด)
+      const markerHtml = `<div class="tr-map-hit" style="width:${dotSize+16}px;height:${dotSize+16}px;display:flex;align-items:center;justify-content:center;">
+          <div class="map-device-label">${escapeHtml(idShort)}</div>
+          <div style="width:${dotSize}px;height:${dotSize}px;border-radius:50%;
+            background:${hexToRgba(f.color, fillOpacity)};border:${isTrunk?2:1}px solid ${f.color};"></div>
+        </div>`;
+      const marker = new longdo.Marker(
+        { lon: d.lon, lat: d.lat },
+        { icon: { html: markerHtml, offset: { x: (dotSize+16)/2, y: (dotSize+16)/2 } },
+          popup: { html: `<b style="color:${f.color}">${escapeHtml(d.id)}</b><br>${escapeHtml(d.rating||'(ไม่ทราบขนาด)')}<br>${escapeHtml(d.desc||'-')}` } }
       );
-      hitArea.on('click', ()=>{
-        selectFeederForSidebar(f.id);
-        setTimeout(()=>highlightAndScrollTo(d.id), 60);
+      leafletMap.Overlays.add(marker);
+      leafletMap.Event.bind('overlayClick', function(overlay){
+        if(overlay === marker){
+          selectFeederForSidebar(f.id);
+          setTimeout(()=>highlightAndScrollTo(d.id), 60);
+        }
       });
-      mapMarkers.push(hitArea, marker);
+      mapMarkers.push(marker);
     });
   });
   if(useOsrm) console.log('[OSRM] จำนวนเส้นสายหลักที่พยายามยิงคำขอทั้งหมด:', osrmAttemptCount);
 }
+function hexToRgba(hex, alpha){
+  const h = hex.replace('#','');
+  const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 function fitMapBounds(){
   if(!leafletMap || !mapMarkers.length) return;
-  const group = L.featureGroup(mapMarkers);
-  leafletMap.fitBounds(group.getBounds().pad(0.08));
+  const pts = [];
+  DATA.feeders.forEach(f=> f.devices.forEach(d=>{ if(d.lat!=null && d.lon!=null) pts.push({lon:d.lon, lat:d.lat}); }));
+  if(!pts.length) return;
+  leafletMap.bound(pts);
 }
 function selectFeederForSidebar(fid){
   selectedFeeder = fid;
