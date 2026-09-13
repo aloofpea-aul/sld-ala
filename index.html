@@ -712,6 +712,8 @@ let fieldVerifyDeviceId = null;
 let view = { x:0, y:0, scale:1 };
 let dragging = false, dragStart = {x:0,y:0}, viewStart = {x:0,y:0};
 let mapMode = false, leafletMap = null, mapMarkers = [];
+let markerDeviceLookup = new Map(); // จำว่าหมุดแต่ละอันคืออุปกรณ์ตัวไหน — ใช้ตอนคลิกแล้วเปิดป๊อปอัพเอง (ไม่พึ่ง popup อัตโนมัติของ Longdo ที่บางทีไม่ขึ้นกับไอคอนแบบ custom HTML)
+let currentMapPopup = null;
 let CURRENT_NODE_POS = {}; // ตำแหน่ง x,y ของแต่ละอุปกรณ์ในผังที่กำลังแสดงอยู่ (ใช้พาไปยังจุดที่ค้นหาเจอ)
 
 function loadLocalOverrides(){
@@ -1598,6 +1600,21 @@ function initLeafletMap(){
   leafletMap.Ui.DPad.visible(false);
   leafletMap.Ui.Zoombar.visible(false); // ใช้ปุ่มซูมของเราเอง (มุมล่างขวา) แทนปุ่มเริ่มต้นของ Longdo
 
+  // เปิดป๊อปอัพเองตอนคลิกหมุด (ผูก event แค่ครั้งเดียวตอนสร้างแผนที่ ไม่ใช่ทุกครั้งที่สร้างหมุดใหม่)
+  leafletMap.Event.bind('overlayClick', function(overlay){
+    const info = markerDeviceLookup.get(overlay);
+    if(!info) return;
+    const { f, d } = info;
+    if(currentMapPopup){ leafletMap.Overlays.remove(currentMapPopup); currentMapPopup = null; }
+    currentMapPopup = new longdo.Popup({ lon: d.lon, lat: d.lat }, {
+      title: d.id,
+      detail: `${escapeHtml(d.rating||'(ไม่ทราบขนาด)')}<br>${escapeHtml(d.desc||'-')}`
+    });
+    leafletMap.Overlays.add(currentMapPopup);
+    selectFeederForSidebar(f.id);
+    setTimeout(()=>highlightAndScrollTo(d.id), 60);
+  });
+
   rebuildMapMarkers();
 
   const MAP_LABEL_ZOOM_THRESHOLD = 17; // ซูมเข้าใกล้ระดับนี้ขึ้นไปถึงจะเห็นป้ายชื่อรหัสอุปกรณ์
@@ -1664,6 +1681,8 @@ function rebuildMapMarkers(){
   if(!leafletMap) return;
   leafletMap.Overlays.clear();
   mapMarkers = [];
+  markerDeviceLookup = new Map();
+  currentMapPopup = null;
   const useOsrm = document.getElementById('osrmToggle').checked;
   console.log('[OSRM] โหมดถนนจริง:', useOsrm ? 'เปิด' : 'ปิด');
   let osrmAttemptCount = 0;
@@ -1719,16 +1738,10 @@ function rebuildMapMarkers(){
         </div>`;
       const marker = new longdo.Marker(
         { lon: d.lon, lat: d.lat },
-        { icon: { html: markerHtml, offset: { x: (dotSize+16)/2, y: (dotSize+16)/2 } },
-          popup: { html: `<b style="color:${f.color}">${escapeHtml(d.id)}</b><br>${escapeHtml(d.rating||'(ไม่ทราบขนาด)')}<br>${escapeHtml(d.desc||'-')}` } }
+        { icon: { html: markerHtml, offset: { x: (dotSize+16)/2, y: (dotSize+16)/2 } } }
       );
       leafletMap.Overlays.add(marker);
-      leafletMap.Event.bind('overlayClick', function(overlay){
-        if(overlay === marker){
-          selectFeederForSidebar(f.id);
-          setTimeout(()=>highlightAndScrollTo(d.id), 60);
-        }
-      });
+      markerDeviceLookup.set(marker, { f, d });
       mapMarkers.push(marker);
     });
   });
