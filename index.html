@@ -1787,10 +1787,15 @@ function rebuildMapMarkers(){
       const dotSize = isTrunk ? 14 : 9;
       const fillOpacity = d.rating ? 0.85 : 0.35;
       // จุด + ป้ายชื่อรวมอยู่ใน div เดียว (HTML marker ของ Longdo) — ป้ายชื่อซ่อนไว้ปกติด้วย CSS .map-zoomed-in (จุดเยอะมากจะรกจนอ่านไม่ออกถ้าโชว์ตลอด)
+      const isTransformer = d.type === 'TRANSFORMER';
+      const shapeStyle = isTransformer
+        ? `width:${dotSize}px;height:${dotSize}px;background:${hexToRgba(f.color, fillOpacity)};
+           border:${isTrunk?2:1}px solid ${f.color};clip-path:polygon(50% 0%, 0% 100%, 100% 100%);`
+        : `width:${dotSize}px;height:${dotSize}px;border-radius:50%;
+           background:${hexToRgba(f.color, fillOpacity)};border:${isTrunk?2:1}px solid ${f.color};`;
       const markerHtml = `<div class="tr-map-hit" style="width:${dotSize+16}px;height:${dotSize+16}px;display:flex;align-items:center;justify-content:center;">
           <div class="map-device-label">${escapeHtml(idShort)}</div>
-          <div style="width:${dotSize}px;height:${dotSize}px;border-radius:50%;
-            background:${hexToRgba(f.color, fillOpacity)};border:${isTrunk?2:1}px solid ${f.color};"></div>
+          <div style="${shapeStyle}"></div>
         </div>`;
       const marker = new longdo.Marker(
         { lon: d.lon, lat: d.lat },
