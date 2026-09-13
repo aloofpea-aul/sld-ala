@@ -272,7 +272,8 @@
   #moreMenuBody{padding:6px;}
   #moreMenuBody .menuitem{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
     padding:12px 14px;border:none;background:none;font-size:.9rem;font-family:inherit;
-    cursor:pointer;border-radius:6px;color:var(--ink);box-sizing:border-box;min-height:44px;}
+    cursor:pointer;border-radius:6px;color:var(--ink);box-sizing:border-box;min-height:44px;
+    text-decoration:none;}
   #moreMenuBody .menuitem:hover{background:var(--paper);}
   #moreMenuBody label.menuitem input{margin:0;}
 
@@ -560,6 +561,7 @@
     </div>
     <div id="moreMenuBody">
       <button class="menuitem" id="reportBtn">📊 รายงานเปรียบเทียบ</button>
+      <a class="menuitem" id="viewA0Btn" href="a0-drawing.pdf" target="_blank" rel="noopener">📄 ดูผัง A0 จริง (ต้นฉบับ)</a>
       <button class="menuitem" id="seqReviewBtn">🔢 ยืนยันลำดับการเชื่อมต่อ</button>
       <label class="menuitem"><input type="checkbox" id="leafToggle"> แสดงหม้อแปลง/มิเตอร์</label>
       <label class="menuitem"><input type="checkbox" id="editToggle"> โหมดแก้ไข</label>
@@ -3092,6 +3094,9 @@ document.getElementById('reportBtn').addEventListener('click', ()=>{
   document.querySelector('.report-tab[data-tab="summary"]').classList.add('active');
   renderReport();
   document.getElementById('reportOverlay').classList.add('show');
+  document.getElementById('moreMenuOverlay').classList.remove('show');
+});
+document.getElementById('viewA0Btn').addEventListener('click', ()=>{
   document.getElementById('moreMenuOverlay').classList.remove('show');
 });
 document.getElementById('reportCloseBtn').addEventListener('click', ()=>{
