@@ -2061,6 +2061,65 @@ async function deleteDeviceConfirmed(f, devId){
 }
 
 // ============ POPUP แสดง/แก้ไขรายละเอียดอุปกรณ์ (เปิดจากผลค้นหา หรือคลิกรายการในลิสต์) ============
+// ============ คำนวณโหลดจริงปลายน้ำ (จากข้อมูล OPSA) เพื่อประเมินขนาดฟิวส์ที่เหมาะสม ============
+// ทำงานสดจากโครงสร้างต้นไม้ปัจจุบันเสมอ (DATA) — ถ้ามีการแก้ parentId จากหน้ายืนยันลำดับการเชื่อมต่อ
+// ตัวเลขจะเปลี่ยนตามทันทีโดยไม่ต้องสร้างรายงานใหม่ ตามที่ต้องการไว้ (ลำดับยังไม่นิ่ง ต้องคำนวณใหม่ทุกครั้งที่เปลี่ยน)
+const SLD_SYSTEM_VOLTAGE = 33000; // โวลต์ — แรงดันระบบจำหน่ายสถานีไฟฟ้าอ่าวลึก (33kV)
+const STANDARD_FUSE_K_SIZES = [6,8,10,12,15,20,25,30,40,50,65,80,100,140,200];
+function nextStandardFuseSize(amps){
+  for(const k of STANDARD_FUSE_K_SIZES){ if(k >= amps) return k; }
+  return STANDARD_FUSE_K_SIZES[STANDARD_FUSE_K_SIZES.length-1];
+}
+function computeDownstreamLoadEstimate(f, deviceId){
+  const byId = {};
+  f.devices.forEach(d=>{ byId[d.id]=d; });
+  const children = {};
+  f.devices.forEach(d=>{ if(d.parentId) (children[d.parentId]=children[d.parentId]||[]).push(d.id); });
+
+  let kvaMeasured = 0, kvaNameplateFallback = 0, nMeasured = 0, nNameplateOnly = 0, nTotal = 0;
+  const seen = new Set();
+  function walk(nodeId){
+    (children[nodeId]||[]).forEach(childId=>{
+      if(seen.has(childId)) return; // กันวงจรปิด/ข้อมูลผิดพลาดที่อาจทำให้ลูปไม่จบ
+      seen.add(childId);
+      const child = byId[childId];
+      if(!child) return;
+      if(child.type === 'TRANSFORMER'){
+        nTotal++;
+        let nameplate = ['kvaA','kvaB','kvaC'].reduce((s,k)=> s + (child[k]||0), 0);
+        if(!nameplate && child.rating){
+          const m = String(child.rating).match(/[\d.]+/);
+          if(m) nameplate = parseFloat(m[0]);
+        }
+        if(child.opsa && child.opsa.loadPercent != null){
+          kvaMeasured += nameplate * (child.opsa.loadPercent/100);
+          nMeasured++;
+        } else {
+          kvaNameplateFallback += nameplate;
+          nNameplateOnly++;
+        }
+      }
+      walk(childId);
+    });
+  }
+  walk(deviceId);
+  if(nTotal === 0) return null; // ไม่มีหม้อแปลงต่ออยู่ปลายน้ำเลย — คำนวณไม่ได้/ไม่มีความหมาย
+
+  const totalKva = kvaMeasured + kvaNameplateFallback;
+  const dev = byId[deviceId];
+  const isThreePhase = !dev.phase || dev.phase.length >= 3; // "ABC" = 3 เฟส, "A"/"AN" ฯลฯ = เฟสเดียว
+  const amps = isThreePhase
+    ? (totalKva*1000) / (Math.sqrt(3) * SLD_SYSTEM_VOLTAGE)
+    : (totalKva*1000) / (SLD_SYSTEM_VOLTAGE/Math.sqrt(3));
+  return {
+    nTotal, nMeasured, nNameplateOnly, isThreePhase,
+    kvaMeasured: Math.round(kvaMeasured*10)/10,
+    kvaNameplateFallback: Math.round(kvaNameplateFallback*10)/10,
+    totalKva: Math.round(totalKva*10)/10,
+    amps: Math.round(amps*10)/10,
+    suggestedFuse: nextStandardFuseSize(amps)
+  };
+}
 // ============ ยืนยันลำดับการเชื่อมต่อ (ทีละอุปกรณ์ เรียงจากสถานี) ============
 function computeSeqNumbers(f){
   const byId = {};
@@ -2619,6 +2678,8 @@ function renderDeviceModalEdit(f, d){
         <input type="text" class="dm-parent" value="${d.parentId||''}" autocomplete="off">
         <div class="dm-parent-suggestions" style="display:none;"></div>
       </div>
+      <label class="flabel">เหตุผล / หลักฐานการแก้ไข (ไม่บังคับ แต่แนะนำเวลาแก้ขนาดฟิวส์)</label>
+      <div class="frow"><input type="text" class="dm-reason" placeholder="เช่น เทียบกับแบบ A0 ฉบับ 1 พ.ค. 69 / ตรวจหน้างานแล้ว"></div>
     </div>
     <div class="device-modal-actions">
       <button id="dmCancelBtn">ยกเลิก</button>
@@ -2668,6 +2729,7 @@ function renderDeviceModalEdit(f, d){
     const typeVal = document.querySelector('.dm-type').value;
     const descVal = document.querySelector('.dm-desc').value.trim();
     const parentVal = document.querySelector('.dm-parent').value.trim();
+    const reasonVal = document.querySelector('.dm-reason').value.trim();
     if(parentVal && !f.devices.some(x=>x.id===parentVal)){
       showToast('ไม่พบรหัสอุปกรณ์สาขาแม่ที่ระบุในวงจรนี้','err'); return;
     }
@@ -2684,7 +2746,7 @@ function renderDeviceModalEdit(f, d){
     const updated = Object.assign({}, d, { type:typeVal, rating:ratingVal, desc:descVal, parentId: parentVal || null, source:'manual' });
     const idx = f.devices.findIndex(x=>x.id===d.id);
     if(idx>=0) f.devices[idx] = updated;
-    await persistDevice(f.id, updated);
+    await persistDevice(f.id, updated, reasonVal);
     updateSidebar(f);
     if(selectedFeeder === f.id) renderFeederDetail(f);
     if(seqCurrentFeeder === f.id && document.getElementById('seqOverlay').classList.contains('show')){
@@ -2699,7 +2761,7 @@ document.getElementById('deviceOverlay').addEventListener('click', e=>{
 });
 
 // ============ ระบุตัวตนผู้ใช้งานจากบัญชี Google จริง — ดู checkWhoAmI()/CURRENT_USER ด้านบน ============
-async function persistDevice(feederId, device){
+async function persistDevice(feederId, device, reason){
   if(!(await requireAuth())) return;
   if(GAS_URL){
     showToast('💾 กำลังบันทึก...', 'saving');
@@ -2707,7 +2769,7 @@ async function persistDevice(feederId, device){
       const res = await fetch(GAS_URL, {
         method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify({ action:'upsert', feeder:feederId, device, changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
+        body: JSON.stringify({ action:'upsert', feeder:feederId, device, reason: reason||'', changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
       });
       const json = await res.json();
       if(json.ok) showToast('บันทึกไปยัง Google Sheet แล้ว','ok');
@@ -2719,13 +2781,13 @@ async function persistDevice(feederId, device){
   }
 }
 /** เหมือน persistDevice แต่ไม่โชว์ toast ของตัวเอง (เอาไว้ใช้ตอนบันทึกหลายรายการติดกันเป็นชุด จะได้ไม่มี toast ซ้อนตีกัน) — ไม่เช็ค auth ซ้ำ (ให้ผู้เรียกเช็คครั้งเดียวก่อนเข้า loop) */
-async function persistDeviceQuiet(feederId, device){
+async function persistDeviceQuiet(feederId, device, reason){
   if(GAS_URL){
     try{
       const res = await fetch(GAS_URL, {
         method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify({ action:'upsert', feeder:feederId, device, changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
+        body: JSON.stringify({ action:'upsert', feeder:feederId, device, reason: reason||'', changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
       });
       return await res.json();
     }catch(e){ return { ok:false, error:'connection failed' }; }
@@ -3117,17 +3179,20 @@ function simpleTable(rows, downloadName){
     ${rows.map(r=>`<tr>${headers.map(h=>`<td>${escapeHtml(String(r[h]==null?'':r[h]))}</td>`).join('')}</tr>`).join('')}
     </table>`;
 }
-function fixDeviceFromReport(deviceId){
-  let targetFeeder = null;
+function findDeviceAndFeeder(deviceId){
   for(const f of DATA.feeders){
-    if(f.devices.some(d=>d.id===deviceId)){ targetFeeder = f.id; break; }
+    const d = f.devices.find(x=>x.id===deviceId);
+    if(d) return { f, d };
   }
-  if(!targetFeeder){ showToast('ไม่พบอุปกรณ์นี้ในระบบปัจจุบัน (อาจถูกลบไปแล้ว)','err'); return; }
+  return null;
+}
+function fixDeviceFromReport(deviceId){
+  const found = findDeviceAndFeeder(deviceId);
+  if(!found){ showToast('ไม่พบอุปกรณ์นี้ในระบบปัจจุบัน (อาจถูกลบไปแล้ว)','err'); return; }
   document.getElementById('reportOverlay').classList.remove('show');
-  editMode = true;
-  document.getElementById('editToggle').checked = true;
-  selectFeederForSidebar(targetFeeder);
-  openEditForm(deviceId);
+  selectFeederForSidebar(found.f.id);
+  renderDeviceModalEdit(found.f, found.d);
+  document.getElementById('deviceOverlay').classList.add('show');
   setTimeout(()=>highlightAndScrollTo(deviceId), 80);
 }
 
@@ -3160,10 +3225,24 @@ function renderReportTabA0Gis(){
     if(s==='ตรงกัน') return `<span style="color:var(--good,#2e7d32);font-weight:700;">🟢 ${escapeHtml(s)}</span>`;
     return `<span style="color:var(--muted);">${escapeHtml(s)}</span>`;
   };
+  // คำนวณโหลดจริงจากปลายน้ำ (OPSA) สดทุกครั้งที่เปิดหน้านี้ — ใช้โครงสร้างต้นไม้ปัจจุบันเสมอ
+  // (ถ้าลำดับการเชื่อมต่อเพิ่งถูกแก้ไข ตัวเลขจะเปลี่ยนตามทันที ไม่ต้องสร้างรายงานใหม่)
+  const loadCalcHtml = r => {
+    const found = findDeviceAndFeeder(r['รหัสอุปกรณ์']);
+    if(!found) return '<span style="color:var(--muted);">-</span>';
+    const est = computeDownstreamLoadEstimate(found.f, found.d.id);
+    if(!est) return '<span style="color:var(--muted);">(ไม่มีหม้อแปลงปลายน้ำ)</span>';
+    const coverage = Math.round(100*est.nMeasured/est.nTotal);
+    return `<div style="text-align:left;font-size:.76rem;">
+        <b>${est.amps} A</b> (≈${est.totalKva} kVA)<br>
+        แนะนำ: <b>${est.suggestedFuse}K</b><br>
+        <span style="color:var(--muted);">จากหม้อแปลง ${est.nTotal} ตัว (วัดจริง ${est.nMeasured}, ประมาณจากป้าย ${est.nNameplateOnly} = ${coverage}% มีข้อมูลจริง)</span>
+      </div>`;
+  };
 
   const headers = ['รหัสอุปกรณ์','ประเภท','คำอธิบาย(แบบ A0)','ขนาดในแบบ_A0','ขนาดดิบจาก_GIS','สถานะเทียบ','ขนาดที่ใช้จริงตอนนี้'];
   const tableHtml = !rows.length ? '<p class="report-note">ไม่พบรายการที่ตรงเงื่อนไข</p>' : `
-    <table class="report-table"><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}<th>แก้ไข</th></tr>
+    <table class="report-table"><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}<th>โหลดจริงปลายน้ำ (คำนวณสด)</th><th>แก้ไข</th></tr>
     ${rows.map(r=>`<tr>
         <td>${escapeHtml(r['รหัสอุปกรณ์'])}</td>
         <td>${escapeHtml(r['ประเภท'])}</td>
@@ -3172,13 +3251,17 @@ function renderReportTabA0Gis(){
         <td>${escapeHtml(r['ขนาดดิบจาก_GIS'])}</td>
         <td>${statusBadge(r['สถานะเทียบ'])}</td>
         <td>${escapeHtml(r['ขนาดที่ใช้จริงตอนนี้']||'')}</td>
+        <td>${loadCalcHtml(r)}</td>
         <td><button class="a0gis-fix-btn" data-id="${escapeHtml(r['รหัสอุปกรณ์'])}">🔧 แก้ไข</button></td>
       </tr>`).join('')}
     </table>`;
 
   document.getElementById('reportBody').innerHTML = `
     <p class="report-note">เปรียบเทียบรหัส/ขนาดฟิวส์ระหว่างแบบ AutoCAD (A0) ต้นฉบับ กับฐานข้อมูล GIS ของ กฟภ. — ${all.length} รายการทั้งหมด
-     ระบบใช้ค่าจากแบบ A0 เป็นหลักเมื่อไม่ตรงกัน กด "🔧 แก้ไข" ที่แถวไหนก็ได้เพื่อเปิดหน้าแก้ไขอุปกรณ์นั้นทันที</p>
+     ระบบใช้ค่าจากแบบ A0 เป็นหลักเมื่อไม่ตรงกัน กด "🔧 แก้ไข" ที่แถวไหนก็ได้เพื่อเปิดหน้าแก้ไขอุปกรณ์นั้นทันที<br>
+     <b>คอลัมน์ "โหลดจริงปลายน้ำ"</b> คำนวณสดจากข้อมูลวัดจริง (OPSA) ของหม้อแปลงทุกตัวที่ต่ออยู่ปลายน้ำ แปลงเป็นกระแสด้าน 33kV แล้วแนะนำขนาดฟิวส์มาตรฐานที่ใกล้เคียง —
+     <span style="color:var(--bad);">เป็นค่าประมาณเพื่อใช้ประกอบการพิจารณาเท่านั้น ไม่ใช่ค่าคำนวณทางวิศวกรรมที่สมบูรณ์ (ยังไม่รวมค่า inrush, coordination, ระยะทาง ฯลฯ)
+     และจะแม่นยำก็ต่อเมื่อลำดับการเชื่อมต่อ (parent) ของอุปกรณ์ถูกต้องแล้วเท่านั้น — ถ้ายังไม่ได้ยืนยันลำดับ ตัวเลขนี้อาจเปลี่ยนไปเรื่อยๆ ตามการแก้ไข</span></p>
     <div id="a0gisFilterBar">
       ${filterDefs.map(fd=>`<button class="a0gis-filter-btn${a0gisFilter===fd.key?' active':''}" data-key="${fd.key}">${fd.label} (${fd.count})</button>`).join('')}
       <input id="a0gisSearchBox" type="text" placeholder="ค้นหารหัสอุปกรณ์ / ชื่อสถานที่..." value="${escapeHtml(a0gisSearch)}">
