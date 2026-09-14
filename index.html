@@ -404,6 +404,18 @@
   .sp-verify-label{display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:.88rem;}
   .sp-verify-label input{width:20px;height:20px;cursor:pointer;}
   .dm-verify-row{padding:12px 14px;margin:10px 0;background:var(--paper);border-radius:8px;}
+  .rating-compare-box{margin:8px 0 14px;padding:10px 12px;background:#f5f1fa;border:1px solid var(--pea-purple);border-radius:8px;}
+  .rating-compare-title{font-size:.76rem;font-weight:700;color:var(--pea-purple);margin-bottom:8px;}
+  .rating-compare-cells{display:flex;gap:8px;flex-wrap:wrap;}
+  .rating-compare-cell{flex:1;min-width:110px;background:#fff;border:1px solid var(--line);border-radius:6px;
+    padding:8px;text-align:center;}
+  .rc-label{font-size:.7rem;color:var(--muted);margin-bottom:2px;}
+  .rc-value{font-weight:700;font-size:.9rem;color:var(--ink);}
+  .rc-sub{font-size:.66rem;color:var(--muted);margin-top:2px;}
+  .rc-fill-btn{margin-top:6px;border:1px solid var(--pea-purple);background:#fff;color:var(--pea-purple);
+    border-radius:5px;padding:3px 8px;font-size:.7rem;cursor:pointer;}
+  .rc-fill-btn:hover{background:var(--pea-purple);color:#fff;}
+  .rating-compare-caveat{font-size:.68rem;color:var(--muted);margin-top:8px;}
   #dmVerifyConfirm{font-size:.8rem;margin-top:5px;margin-left:28px;min-height:1.2em;}
   #dmVerifyConfirm.sp-verify-confirm-ok{color:var(--good);font-weight:700;}
   #dmVerifyConfirm.sp-verify-confirm-cleared{color:var(--muted);}
@@ -2659,6 +2671,35 @@ function isDescendantOf(f, candidateId, ancestorId){
   }
   return false;
 }
+// เทียบ 3 ค่า (A0 / GIS / คำนวณจากโหลดจริง) ให้เห็นตอนแก้ไขขนาดฟิวส์เลย — ไม่ต้องย้อนไปเปิดรายงานแยก
+// แสดงเฉพาะตอนมีข้อมูลอย่างน้อย 1 ใน 3 (อุปกรณ์ที่ไม่เคยอ่านจากแบบ A0 มือ หรือไม่มีหม้อแปลงปลายน้ำ จะไม่มีอะไรให้โชว์)
+function renderRatingComparisonBox(f, d){
+  const a0row = (STATIC_REPORTS.a0vsGis||[]).find(r=>r['รหัสอุปกรณ์']===d.id);
+  const est = computeDownstreamLoadEstimate(f, d.id);
+  if(!a0row && !est) return '';
+  const cells = [];
+  if(a0row){
+    cells.push({ label:'แบบ A0', value: a0row['ขนาดในแบบ_A0'], fill: a0row['ขนาดในแบบ_A0'] });
+    cells.push({ label:'GIS', value: a0row['ขนาดดิบจาก_GIS'], fill: a0row['ขนาดดิบจาก_GIS'] });
+  }
+  if(est){
+    const coverage = Math.round(100*est.nMeasured/est.nTotal);
+    cells.push({ label:'คำนวณจากโหลดจริง', value: `${est.amps} A → แนะนำ ${est.suggestedFuse}K`,
+      sub: `หม้อแปลง ${est.nTotal} ตัว (${coverage}% มีข้อมูลวัดจริง)`, fill: est.suggestedFuse+'K' });
+  }
+  return `<div class="rating-compare-box">
+    <div class="rating-compare-title">📊 เทียบขนาดจาก 3 แหล่ง (กด "ใช้ค่านี้" เพื่อใส่ในช่องขนาดด้านบน)</div>
+    <div class="rating-compare-cells">
+      ${cells.map(c=>`<div class="rating-compare-cell">
+          <div class="rc-label">${escapeHtml(c.label)}</div>
+          <div class="rc-value">${escapeHtml(String(c.value ?? '-'))}</div>
+          ${c.sub ? `<div class="rc-sub">${escapeHtml(c.sub)}</div>` : ''}
+          ${c.fill ? `<button type="button" class="rc-fill-btn" data-fill="${escapeHtml(String(c.fill))}">ใช้ค่านี้</button>` : ''}
+        </div>`).join('')}
+    </div>
+    <div class="rating-compare-caveat">⚠️ ค่าที่คำนวณจากโหลดจริงเป็นค่าประมาณเพื่อประกอบการพิจารณาเท่านั้น ยังไม่รวม inrush/coordination และจะแม่นยำเมื่อลำดับการเชื่อมต่อถูกต้องแล้ว</div>
+  </div>`;
+}
 function renderDeviceModalEdit(f, d){
   document.getElementById('deviceModalTitle').textContent = 'แก้ไข ' + d.id;
   const html = `
@@ -2671,6 +2712,7 @@ function renderDeviceModalEdit(f, d){
       </select></div>
       <label class="flabel">ขนาด (เช่น 10K)</label>
       <div class="frow"><input type="text" class="dm-rating" value="${d.rating||''}"></div>
+      ${renderRatingComparisonBox(f, d)}
       <label class="flabel">จุดติดตั้ง / ผู้ใช้ไฟ</label>
       <div class="frow"><input type="text" class="dm-desc" value="${escapeHtml(d.desc||'')}"></div>
       <label class="flabel">ต่อจากอุปกรณ์ใด (เว้นว่าง = ต่อจากสถานี)</label>
@@ -2686,6 +2728,9 @@ function renderDeviceModalEdit(f, d){
       <button class="btn-primary" id="dmSaveBtn">บันทึก</button>
     </div>`;
   document.getElementById('deviceBody').innerHTML = html;
+  document.querySelectorAll('#deviceBody .rc-fill-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ document.querySelector('#deviceBody .dm-rating').value = btn.dataset.fill; });
+  });
 
   // ค้นหาอัตโนมัติ (autocomplete) ตอนพิมพ์ในช่อง "ต่อจากอุปกรณ์ใด" — ไม่ต้องจำรหัสเป๊ะๆ พิมพ์บางส่วนแล้วเลือกจากรายการได้เลย
   // (จำกัดขอบเขตค้นหาไว้ใน #deviceBody เท่านั้น กันไปชนกับกล่องแนะนำชื่อผู้ใช้งานที่ใช้ CSS class ร่วมกัน)
