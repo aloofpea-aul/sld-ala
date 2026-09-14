@@ -2671,37 +2671,28 @@ function isDescendantOf(f, candidateId, ancestorId){
   }
   return false;
 }
-// เทียบ 3 ค่า (A0 / GIS / คำนวณจากโหลดจริง) ให้เห็นตอนแก้ไขขนาดฟิวส์เลย — ไม่ต้องย้อนไปเปิดรายงานแยก
-// แสดงเฉพาะตอนมีข้อมูลอย่างน้อย 1 ใน 3 (อุปกรณ์ที่ไม่เคยอ่านจากแบบ A0 มือ หรือไม่มีหม้อแปลงปลายน้ำ จะไม่มีอะไรให้โชว์)
+// กล่องคำนวณจากโหลดจริง (OPSA) — แสดงแยกจากช่อง A0/GIS ที่เป็น input จริงแล้ว (ด้านล่าง)
+// กด "ใช้ค่านี้" จะเติมลงช่อง "ขนาด A0" โดยตรง เพราะ A0 คือค่าที่ระบบใช้งานจริง
 function renderRatingComparisonBox(f, d){
-  const a0row = (STATIC_REPORTS.a0vsGis||[]).find(r=>r['รหัสอุปกรณ์']===d.id);
   const est = computeDownstreamLoadEstimate(f, d.id);
-  if(!a0row && !est) return '';
-  const cells = [];
-  if(a0row){
-    cells.push({ label:'แบบ A0', value: a0row['ขนาดในแบบ_A0'], fill: a0row['ขนาดในแบบ_A0'] });
-    cells.push({ label:'GIS', value: a0row['ขนาดดิบจาก_GIS'], fill: a0row['ขนาดดิบจาก_GIS'] });
-  }
-  if(est){
-    const coverage = Math.round(100*est.nMeasured/est.nTotal);
-    cells.push({ label:'คำนวณจากโหลดจริง', value: `${est.amps} A → แนะนำ ${est.suggestedFuse}K`,
-      sub: `หม้อแปลง ${est.nTotal} ตัว (${coverage}% มีข้อมูลวัดจริง)`, fill: est.suggestedFuse+'K' });
-  }
+  if(!est) return '';
+  const coverage = Math.round(100*est.nMeasured/est.nTotal);
   return `<div class="rating-compare-box">
-    <div class="rating-compare-title">📊 เทียบขนาดจาก 3 แหล่ง (กด "ใช้ค่านี้" เพื่อใส่ในช่องขนาดด้านบน)</div>
+    <div class="rating-compare-title">📊 คำนวณจากโหลดจริง (OPSA) — กด "ใช้ค่านี้" เพื่อใส่ในช่อง "ขนาด A0" ด้านบน</div>
     <div class="rating-compare-cells">
-      ${cells.map(c=>`<div class="rating-compare-cell">
-          <div class="rc-label">${escapeHtml(c.label)}</div>
-          <div class="rc-value">${escapeHtml(String(c.value ?? '-'))}</div>
-          ${c.sub ? `<div class="rc-sub">${escapeHtml(c.sub)}</div>` : ''}
-          ${c.fill ? `<button type="button" class="rc-fill-btn" data-fill="${escapeHtml(String(c.fill))}">ใช้ค่านี้</button>` : ''}
-        </div>`).join('')}
+      <div class="rating-compare-cell">
+        <div class="rc-value">${est.amps} A → แนะนำ ${est.suggestedFuse}K</div>
+        <div class="rc-sub">จากหม้อแปลงปลายน้ำ ${est.nTotal} ตัว (${coverage}% มีข้อมูลวัดจริง)</div>
+        <button type="button" class="rc-fill-btn" data-fill="${est.suggestedFuse}K">ใช้ค่านี้</button>
+      </div>
     </div>
-    <div class="rating-compare-caveat">⚠️ ค่าที่คำนวณจากโหลดจริงเป็นค่าประมาณเพื่อประกอบการพิจารณาเท่านั้น ยังไม่รวม inrush/coordination และจะแม่นยำเมื่อลำดับการเชื่อมต่อถูกต้องแล้ว</div>
+    <div class="rating-compare-caveat">⚠️ เป็นค่าประมาณเพื่อประกอบการพิจารณาเท่านั้น ยังไม่รวม inrush/coordination และจะแม่นยำเมื่อลำดับการเชื่อมต่อถูกต้องแล้ว</div>
   </div>`;
 }
 function renderDeviceModalEdit(f, d){
   document.getElementById('deviceModalTitle').textContent = 'แก้ไข ' + d.id;
+  const a0row = (STATIC_REPORTS.a0vsGis||[]).find(r=>r['รหัสอุปกรณ์']===d.id);
+  const gisRefValue = a0row ? a0row['ขนาดดิบจาก_GIS'] : (d.ratingGis || '');
   const html = `
     <div>
       <label class="flabel">รหัสอุปกรณ์</label>
@@ -2710,8 +2701,10 @@ function renderDeviceModalEdit(f, d){
       <div class="frow"><select class="dm-type">
         ${['WS','WR','MR','WF','WC','SW','WB'].map(t=>`<option value="${t}" ${t===d.type?'selected':''}>${t}</option>`).join('')}
       </select></div>
-      <label class="flabel">ขนาด (เช่น 10K)</label>
+      <label class="flabel">ขนาด A0 (ใช้งานจริง — ค่านี้จะถูกบันทึกและใช้ในระบบ)</label>
       <div class="frow"><input type="text" class="dm-rating" value="${d.rating||''}"></div>
+      <label class="flabel">ขนาด GIS (อ้างอิงจากฐานข้อมูล กฟภ. — แสดงไว้เทียบเฉยๆ ไม่ใช่ช่องที่แก้ไขได้)</label>
+      <div class="frow"><input type="text" class="dm-rating-gis" value="${escapeHtml(String(gisRefValue||'-'))}" readonly></div>
       ${renderRatingComparisonBox(f, d)}
       <label class="flabel">จุดติดตั้ง / ผู้ใช้ไฟ</label>
       <div class="frow"><input type="text" class="dm-desc" value="${escapeHtml(d.desc||'')}"></div>
