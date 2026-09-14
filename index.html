@@ -206,6 +206,13 @@
   #panelSeqBtn{margin-top:8px;background:var(--pea-purple);color:#fff;border:none;border-radius:6px;
     padding:8px 14px;font-family:inherit;font-size:.8rem;cursor:pointer;}
   #panelSeqBtn:hover{opacity:.9;}
+  #panelFilterBar{margin-top:10px;display:flex;flex-direction:column;gap:6px;}
+  .pf-group{display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+  .pf-label{font-size:.72rem;color:var(--muted);flex:0 0 auto;margin-right:2px;}
+  .pf-btn{border:1px solid var(--line);background:#fff;border-radius:14px;padding:3px 10px;
+    font-size:.72rem;cursor:pointer;color:var(--ink);white-space:nowrap;}
+  .pf-btn:hover{border-color:var(--pea-purple);}
+  .pf-btn.active{background:var(--pea-purple);color:#fff;border-color:var(--pea-purple);font-weight:700;}
   #panelHeader h2{margin:0 0 4px;font-size:1.05rem;}
   #panelHeader .tie{font-size:.78rem;color:var(--muted);}
   #panelHeader .count-badge{display:inline-block;background:var(--paper);border:1px solid var(--line);
@@ -593,6 +600,21 @@
         <div class="tie" id="panelTie"></div>
         <div class="count-badge" id="panelCount" style="display:none;"></div>
         <button id="panelSeqBtn" style="display:none;">🔢 ยืนยันลำดับการเชื่อมต่อ</button>
+        <div id="panelFilterBar" style="display:none;">
+          <div class="pf-group">
+            <span class="pf-label">ประเภท:</span>
+            <button class="pf-btn active" data-filter-type="all">ทั้งหมด</button>
+            <button class="pf-btn" data-filter-type="WF">WF</button>
+            <button class="pf-btn" data-filter-type="WS">WS</button>
+            <button class="pf-btn" data-filter-type="other">อื่นๆ</button>
+          </div>
+          <div class="pf-group">
+            <span class="pf-label">หม้อแปลง:</span>
+            <button class="pf-btn active" data-filter-xfmr="all">ทั้งหมด</button>
+            <button class="pf-btn" data-filter-xfmr="has">มีต่ออยู่</button>
+            <button class="pf-btn" data-filter-xfmr="none">ไม่มี</button>
+          </div>
+        </div>
       </div>
       <div id="deviceList">
         <div class="empty-state">
@@ -1219,6 +1241,47 @@ function isLeafAssetType(t){ return t === 'TRANSFORMER' || t === 'MVMETER'; }
 
 function visibleDevices(feeder){
   return showLeafAssets ? feeder.devices : feeder.devices.filter(d=>!isLeafAssetType(d.type));
+}
+
+// ============ ตัวกรองรายการอุปกรณ์ในแผงด้านขวา (ประเภท + มีหม้อแปลงต่ออยู่หรือไม่) ============
+let panelTypeFilter = 'all'; // 'all' | 'WF' | 'WS' | 'other'
+let panelXfmrFilter = 'all'; // 'all' | 'has' | 'none'
+function deviceMatchesTypeFilter(d){
+  if(panelTypeFilter === 'all') return true;
+  if(panelTypeFilter === 'WF') return d.type === 'WF';
+  if(panelTypeFilter === 'WS') return d.type === 'WS';
+  return d.type !== 'WF' && d.type !== 'WS'; // 'other' — รวม WR, MR, WC, SW, WB, TRANSFORMER, MVMETER
+}
+// เช็คว่าอุปกรณ์ตัวนี้มีหม้อแปลง/มิเตอร์ต่ออยู่ปลายน้ำหรือไม่ (นับทุกระดับ ไม่ใช่แค่ลูกตรงๆ) — cache ต่อฟีดเดอร์กันคำนวณซ้ำ
+let XFMR_DOWNSTREAM_CACHE = { feederId: null, map: null };
+function hasDownstreamTransformer(f, deviceId){
+  if(XFMR_DOWNSTREAM_CACHE.feederId !== f.id){
+    const byId = {}; f.devices.forEach(d=>{ byId[d.id]=d; });
+    const children = {};
+    f.devices.forEach(d=>{ if(d.parentId) (children[d.parentId]=children[d.parentId]||[]).push(d.id); });
+    const memo = {};
+    function check(id){
+      if(id in memo) return memo[id];
+      memo[id] = false; // กันวงจรปิด
+      let found = false;
+      for(const childId of (children[id]||[])){
+        const child = byId[childId];
+        if(!child) continue;
+        if(isLeafAssetType(child.type) || check(childId)){ found = true; break; }
+      }
+      memo[id] = found;
+      return found;
+    }
+    f.devices.forEach(d=>check(d.id));
+    XFMR_DOWNSTREAM_CACHE = { feederId: f.id, map: memo };
+  }
+  return !!XFMR_DOWNSTREAM_CACHE.map[deviceId];
+}
+function deviceMatchesXfmrFilter(f, d){
+  if(panelXfmrFilter === 'all') return true;
+  if(isLeafAssetType(d.type)) return true; // ตัวหม้อแปลง/มิเตอร์เอง ไม่เข้าเงื่อนไขนี้ (กรองเฉพาะสวิตช์/ฟิวส์)
+  const has = hasDownstreamTransformer(f, d.id);
+  return panelXfmrFilter === 'has' ? has : !has;
 }
 
 function buildTreeFromParents(devices){
@@ -1911,13 +1974,17 @@ function updateSidebar(f){
   const seqBtn = document.getElementById('panelSeqBtn');
   seqBtn.style.display = '';
   seqBtn.onclick = ()=> openSeqReview(f.id); // เปิดหน้ายืนยันลำดับ พร้อมเลือกวงจรนี้ไว้ให้เลย ไม่ต้องเลือกซ้ำ
+  document.getElementById('panelFilterBar').style.display = '';
   renderDeviceList(f);
 }
 
 function renderDeviceList(f){
   const list = document.getElementById('deviceList');
-  const devices = visibleDevices(f);
+  const devices = visibleDevices(f).filter(d => deviceMatchesTypeFilter(d) && deviceMatchesXfmrFilter(f, d));
   let html = devices.map(d => rowOrForm(f, d)).join('');
+  if(!devices.length){
+    html = '<p class="report-note" style="padding:16px;">ไม่พบอุปกรณ์ที่ตรงกับตัวกรองที่เลือก</p>';
+  }
   if(editMode){
     if(editingDeviceId === '__new__') html += renderForm(f, null);
     html += `<button id="addDeviceBtn">+ เพิ่มอุปกรณ์ใหม่ในวงจร ${f.id}</button>`;
@@ -2968,6 +3035,22 @@ document.getElementById('leafToggle').addEventListener('change', e=>{
     updateSidebar(f);
   }
   if(mapMode && leafletMap){ rebuildMapMarkers(); }
+});
+
+// ตัวกรองรายการอุปกรณ์ในแผงด้านขวา — ปุ่มเป็น HTML คงที่ ผูก event แค่ครั้งเดียวตอนโหลดหน้า
+document.querySelectorAll('#panelFilterBar [data-filter-type]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    panelTypeFilter = btn.dataset.filterType;
+    document.querySelectorAll('#panelFilterBar [data-filter-type]').forEach(b=>b.classList.toggle('active', b===btn));
+    if(selectedFeeder) renderDeviceList(DATA.feeders.find(x=>x.id===selectedFeeder));
+  });
+});
+document.querySelectorAll('#panelFilterBar [data-filter-xfmr]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    panelXfmrFilter = btn.dataset.filterXfmr;
+    document.querySelectorAll('#panelFilterBar [data-filter-xfmr]').forEach(b=>b.classList.toggle('active', b===btn));
+    if(selectedFeeder) renderDeviceList(DATA.feeders.find(x=>x.id===selectedFeeder));
+  });
 });
 
 function renderFieldForm(f, d){
