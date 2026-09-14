@@ -1310,7 +1310,11 @@ function layoutTree(root){
     const gap = gapFor(level+1);
     trunk.forEach((n,i)=>{
       const nextTrunkNode = trunk[i+1];
-      const laterals = n.children.filter(c => c !== nextTrunkNode);
+      const allChildren = n.children.filter(c => c !== nextTrunkNode);
+      // แยกหม้อแปลง/มิเตอร์ (ปลายทาง ไม่มีลูกต่ออีก) ออกมาต่างหาก — มีเป็นร้อยตัวต่อจุดเดียวได้
+      // ถ้าให้กระจายแบบกิ่งเต็มรูปแบบเหมือนอุปกรณ์อื่น จะกินพื้นที่มหาศาลจนผังรกทันที
+      const laterals = allChildren.filter(c => !isLeafAssetType(c.dev.type));
+      const leafChildren = allChildren.filter(c => isLeafAssetType(c.dev.type));
       // เรียงลำดับกิ่งแยกตาม siblingPriority ที่ผู้ใช้กำหนดเอง (ถ้ามี) ก่อน แล้วค่อย fallback เรียงตามเลขรหัสอุปกรณ์จากน้อยไปมาก
       laterals.sort((a,b)=>{
         const pa = a.dev.siblingPriority, pb = b.dev.siblingPriority;
@@ -1330,6 +1334,24 @@ function layoutTree(root){
         layoutBranch(lat, tapX, tapY, level+1, depth+1);
         cursor += Math.max(ROW_H, lat._size * 5);
       });
+
+      // หม้อแปลง/มิเตอร์ — วางเป็นแถวสั้นๆ แน่นๆ ติดกับจุดแม่โดยตรง (ไม่ผ่าน layoutBranch เต็มรูปแบบ เพราะเป็นปลายทาง ไม่มีลูกต่อ)
+      if(leafChildren.length){
+        leafChildren.sort((a,b)=> a.dev.id.localeCompare(b.dev.id, undefined, {numeric:true, sensitivity:'base'}));
+        const LEAF_SPACING = 3.4;   // ระยะห่างระหว่างก้านหม้อแปลงแต่ละตัว — แคบมากเพราะเป็นแค่ก้านสั้น ไม่ใช่กิ่งเต็ม
+        const LEAF_STUB = level === 0 ? 16 : 11; // ความยาวก้านที่ยื่นออกจากเส้นหลัก
+        const span = (leafChildren.length - 1) * LEAF_SPACING;
+        leafChildren.forEach((leaf, j)=>{
+          const along = -span/2 + j*LEAF_SPACING; // กระจายตัวไปตามแนวเส้นหลัก (ซ้าย-ขวา หรือ บน-ล่าง)
+          let lx, ly;
+          if(horizontal){ lx = n.x + along; ly = n.y - LEAF_STUB; }
+          else { lx = n.x + LEAF_STUB; ly = n.y + along; }
+          leaf.x = lx; leaf.y = ly; leaf.isTrunk = false; leaf.level = level+1;
+          nodesFlat.push(leaf);
+          minX=Math.min(minX,lx); maxX=Math.max(maxX,lx);
+          minY=Math.min(minY,ly); maxY=Math.max(maxY,ly);
+        });
+      }
     });
 
     visiting.delete(node.dev.id);
