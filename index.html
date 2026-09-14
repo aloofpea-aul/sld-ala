@@ -1370,15 +1370,20 @@ function renderFeederDetail(f){
   nodesFlat.forEach(n=>{ CURRENT_NODE_POS[n.dev.id] = { x:n.x, y:n.y }; });
   let html = '';
 
-  // connectors: เส้นตรงเสมอ (แนวนอน/แนวตั้งสลับกันตามชั้น) หนาลดหลั่นตามระดับชั้น
+  // connectors: เส้นหักมุมฉาก (ไม่ใช่เส้นทแยงตรง) ให้ดูเป็นระเบียบแม้โครงสร้างจะซับซ้อนขึ้นหลังแก้ไขลำดับการเชื่อมต่อ
+  // เดินตามแนวของ "parent" ก่อน (ถ้า parent เป็นระดับแนวนอน ก็เดินแนวนอนก่อนแล้วค่อยหักลงหาลูก)
   const LEVEL_WIDTHS = [3.6, 2.4, 1.7, 1.2, 0.95, 0.8];
   const widthForLevel = lv => LEVEL_WIDTHS[Math.min(lv, LEVEL_WIDTHS.length-1)];
   nodesFlat.forEach(n=>{
+    const nHorizontal = (n.level % 2 === 0);
     n.children.forEach(c=>{
       const leaf = isLeafAssetType(c.dev.type);
       const w = leaf ? 0.9 : widthForLevel(c.level);
       const op = leaf ? 0.4 : Math.max(0.55, 0.95 - c.level*0.12);
-      html += `<line class="tap-stem" x1="${n.x}" y1="${n.y}" x2="${c.x}" y2="${c.y}"
+      const pathD = nHorizontal
+        ? `M${n.x},${n.y} L${c.x},${n.y} L${c.x},${c.y}`
+        : `M${n.x},${n.y} L${n.x},${c.y} L${c.x},${c.y}`;
+      html += `<path class="tap-stem" d="${pathD}" fill="none"
                 stroke="${f.color}" stroke-width="${w}" opacity="${op}"/>`;
     });
   });
