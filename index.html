@@ -1339,11 +1339,13 @@ function layoutTree(root){
       nodesFlat.push(node);
       minX=Math.min(minX,x0); maxX=Math.max(maxX,x0);
       minY=Math.min(minY,y0); maxY=Math.max(maxY,y0);
-      return;
+      return { minX:x0, maxX:x0, minY:y0, maxY:y0 };
     }
     visiting.add(node.dev.id);
     const horizontal = (level % 2 === 0);
     const step = stepFor(level);
+    let subMinX=Infinity, subMaxX=-Infinity, subMinY=Infinity, subMaxY=-Infinity;
+    const track = (x,y) => { subMinX=Math.min(subMinX,x); subMaxX=Math.max(subMaxX,x); subMinY=Math.min(subMinY,y); subMaxY=Math.max(subMaxY,y); };
 
     // แกนหลักของกิ่งนี้: ปกติเลือกอุปกรณ์ที่มีอุปกรณ์ต่อพ่วงมากสุด (สะท้อนสายเมนไฟฟ้าจริง) กิ่งแยกที่เหลือเรียงตามเลขรหัสแทน
     // ถ้าผู้ใช้กำหนด mainChildId ไว้เอง ให้ใช้ตามนั้นก่อนเสมอ
@@ -1368,11 +1370,15 @@ function layoutTree(root){
       nodesFlat.push(n);
       minX=Math.min(minX,n.x); maxX=Math.max(maxX,n.x);
       minY=Math.min(minY,n.y); maxY=Math.max(maxY,n.y);
+      track(n.x, n.y);
     });
 
     // จุดที่แยกออก (ไม่ใช่แกนหลัก) พุ่งออกมุมฉากจากจุดต่อพอดี — ถ้ามีหลายตัวจากจุดเดียวกัน
     // จะไต่ระดับขึ้นไปตามแนวตั้งฉากทีละตัว (เหมือนเสาเดียวกันมีหลายวงจรแยก)
+    // ระยะที่ต้องเว้นให้กิ่งถัดไปคำนวณจาก "ขอบเขตจริง" ของกิ่งก่อนหน้า (ไม่ใช่การประมาณจากจำนวนอุปกรณ์)
+    // กันไม่ให้กิ่งที่ลึก/แตกแขนงเยอะ ทับกับกิ่งข้างเคียงที่วางไว้ถัดไป
     const gap = gapFor(level+1);
+    const MIN_CLEARANCE = 18; // ระยะห่างขั้นต่ำระหว่างขอบเขตของกิ่งที่ติดกัน แม้คำนวณได้ว่าขอบเขตจริงใกล้กันมากก็ตาม
     trunk.forEach((n,i)=>{
       const nextTrunkNode = trunk[i+1];
       const allChildren = n.children.filter(c => c !== nextTrunkNode);
@@ -1396,8 +1402,13 @@ function layoutTree(root){
         let tapX, tapY;
         if(horizontal){ tapX = n.x + jitter; tapY = n.y - cursor; }
         else { tapX = n.x + cursor; tapY = n.y - jitter; }
-        layoutBranch(lat, tapX, tapY, level+1, depth+1);
-        cursor += Math.max(ROW_H, lat._size * 5);
+        const bounds = layoutBranch(lat, tapX, tapY, level+1, depth+1);
+        track(bounds.minX, bounds.minY); track(bounds.maxX, bounds.maxY);
+        // ระยะที่กิ่งถัดไปต้องเว้น = จากจุดต่อ (tap point) ไปถึงขอบไกลสุดจริงของกิ่งนี้ตามแนวที่ลูกกระจายตัว (แนวเดียวกับ cursor)
+        const farEdge = horizontal
+          ? Math.max(tapY - bounds.minY, bounds.maxY - tapY)
+          : Math.max(bounds.maxX - tapX, tapX - bounds.minX);
+        cursor += Math.max(ROW_H, farEdge + MIN_CLEARANCE);
       });
 
       // หม้อแปลง/มิเตอร์ — วางเป็นแถวสั้นๆ แน่นๆ ติดกับจุดแม่โดยตรง (ไม่ผ่าน layoutBranch เต็มรูปแบบ เพราะเป็นปลายทาง ไม่มีลูกต่อ)
@@ -1415,11 +1426,13 @@ function layoutTree(root){
           nodesFlat.push(leaf);
           minX=Math.min(minX,lx); maxX=Math.max(maxX,lx);
           minY=Math.min(minY,ly); maxY=Math.max(maxY,ly);
+          track(lx, ly);
         });
       }
     });
 
     visiting.delete(node.dev.id);
+    return { minX:subMinX, maxX:subMaxX, minY:subMinY, maxY:subMaxY };
   }
 
   layoutBranch(root, 40, 0, 0, 0);
