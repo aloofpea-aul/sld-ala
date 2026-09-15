@@ -2386,7 +2386,7 @@ function renderSeqList(fid){
       document.getElementById('seqProgress').textContent =
         `ยืนยันแล้ว ${f.devices.filter(x=>ordered.some(o=>o.device.id===x.id) && x.sequenceVerified).length}/${ordered.length}` +
         (orphans.length ? ` · ⚠ ลอย ${orphans.length} ตัว` : '');
-      if(selectedFeeder === f.id) renderFeederDetail(f);
+      if(selectedFeeder === f.id){ renderFeederDetail(f); renderDeviceList(f); }
     });
   });
 }
@@ -2515,7 +2515,7 @@ function showSeqPreview(f, id, children, sizeCache, fid){
       d.sequenceVerified = !wasChecked;
     }
     renderSeqList(fid);
-    if(selectedFeeder === f.id) renderFeederDetail(f);
+    if(selectedFeeder === f.id){ renderFeederDetail(f); renderDeviceList(f); }
   });
   document.getElementById('spEditBtn').addEventListener('click', ()=>{
     document.getElementById('seqPreviewPopover').style.display = 'none';
@@ -2530,7 +2530,7 @@ function showSeqPreview(f, id, children, sizeCache, fid){
       showToast(`ตั้ง ${b.dataset.child} เป็นสายหลักของ ${d.id} แล้ว`,'ok');
       showSeqPreview(f, id, children, sizeCache, fid); // รีเฟรชป๊อปอัพเดิมให้เห็นผลทันที
       renderSeqList(fid);
-      if(selectedFeeder === f.id) renderFeederDetail(f);
+      if(selectedFeeder === f.id){ renderFeederDetail(f); renderDeviceList(f); }
     });
   });
   const resetBtn = document.querySelector('.seq-branch-reset');
@@ -2541,7 +2541,7 @@ function showSeqPreview(f, id, children, sizeCache, fid){
     showToast('กลับไปใช้การเลือกอัตโนมัติแล้ว','ok');
     showSeqPreview(f, id, children, sizeCache, fid);
     renderSeqList(fid);
-    if(selectedFeeder === f.id) renderFeederDetail(f);
+    if(selectedFeeder === f.id){ renderFeederDetail(f); renderDeviceList(f); }
   });
 }
 document.getElementById('seqPreviewCloseBtn').addEventListener('click', ()=>{
@@ -2608,7 +2608,7 @@ async function bulkSetSeqVerified(checked){
     });
     showToast(`${label}เสร็จแล้ว (${deviceIds.length} รายการ) — บันทึกไว้ในเบราว์เซอร์นี้`, 'ok');
     renderSeqList(f.id);
-    if(selectedFeeder === f.id) renderFeederDetail(f);
+    if(selectedFeeder === f.id){ renderFeederDetail(f); renderDeviceList(f); }
     return;
   }
 
@@ -2640,7 +2640,7 @@ async function bulkSetSeqVerified(checked){
     showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ — ไม่มีตัวไหนถูกบันทึกเลย (ปลอดภัย ไม่มีข้อมูลครึ่งๆ กลางๆ) ลองใหม่อีกครั้ง','err');
   }
   renderSeqList(f.id);
-  if(selectedFeeder === f.id) renderFeederDetail(f);
+  if(selectedFeeder === f.id){ renderFeederDetail(f); renderDeviceList(f); }
 }
 document.getElementById('seqSelectAllBtn').addEventListener('click', ()=>bulkSetSeqVerified(true));
 document.getElementById('seqClearAllBtn').addEventListener('click', ()=>bulkSetSeqVerified(false));
@@ -2724,7 +2724,7 @@ function renderDeviceModalView(f, d){
       d.sequenceVerified = !wasChecked;
     }
     if(seqCurrentFeeder === f.id && document.getElementById('seqOverlay').classList.contains('show')) renderSeqList(f.id);
-    if(selectedFeeder === f.id) renderFeederDetail(f);
+    if(selectedFeeder === f.id){ renderFeederDetail(f); renderDeviceList(f); }
   });
   document.getElementById('dmDelBtn').addEventListener('click', ()=>{
     if(!confirm(`ลบอุปกรณ์ ${d.id} ออกจากวงจร ${f.id} ? (อุปกรณ์ที่ต่ออยู่ปลายสาขาถัดจากตัวนี้จะถูกย้ายไปต่อกับสาขาแม่ของตัวนี้แทน)`)) return;
@@ -2905,7 +2905,7 @@ function renderDeviceModalEdit(f, d){
     if(idx>=0) f.devices[idx] = updated;
     await persistDevice(f.id, updated, reasonVal);
     updateSidebar(f);
-    if(selectedFeeder === f.id) renderFeederDetail(f);
+    if(selectedFeeder === f.id){ renderFeederDetail(f); renderDeviceList(f); }
     if(seqCurrentFeeder === f.id && document.getElementById('seqOverlay').classList.contains('show')){
       renderSeqList(f.id); // ต่อจากใครเปลี่ยนไป ลำดับเลขอาจเปลี่ยนตาม ต้องคำนวณใหม่
     }
