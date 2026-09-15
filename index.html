@@ -2386,7 +2386,7 @@ function renderSeqList(fid){
       if(!(await requireAuth())){ e.target.checked = !wasChecked; return; } // ยกเลิกเลือกชื่อ = ย้อนช่องติ๊กกลับ ไม่บันทึกอะไรทั้งนั้น
       dev.sequenceVerified = wasChecked;
       showSeqCheckBubble(row, '⏳ กำลังบันทึก...', false);
-      const result = await persistDeviceQuiet(f.id, dev);
+      const result = await persistDeviceQuiet(f.id, dev, '', {updateSequenceVerified:true});
       if(result.ok){
         showSeqCheckBubble(row, wasChecked ? '✓ ยืนยันถูกต้องแล้ว' : '↺ ยกเลิกยืนยันแล้ว', false);
         row.classList.toggle('verified', wasChecked);
@@ -2517,7 +2517,7 @@ function showSeqPreview(f, id, children, sizeCache, fid){
     d.sequenceVerified = wasChecked;
     confirmEl.textContent = wasChecked ? '⏳ กำลังบันทึก...' : '';
     confirmEl.className = '';
-    const result = await persistDeviceQuiet(f.id, d);
+    const result = await persistDeviceQuiet(f.id, d, '', {updateSequenceVerified:true});
     if(result.ok){
       confirmEl.textContent = wasChecked ? '✅ ยืนยันถูกต้องแล้ว' : '↺ ยกเลิกการยืนยันแล้ว';
       confirmEl.className = wasChecked ? 'sp-verify-confirm-ok' : 'sp-verify-confirm-cleared';
@@ -2726,7 +2726,7 @@ function renderDeviceModalView(f, d){
     d.sequenceVerified = wasChecked;
     confirmEl.textContent = wasChecked ? '⏳ กำลังบันทึก...' : '';
     confirmEl.className = '';
-    const result = await persistDeviceQuiet(f.id, d);
+    const result = await persistDeviceQuiet(f.id, d, '', {updateSequenceVerified:true});
     if(result.ok){
       confirmEl.textContent = wasChecked ? '✅ ยืนยันถูกต้องแล้ว' : '↺ ยกเลิกการยืนยันแล้ว';
       confirmEl.className = wasChecked ? 'sp-verify-confirm-ok' : 'sp-verify-confirm-cleared';
@@ -2931,7 +2931,7 @@ document.getElementById('deviceOverlay').addEventListener('click', e=>{
 });
 
 // ============ ระบุตัวตนผู้ใช้งานจากบัญชี Google จริง — ดู checkWhoAmI()/CURRENT_USER ด้านบน ============
-async function persistDevice(feederId, device, reason){
+async function persistDevice(feederId, device, reason, opts){
   if(!(await requireAuth())) return;
   if(GAS_URL){
     showToast('💾 กำลังบันทึก...', 'saving');
@@ -2939,7 +2939,9 @@ async function persistDevice(feederId, device, reason){
       const res = await fetch(GAS_URL, {
         method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify({ action:'upsert', feeder:feederId, device, reason: reason||'', changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
+        body: JSON.stringify({ action:'upsert', feeder:feederId, device, reason: reason||'',
+          updateSequenceVerified: !!(opts && opts.updateSequenceVerified),
+          changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
       });
       const json = await res.json();
       if(json.ok) showToast('บันทึกไปยัง Google Sheet แล้ว','ok');
@@ -2951,13 +2953,15 @@ async function persistDevice(feederId, device, reason){
   }
 }
 /** เหมือน persistDevice แต่ไม่โชว์ toast ของตัวเอง (เอาไว้ใช้ตอนบันทึกหลายรายการติดกันเป็นชุด จะได้ไม่มี toast ซ้อนตีกัน) — ไม่เช็ค auth ซ้ำ (ให้ผู้เรียกเช็คครั้งเดียวก่อนเข้า loop) */
-async function persistDeviceQuiet(feederId, device, reason){
+async function persistDeviceQuiet(feederId, device, reason, opts){
   if(GAS_URL){
     try{
       const res = await fetch(GAS_URL, {
         method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify({ action:'upsert', feeder:feederId, device, reason: reason||'', changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
+        body: JSON.stringify({ action:'upsert', feeder:feederId, device, reason: reason||'',
+          updateSequenceVerified: !!(opts && opts.updateSequenceVerified),
+          changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
       });
       return await res.json();
     }catch(e){ return { ok:false, error:'connection failed' }; }
