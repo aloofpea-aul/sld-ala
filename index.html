@@ -1347,35 +1347,63 @@ function layoutTree(root){
   computeSubtreeSize(root);
   const nodesFlat = [];
   const visiting = new Set();
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   const stepTable = [170, 95, 65, 50, 40, 32];
   const stepFor = lv => stepTable[Math.min(lv, stepTable.length-1)];
   const gapTable = [0, 100, 82, 65, 52, 42];
   const gapFor = lv => gapTable[Math.min(lv, gapTable.length-1)];
+  const CLEAR = 18;          // ระยะห่างขั้นต่ำระหว่าง "กล่องพื้นที่" ของกิ่งที่ติดกัน
+  const LABEL_W = 78;        // เผื่อความกว้างป้ายชื่ออุปกรณ์ (ป้ายอยู่ขวาของจุด) ไม่ให้เส้นกิ่งอื่นวิ่งทับป้าย
+  const LABEL_H = 14;
 
+  // กล่องพื้นที่จริงของอุปกรณ์ช่วง nodesFlat[s..e) (รวมพื้นที่ป้ายชื่อ)
+  function boundsOf(s, e){
+    let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+    for(let i=s;i<e;i++){
+      const n = nodesFlat[i];
+      const leaf = isLeafAssetType(n.dev.type);
+      minX=Math.min(minX,n.x); maxX=Math.max(maxX, n.x + (leaf?10:LABEL_W));
+      minY=Math.min(minY, n.y - (leaf?12:LABEL_H)); maxY=Math.max(maxY,n.y);
+    }
+    return { minX, maxX, minY, maxY };
+  }
+  function shiftRange(s, e, dx, dy){
+    for(let i=s;i<e;i++){ nodesFlat[i].x += dx; nodesFlat[i].y += dy; }
+  }
+
+  /**
+   * วางกิ่งแบบ "จองกล่องพื้นที่" — ทุกกิ่งจะได้พื้นที่สี่เหลี่ยมของตัวเองที่ไม่ทับกับกิ่งอื่น
+   * ใช้พิกัดสัมพัทธ์ 2 แกน: along = แนวที่สายหลักของกิ่งนี้วิ่งไป, cross = แนวที่กิ่งแยกพุ่งออก
+   *  - กิ่งแนวนอน: along = ไปทางขวา, cross = ขึ้นด้านบน
+   *  - กิ่งแนวตั้ง: along = ขึ้นด้านบน, cross = ไปทางขวา
+   * กฎกันเส้นทับ:
+   *  1) กิ่งแยกจากจุดเดียวกันซ้อนกันตามแนว cross โดยกล่องต้องไม่ทับกัน
+   *  2) เส้นเสา (riser) ของกิ่งแยกตัวถัดไป ต้องอยู่ "ข้างหน้า" พ้นขอบของกิ่งก่อนหน้า จึงไม่วิ่งทะลุกิ่งเหล่านั้น
+   *  3) กลุ่มของจุดบนสายหลักแต่ละจุด (ตัวจุด + หม้อแปลง + กิ่งแยกทั้งหมด) ต้องไม่ทับกันตามแนว along
+   */
   function layoutBranch(node, x0, y0, level, depth){
+    const start = nodesFlat.length;
     if(visiting.has(node.dev.id) || depth > 2000){
       node.x=x0; node.y=y0; node.isTrunk=true; node.level=level;
       nodesFlat.push(node);
-      minX=Math.min(minX,x0); maxX=Math.max(maxX,x0);
-      minY=Math.min(minY,y0); maxY=Math.max(maxY,y0);
-      return { minX:x0, maxX:x0, minY:y0, maxY:y0 };
+      return boundsOf(start, nodesFlat.length);
     }
     visiting.add(node.dev.id);
     const horizontal = (level % 2 === 0);
     const step = stepFor(level);
-    let subMinX=Infinity, subMaxX=-Infinity, subMinY=Infinity, subMaxY=-Infinity;
-    const track = (x,y) => { subMinX=Math.min(subMinX,x); subMaxX=Math.max(subMaxX,x); subMinY=Math.min(subMinY,y); subMaxY=Math.max(subMaxY,y); };
+    const gap = gapFor(level+1);
 
-    // แกนหลักของกิ่งนี้: ปกติเลือกอุปกรณ์ที่มีอุปกรณ์ต่อพ่วงมากสุด (สะท้อนสายเมนไฟฟ้าจริง) กิ่งแยกที่เหลือเรียงตามเลขรหัสแทน
-    // ถ้าผู้ใช้กำหนด mainChildId ไว้เอง ให้ใช้ตามนั้นก่อนเสมอ
+    const W  = (a,c) => horizontal ? { x:x0+a, y:y0-c } : { x:x0+c, y:y0-a };
+    const dW = (da,dc) => horizontal ? { dx:da, dy:-dc } : { dx:dc, dy:-da };
+    const AC = b => horizontal
+      ? { aMin:b.minX-x0, aMax:b.maxX-x0, cMin:y0-b.maxY, cMax:y0-b.minY }
+      : { aMin:y0-b.maxY, aMax:y0-b.minY, cMin:b.minX-x0, cMax:b.maxX-x0 };
+
+    // แกนหลักของกิ่งนี้: ปกติเลือกอุปกรณ์ที่มีอุปกรณ์ต่อพ่วงมากสุด ถ้าผู้ใช้กำหนด mainChildId ไว้เองให้ใช้ตามนั้นก่อน
     const trunk = [node];
     let cur = node;
     while(cur.children.length){
       let best;
-      if(cur.dev.mainChildId){
-        best = cur.children.find(c=>c.dev.id === cur.dev.mainChildId);
-      }
+      if(cur.dev.mainChildId) best = cur.children.find(c=>c.dev.id === cur.dev.mainChildId);
       if(!best){
         best = cur.children[0];
         for(const c of cur.children) if(c._size > best._size) best = c;
@@ -1383,81 +1411,83 @@ function layoutTree(root){
       trunk.push(best);
       cur = best;
     }
-    trunk.forEach((n,i)=>{
-      if(horizontal){ n.x = x0 + i*step; n.y = y0; }
-      else { n.x = x0; n.y = y0 - i*step; } // แนวตั้ง: ไต่ขึ้นด้านบนเสมอ
-      n.isTrunk = true; n.level = level;
-      nodesFlat.push(n);
-      minX=Math.min(minX,n.x); maxX=Math.max(maxX,n.x);
-      minY=Math.min(minY,n.y); maxY=Math.max(maxY,n.y);
-      track(n.x, n.y);
-    });
 
-    // จุดที่แยกออก (ไม่ใช่แกนหลัก) พุ่งออกมุมฉากจากจุดต่อพอดี — ถ้ามีหลายตัวจากจุดเดียวกัน
-    // จะไต่ระดับขึ้นไปตามแนวตั้งฉากทีละตัว (เหมือนเสาเดียวกันมีหลายวงจรแยก)
-    // ระยะที่ต้องเว้นให้กิ่งถัดไปคำนวณจาก "ขอบเขตจริง" ของกิ่งก่อนหน้า (ไม่ใช่การประมาณจากจำนวนอุปกรณ์)
-    // กันไม่ให้กิ่งที่ลึก/แตกแขนงเยอะ ทับกับกิ่งข้างเคียงที่วางไว้ถัดไป
-    const gap = gapFor(level+1);
-    const MIN_CLEARANCE = 18; // ระยะห่างขั้นต่ำระหว่างขอบเขตของกิ่งที่ติดกัน แม้คำนวณได้ว่าขอบเขตจริงใกล้กันมากก็ตาม
+    let prevA = 0, prevGroupAMax = -Infinity;
     trunk.forEach((n,i)=>{
+      let a = (i === 0) ? 0 : prevA + step;
+      const gStart = nodesFlat.length;
+      const p = W(a, 0);
+      n.x = p.x; n.y = p.y; n.isTrunk = true; n.level = level;
+      nodesFlat.push(n);
+
       const nextTrunkNode = trunk[i+1];
       const allChildren = n.children.filter(c => c !== nextTrunkNode);
-      // แยกหม้อแปลง/มิเตอร์ (ปลายทาง ไม่มีลูกต่ออีก) ออกมาต่างหาก — มีเป็นร้อยตัวต่อจุดเดียวได้
-      // ถ้าให้กระจายแบบกิ่งเต็มรูปแบบเหมือนอุปกรณ์อื่น จะกินพื้นที่มหาศาลจนผังรกทันที
       const laterals = allChildren.filter(c => !isLeafAssetType(c.dev.type));
       const leafChildren = allChildren.filter(c => isLeafAssetType(c.dev.type));
-      // เรียงลำดับกิ่งแยกตาม siblingPriority ที่ผู้ใช้กำหนดเอง (ถ้ามี) ก่อน แล้วค่อย fallback เรียงตามเลขรหัสอุปกรณ์จากน้อยไปมาก
-      laterals.sort((a,b)=>{
-        const pa = a.dev.siblingPriority, pb = b.dev.siblingPriority;
+
+      // หม้อแปลง/มิเตอร์ — แถวก้านสั้นติดจุดแม่ (ปลายทาง ไม่มีลูกต่อ)
+      let busyAMax = -Infinity; // ขอบด้านหน้าสุดที่ถูกใช้ไปแล้วรอบจุดนี้ — เสาของกิ่งแยกถัดไปต้องอยู่ถัดไปข้างหน้าพ้นขอบนี้ (ฝั่งปลายทาง/ด้านโหลด)
+      if(leafChildren.length){
+        leafChildren.sort((x,y)=> x.dev.id.localeCompare(y.dev.id, undefined, {numeric:true, sensitivity:'base'}));
+        const LEAF_SPACING = 7.5;
+        const LEAF_STUB = level === 0 ? 32 : 24;
+        const span = (leafChildren.length - 1) * LEAF_SPACING;
+        leafChildren.forEach((leaf, j)=>{
+          const lp = W(a - span/2 + j*LEAF_SPACING, LEAF_STUB);
+          leaf.x = lp.x; leaf.y = lp.y; leaf.isTrunk = false; leaf.level = level+1;
+          nodesFlat.push(leaf);
+        });
+        busyAMax = a + span/2;
+      }
+
+      laterals.sort((x,y)=>{
+        const pa = x.dev.siblingPriority, pb = y.dev.siblingPriority;
         if(pa != null && pb != null) return pa - pb;
         if(pa != null) return -1;
         if(pb != null) return 1;
-        return a.dev.id.localeCompare(b.dev.id, undefined, {numeric:true, sensitivity:'base'});
-      });
-      let cursor = 0;
-      laterals.forEach((lat,j)=>{
-        cursor += gap;
-        const jitterMag = Math.ceil((j+1)/2) * SIB_JITTER;
-        const jitter = (j % 2 === 0) ? jitterMag : -jitterMag; // สลับซ้าย-ขวา กันไม่ให้เรียงเป็นเส้นรังสีเดียวกัน
-        let tapX, tapY;
-        if(horizontal){ tapX = n.x + jitter; tapY = n.y - cursor; }
-        else { tapX = n.x + cursor; tapY = n.y - jitter; }
-        const bounds = layoutBranch(lat, tapX, tapY, level+1, depth+1);
-        track(bounds.minX, bounds.minY); track(bounds.maxX, bounds.maxY);
-        // ระยะที่กิ่งถัดไปต้องเว้น = จากจุดต่อ (tap point) ไปถึงขอบไกลสุดจริงของกิ่งนี้ตามแนวที่ลูกกระจายตัว (แนวเดียวกับ cursor)
-        const farEdge = horizontal
-          ? Math.max(tapY - bounds.minY, bounds.maxY - tapY)
-          : Math.max(bounds.maxX - tapX, tapX - bounds.minX);
-        cursor += Math.max(ROW_H, farEdge + MIN_CLEARANCE);
+        return x.dev.id.localeCompare(y.dev.id, undefined, {numeric:true, sensitivity:'base'});
       });
 
-      // หม้อแปลง/มิเตอร์ — วางเป็นแถวสั้นๆ แน่นๆ ติดกับจุดแม่โดยตรง (ไม่ผ่าน layoutBranch เต็มรูปแบบ เพราะเป็นปลายทาง ไม่มีลูกต่อ)
-      if(leafChildren.length){
-        leafChildren.sort((a,b)=> a.dev.id.localeCompare(b.dev.id, undefined, {numeric:true, sensitivity:'base'}));
-        const LEAF_SPACING = 7.5;   // ระยะห่างระหว่างก้านหม้อแปลงแต่ละตัว — แคบมากเพราะเป็นแค่ก้านสั้น ไม่ใช่กิ่งเต็ม
-        const LEAF_STUB = level === 0 ? 32 : 24; // ความยาวก้านที่ยื่นออกจากเส้นหลัก
-        const span = (leafChildren.length - 1) * LEAF_SPACING;
-        leafChildren.forEach((leaf, j)=>{
-          const along = -span/2 + j*LEAF_SPACING; // กระจายตัวไปตามแนวเส้นหลัก (ซ้าย-ขวา หรือ บน-ล่าง)
-          let lx, ly;
-          if(horizontal){ lx = n.x + along; ly = n.y - LEAF_STUB; }
-          else { lx = n.x + LEAF_STUB; ly = n.y + along; }
-          leaf.x = lx; leaf.y = ly; leaf.isTrunk = false; leaf.level = level+1;
-          nodesFlat.push(leaf);
-          minX=Math.min(minX,lx); maxX=Math.max(maxX,lx);
-          minY=Math.min(minY,ly); maxY=Math.max(maxY,ly);
-          track(lx, ly);
-        });
+      // กล่องของกิ่งแยกถัดไปต้องเริ่มที่ระยะ cross นี้เป็นอย่างน้อย (กิ่งแนวตั้ง: เผื่อพ้นป้ายชื่อของจุดบนเสาด้วย)
+      let crossCursor = horizontal ? gap : Math.max(gap, LABEL_W + 14);
+      laterals.forEach(lat=>{
+        // กิ่งแยกตัวแรก (ถ้าไม่มีหม้อแปลงขวาง) พุ่งออกจากจุดต่อพอดี ตัวถัดไปเลื่อนไปข้างหน้าพ้นขอบกิ่งก่อนหน้า
+        const laneA = (busyAMax === -Infinity) ? a : busyAMax + CLEAR;
+        const tp = W(laneA, crossCursor);
+        const ls = nodesFlat.length;
+        layoutBranch(lat, tp.x, tp.y, level+1, depth+1);
+        const le = nodesFlat.length;
+        const box = AC(boundsOf(ls, le));
+        // ดันกิ่งออกไปตามแนว cross จนกล่องพ้นกิ่งก่อนหน้า (เส้นเสาจะยาวขึ้นเอง)
+        const needC = crossCursor - box.cMin;
+        if(needC > 0){ const d = dW(0, needC); shiftRange(ls, le, d.dx, d.dy); box.cMax += needC; }
+        crossCursor = box.cMax + CLEAR;
+        busyAMax = Math.max(laneA, box.aMax);
+      });
+
+      // กลุ่มของจุดนี้ต้องไม่ทับกลุ่มของจุดก่อนหน้าบนสายหลักเดียวกัน — ถ้าทับ ขยับทั้งกลุ่มไปข้างหน้า
+      const gb = AC(boundsOf(gStart, nodesFlat.length));
+      if(i > 0){
+        const need = prevGroupAMax + CLEAR - gb.aMin;
+        if(need > 0){
+          const d = dW(need, 0);
+          shiftRange(gStart, nodesFlat.length, d.dx, d.dy);
+          a += need; gb.aMax += need;
+        }
       }
+      prevA = a;
+      prevGroupAMax = gb.aMax;
     });
 
     visiting.delete(node.dev.id);
-    return { minX:subMinX, maxX:subMaxX, minY:subMinY, maxY:subMaxY };
+    return boundsOf(start, nodesFlat.length);
   }
 
-  layoutBranch(root, 40, 0, 0, 0);
-  const OFFSET_Y = 40 - minY;
-  nodesFlat.forEach(n=>{ n.y += OFFSET_Y; });
+  layoutBranch(root, 0, 0, 0, 0);
+  let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+  nodesFlat.forEach(n=>{ minX=Math.min(minX,n.x); maxX=Math.max(maxX,n.x); minY=Math.min(minY,n.y); maxY=Math.max(maxY,n.y); });
+  const OFFSET_X = 40 - minX, OFFSET_Y = 40 - minY;
+  nodesFlat.forEach(n=>{ n.x += OFFSET_X; n.y += OFFSET_Y; });
   const totalWidth = (maxX - minX) + 240;
   const totalHeight = (maxY - minY) + 80;
   return { nodesFlat, totalWidth, totalHeight };
