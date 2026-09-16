@@ -1588,7 +1588,9 @@ function renderFeederDetail(f){
       if(opsa.peakLoadPercent != null) tipText += `\n% โหลดสูงสุด (${opsa.peakMonth||'-'}): ${opsa.peakLoadPercent}%`;
     }
     const titleSvg = isLeaf ? `<title>${escapeHtml(tipText)}</title>` : '';
-    html += `<g class="tap-dot" data-id="${d.id}">${shapeSvg}${verifiedSvg}${titleSvg}
+    // วงกลมโปร่งใสขยายพื้นที่คลิก/แตะ — จุดอุปกรณ์เล็กมาก กดโดนยากโดยเฉพาะบนมือถือ
+    const hitSvg = `<circle cx="${mx}" cy="${my}" r="${isLeaf?6:10}" fill="transparent"/>`;
+    html += `<g class="tap-dot" data-id="${d.id}">${hitSvg}${shapeSvg}${verifiedSvg}${titleSvg}
       ${labelSvg}
     </g>`;
   });
@@ -1599,9 +1601,13 @@ function renderFeederDetail(f){
   g.querySelectorAll('[data-id]').forEach(elm=>{
     elm.addEventListener('click', (e)=>{
       e.stopPropagation();
+      // ถ้าเพิ่งลากเลื่อนผัง ไม่นับเป็นการคลิกเลือกอุปกรณ์ (กันป๊อปอัพเด้งขึ้นเองตอนปล่อยเมาส์บนจุด)
+      if(panMoved) return;
       const id = elm.getAttribute('data-id');
       highlightAndScrollTo(id);
+      // คลิกจุดในผัง = เปิดรายละเอียด/แก้ไขได้เหมือนคลิกจากรายการด้านข้าง
       if(editMode) openEditForm(id);
+      else openDeviceModal(id);
     });
   });
   fitPanZoom(totalWidth, totalHeight);
@@ -1650,15 +1656,18 @@ function screenToSVG(clientX, clientY){
   const p = pt.matrixTransform(ctm);
   return { x:p.x, y:p.y };
 }
+let panMoved = false, panDownXY = null; // แยก "ลากเลื่อนผัง" ออกจาก "คลิกเลือกอุปกรณ์"
 function initPanZoomEvents(){
   const wrap = document.getElementById('diagramWrap');
   wrap.addEventListener('mousedown', e=>{
     if(mapMode) return;
+    panMoved = false; panDownXY = { x:e.clientX, y:e.clientY };
     dragging = true; wrap.classList.add('dragging');
     dragStart = screenToSVG(e.clientX, e.clientY); viewStart = {x:view.x, y:view.y};
   });
   window.addEventListener('mousemove', e=>{
     if(!dragging || mapMode) return;
+    if(panDownXY && Math.hypot(e.clientX-panDownXY.x, e.clientY-panDownXY.y) > 5) panMoved = true;
     const p = screenToSVG(e.clientX, e.clientY);
     view.x = viewStart.x + (p.x - dragStart.x);
     view.y = viewStart.y + (p.y - dragStart.y);
