@@ -3504,7 +3504,7 @@ function renderRatingComparisonBox(f, d){
       <div class="rating-compare-cells">
         <div class="rating-compare-cell">
           <div class="rc-value">${fc['กระแสออกแบบ_A']} A → แนะนำ ${fc['ฟิวส์แนะนำ_K']}K</div>
-          <div class="rc-sub">หม้อแปลง ${fc['หม้อแปลงในโซน']} ตัว / มิเตอร์ ${fc['มิเตอร์ในโซน']} ราย ในโซน
+          <div class="rc-sub">หม้อแปลง ${fc['หม้อแปลงในโซน']} เครื่อง / มิเตอร์ ${fc['มิเตอร์ในโซน']} ราย ในโซน
             (${fc['ความเชื่อมั่น']==='confirmed'?'✅ ยืนยันจากแบบ A0 แล้ว':'⚠️ ยังไม่ยืนยันจากแบบ A0'})</div>
           <button type="button" class="rc-fill-btn" data-fill="${fc['ฟิวส์แนะนำ_K']}K">ใช้ค่านี้</button>
         </div>
@@ -3521,7 +3521,7 @@ function renderRatingComparisonBox(f, d){
     <div class="rating-compare-cells">
       <div class="rating-compare-cell">
         <div class="rc-value">${est.amps} A → แนะนำ ${est.suggestedFuse}K</div>
-        <div class="rc-sub">จากหม้อแปลงปลายน้ำ ${est.nTotal} ตัว (${coverage}% มีข้อมูลวัดจริง)</div>
+        <div class="rc-sub">จากหม้อแปลงปลายน้ำ ${est.nTotal} เครื่อง (${coverage}% มีข้อมูลวัดจริง)</div>
         <button type="button" class="rc-fill-btn" data-fill="${est.suggestedFuse}K">ใช้ค่านี้</button>
       </div>
     </div>
@@ -4140,7 +4140,7 @@ function renderReportTabA0Gis(){
     if(fc){
       return `<div style="text-align:left;font-size:.76rem;">
           <b>${fc['กระแสออกแบบ_A']} A</b> → แนะนำ <b>${fc['ฟิวส์แนะนำ_K']}K</b><br>
-          <span style="color:var(--muted);">หม้อแปลง ${fc['หม้อแปลงในโซน']} ตัว / มิเตอร์ ${fc['มิเตอร์ในโซน']} ราย
+          <span style="color:var(--muted);">หม้อแปลง ${fc['หม้อแปลงในโซน']} เครื่อง / มิเตอร์ ${fc['มิเตอร์ในโซน']} ราย
           (${fc['ความเชื่อมั่น']==='confirmed'?'✅ ยืนยันแล้ว':'⚠️ ยังไม่ยืนยัน'})</span>
         </div>`;
     }
@@ -4152,7 +4152,7 @@ function renderReportTabA0Gis(){
     return `<div style="text-align:left;font-size:.76rem;">
         <b>${est.amps} A</b> (≈${est.totalKva} kVA)<br>
         แนะนำ: <b>${est.suggestedFuse}K</b> <span style="color:var(--muted);">(ประมาณอย่างง่าย)</span><br>
-        <span style="color:var(--muted);">จากหม้อแปลง ${est.nTotal} ตัว (วัดจริง ${est.nMeasured}, ประมาณจากป้าย ${est.nNameplateOnly} = ${coverage}% มีข้อมูลจริง)</span>
+        <span style="color:var(--muted);">จากหม้อแปลง ${est.nTotal} เครื่อง (วัดจริง ${est.nMeasured}, ประมาณจากป้าย ${est.nNameplateOnly} = ${coverage}% มีข้อมูลจริง)</span>
       </div>`;
   };
 
@@ -4175,7 +4175,7 @@ function renderReportTabA0Gis(){
   document.getElementById('reportBody').innerHTML = `
     <p class="report-note">เปรียบเทียบรหัส/ขนาดฟิวส์ระหว่างแบบ AutoCAD (A0) ต้นฉบับ กับฐานข้อมูล GIS ของ กฟภ. — ${all.length} รายการทั้งหมด
      ระบบใช้ค่าจากแบบ A0 เป็นหลักเมื่อไม่ตรงกัน กด "🔧 แก้ไข" ที่แถวไหนก็ได้เพื่อเปิดหน้าแก้ไขอุปกรณ์นั้นทันที<br>
-     <b>คอลัมน์ "โหลดจริงปลายน้ำ"</b> คำนวณสดจากข้อมูลวัดจริง (OPSA) ของหม้อแปลงทุกตัวที่ต่ออยู่ปลายน้ำ แปลงเป็นกระแสด้าน 33kV แล้วแนะนำขนาดฟิวส์มาตรฐานที่ใกล้เคียง —
+     <b>คอลัมน์ "โหลดจริงปลายน้ำ"</b> คำนวณสดจากข้อมูลวัดจริง (OPSA) ของหม้อแปลงทุกเครื่องที่ต่ออยู่ปลายน้ำ แปลงเป็นกระแสด้าน 33kV แล้วแนะนำขนาดฟิวส์มาตรฐานที่ใกล้เคียง —
      <span style="color:var(--bad);">เป็นค่าประมาณเพื่อใช้ประกอบการพิจารณาเท่านั้น ไม่ใช่ค่าคำนวณทางวิศวกรรมที่สมบูรณ์ (ยังไม่รวมค่า inrush, coordination, ระยะทาง ฯลฯ)
      และจะแม่นยำก็ต่อเมื่อลำดับการเชื่อมต่อ (parent) ของอุปกรณ์ถูกต้องแล้วเท่านั้น — ถ้ายังไม่ได้ยืนยันลำดับ ตัวเลขนี้อาจเปลี่ยนไปเรื่อยๆ ตามการแก้ไข</span></p>
     <div id="a0gisFilterBar">
