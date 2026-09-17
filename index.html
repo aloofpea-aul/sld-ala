@@ -686,6 +686,15 @@
           <div class="mcp-section">
             <label><input type="checkbox" id="osrmToggle"> 🛣 เส้นทางตามถนนจริง (ทดลอง — วงจรใหญ่อาจโหลดช้า)</label>
           </div>
+          <div class="mcp-section">
+            <div class="mcp-label">เส้นหม้อแปลง/มิเตอร์:</div>
+            <label><input type="radio" name="leafLineMode" value="mst"> แนวสายรวม (แนะนำ)</label>
+            <label><input type="radio" name="leafLineMode" value="straight"> เส้นตรงถึงอุปกรณ์ต้นทาง (แบบเดิม)</label>
+            <div style="font-size:.72rem;color:var(--muted);line-height:1.5;margin-top:4px;">
+              เส้นบนแผนที่เป็นแนวประมาณ ไม่ใช่แนวสายจริง — ไม่มีผลกับการคำนวณใดๆ<br>
+              <span style="color:#e07b00;font-weight:700;">- - -</span> เส้นประส้ม = หม้อแปลงห่างอุปกรณ์ต้นทางในข้อมูลเกิน 1 กม. ควรตรวจสอบต้นทาง
+            </div>
+          </div>
           <div class="mcp-section" id="typeFilterSection">
             <div class="mcp-label">แสดงประเภทอุปกรณ์:</div>
             <label><input type="checkbox" class="typeFilterChk" value="WB" checked> สถานี/เบรกเกอร์ (WB)</label>
@@ -2110,6 +2119,57 @@ document.querySelectorAll('.typeFilterChk').forEach(chk=>{
   chk.addEventListener('change', ()=>{ rebuildMapMarkers(); });
 });
 document.getElementById('osrmToggle').addEventListener('change', ()=>{ rebuildMapMarkers(); });
+// รูปแบบเส้นหม้อแปลงบนแผนที่ (เปลี่ยนเฉพาะภาพ ไม่มีผลกับข้อมูลหรือการคำนวณ) — จำค่าไว้ในเครื่อง
+const LEAF_FAR_PARENT_M = 1000;
+function getLeafLineMode(){ return localStorage.getItem('sld_leaf_line_mode') === 'straight' ? 'straight' : 'mst'; }
+document.querySelectorAll('input[name="leafLineMode"]').forEach(r=>{
+  r.checked = r.value === getLeafLineMode();
+  r.addEventListener('change', ()=>{ if(r.checked){ localStorage.setItem('sld_leaf_line_mode', r.value); rebuildMapMarkers(); } });
+});
+// ระยะจากหม้อแปลงถึงอุปกรณ์ต้นทางตามข้อมูล (ParentID) — ใช้เตือนต้นทางที่น่าจะผิด
+function leafParentDistance(f, d){
+  if(!isLeafAssetType(d.type) || d.lat == null || !d.parentId) return null;
+  const p = f.devices.find(x=>x.id===d.parentId);
+  if(!p || p.lat == null || p.lon == null) return null;
+  return gpsDistanceMeters(p.lat, p.lon, d.lat, d.lon);
+}
+// แนวสายรวม: จัดหม้อแปลงเป็นกลุ่มตาม "อุปกรณ์ตัดตอนต้นทาง" (ข้ามหม้อแปลงที่ต่อพ่วงกัน)
+// แล้วลากเส้นเชื่อมแบบระยะรวมสั้นที่สุด (minimum spanning tree) — ได้แนวเดียวไล่ตามหม้อแปลง แทนเส้นพัดทับกัน
+function buildLeafMstEdges(f, leaves){
+  const byId = {};
+  f.devices.forEach(x=>{ byId[x.id] = x; });
+  const zones = new Map();
+  leaves.forEach(d=>{
+    let cur = byId[d.parentId];
+    const seen = new Set([d.id]);
+    while(cur && isLeafAssetType(cur.type) && !seen.has(cur.id)){ seen.add(cur.id); cur = byId[cur.parentId]; }
+    const key = cur ? cur.id : '__none__';
+    if(!zones.has(key)) zones.set(key, { anchor: (cur && cur.lat != null && cur.lon != null) ? cur : null, items: [] });
+    zones.get(key).items.push(d);
+  });
+  const edges = [];
+  const cosLat = Math.cos(8.35 * Math.PI / 180);
+  const dist2 = (a,b)=>{ const dx = (a.lon-b.lon)*cosLat, dy = a.lat-b.lat; return dx*dx + dy*dy; };
+  zones.forEach(z=>{
+    const pts = z.anchor ? [z.anchor, ...z.items] : z.items.slice();
+    const n = pts.length;
+    if(n < 2) return;
+    const inTree = new Array(n).fill(false), best = new Array(n).fill(Infinity), from = new Array(n).fill(-1);
+    best[0] = 0;
+    for(let step = 0; step < n; step++){
+      let k = -1;
+      for(let i = 0; i < n; i++) if(!inTree[i] && (k < 0 || best[i] < best[k])) k = i;
+      inTree[k] = true;
+      if(from[k] >= 0) edges.push([pts[from[k]], pts[k]]);
+      for(let i = 0; i < n; i++){
+        if(inTree[i]) continue;
+        const dd = dist2(pts[k], pts[i]);
+        if(dd < best[i]){ best[i] = dd; from[i] = k; }
+      }
+    }
+  });
+  return edges;
+}
 
 function initLeafletMap(){
   if(typeof longdo === 'undefined'){
@@ -2212,13 +2272,39 @@ function rebuildMapMarkers(){
     const scale = FEEDER_LENGTH_SCALE[f.id] || 1.0;
     // เส้นเชื่อมประมาณเส้นทาง ยืดความยาวตามอัตราส่วนความยาวสายจริงของทั้งวงจร (อาจเลยจุดอุปกรณ์ปลายทางไปบ้าง
     // เพราะไม่มีพิกัดเส้นทางจริงระดับช่วงต่อช่วง จึงใช้อัตราส่วนรวมทั้งวงจรกระจายลงแต่ละช่วงแทน)
+    const leafMode = getLeafLineMode();
+    const addLine = (pts, opt)=>{ const ln = new longdo.Polyline(pts, opt); leafletMap.Overlays.add(ln); mapMarkers.push(ln); return ln; };
+    const farDash = (()=>{ try{ return longdo.LineStyle && longdo.LineStyle.Dashed; }catch(e){ return undefined; } })();
+    const leavesWithGps = shown.filter(d=> isLeafAssetType(d.type) && d.lat != null && d.lon != null && d.parentId);
+    if(leafMode === 'mst'){
+      buildLeafMstEdges(f, leavesWithGps).forEach(([a,b])=>{
+        addLine([{lon:a.lon, lat:a.lat}, {lon:b.lon, lat:b.lat}], { lineWidth: 1.5, lineColor: hexToRgba(f.color, 0.55) });
+      });
+    }
+    // หม้อแปลงที่ห่างอุปกรณ์ต้นทางในข้อมูลเกิน 1 กม. — เส้นประสีส้มชี้ไปยังต้นทาง (ทั้ง 2 โหมด)
+    leavesWithGps.forEach(d=>{
+      const dist = leafParentDistance(f, d);
+      if(dist == null || dist <= LEAF_FAR_PARENT_M) return;
+      const p = byId[d.parentId];
+      const opt = { lineWidth: 2, lineColor: 'rgba(224,123,0,0.9)' };
+      if(farDash !== undefined) opt.lineStyle = farDash;
+      addLine([{lon:p.lon, lat:p.lat}, {lon:d.lon, lat:d.lat}], opt);
+    });
     shown.forEach(d=>{
       if(d.lat == null || d.lon == null || !d.parentId) return;
       const parent = byId[d.parentId];
       if(!parent || parent.lat == null || parent.lon == null) return;
       const isTrunk = TRUNK_TYPES.has(d.type);
-      const endLat = parent.lat + (d.lat - parent.lat) * scale;
-      const endLon = parent.lon + (d.lon - parent.lon) * scale;
+      if(isLeafAssetType(d.type)){
+        // แบบแนวสายรวมวาดไปแล้วด้านบน / ตัวที่ห่างเกิน 1 กม. วาดเป็นเส้นประแล้ว
+        if(leafMode === 'mst') return;
+        const dist = leafParentDistance(f, d);
+        if(dist != null && dist > LEAF_FAR_PARENT_M) return;
+      }
+      // เส้นหม้อแปลงไม่ยืดความยาว (ยืดแล้วเส้นเลยหม้อแปลงไปทับบริเวณอื่น) — ยืดเฉพาะสายหลักตามอัตราส่วนเดิม
+      const lineScale = isLeafAssetType(d.type) ? 1.0 : scale;
+      const endLat = parent.lat + (d.lat - parent.lat) * lineScale;
+      const endLon = parent.lon + (d.lon - parent.lon) * lineScale;
       const line = new longdo.Polyline(
         [{lon:parent.lon, lat:parent.lat}, {lon:endLon, lat:endLat}],
         { lineWidth: isTrunk?3:1, lineColor: hexToRgba(f.color, isTrunk?0.6:0.5) }
@@ -2315,6 +2401,8 @@ function mapHoverTipHtml(f, d){
   if(d.rating) rows.push(`ขนาด: <b>${escapeHtml(d.rating)}</b>${d.ratingConfidence==='estimated'?' <span style="color:#b5651d">(ประมาณ)</span>':''}`);
   if(d.desc) rows.push(escapeHtml(d.desc));
   if(d.parentId) rows.push(`ต่อจาก: <b>${escapeHtml(d.parentId)}</b>${d.parentConfidence==='estimated'?' <span style="color:#b5651d">(ประมาณจากพิกัด)</span>':''}`);
+  const farDist = leafParentDistance(f, d);
+  if(farDist != null && farDist > LEAF_FAR_PARENT_M) rows.push(`<span style="color:#e07b00;font-weight:700;">⚠ ห่างอุปกรณ์ต้นทาง ${(farDist/1000).toFixed(1)} กม. — ควรตรวจสอบต้นทาง</span>`);
   if(d.phase) rows.push(`เฟส: ${escapeHtml(d.phase)}`);
   if(d.meterCount != null) rows.push(`ผู้ใช้ไฟ: ${d.meterCount} ราย`);
   else if(d.customerImpact != null) rows.push(`ผู้ใช้ไฟที่ได้รับผลกระทบ: ${d.customerImpact} ราย`);
