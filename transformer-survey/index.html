@@ -186,6 +186,10 @@
   input.txt, textarea.txt{width:100%;padding:9px 10px;border-radius:7px;border:1px solid var(--line);font-family:inherit;font-size:16px;}
   textarea.txt{resize:vertical;}
   .photo-pick{display:flex;gap:10px;align-items:center;}
+  .photo-slot{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;}
+  .photo-slot-title{font-size:.84rem;font-weight:700;margin-bottom:2px;}
+  .photo-slot-hint{font-size:.74rem;color:var(--muted);margin-bottom:8px;}
+  .photo-slot.has .photo-pick label{border-style:solid;border-color:var(--good);color:var(--good);}
   .photo-pick label{flex:1;text-align:center;padding:12px 8px;border:2px dashed var(--line);border-radius:9px;font-size:.85rem;cursor:pointer;}
   .photo-pick input{display:none;}
   .photo-prev{width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:none;}
@@ -385,6 +389,11 @@ const GPS_GOOD_ACCURACY_M = 15;  // ความแม่นยำ GPS ที่
 const GPS_MAX_SECONDS = 20;      // จับ GPS นานสุดกี่วินาที (หยุดก่อนได้ถ้าแม่นพอแล้ว)
 const PHOTO_MAX_DIM = 1600;      // ย่อรูปด้านยาวสุดไม่เกินกี่พิกเซล ก่อนส่งขึ้นชีต
 const PHOTO_QUALITY = 0.72;
+// รูปถ่ายหน้างาน 2 ช่อง — ต้องใช้ Code.gs เวอร์ชันที่รับหลายรูป (action fieldVerify + photos)
+const PHOTO_SLOTS = [
+  { key:'pole', title:'1) รูปต้นหม้อแปลง', hint:'ถ่ายให้เห็นทั้งต้นเสาและหม้อแปลง พร้อมสภาพแวดล้อมรอบๆ', label:'ต้นหม้อแปลง' },
+  { key:'tank', title:'2) รูปตัวถัง / เลข PEA หม้อแปลง', hint:'ถ่ายให้อ่านเลข PEA บนตัวถังได้ชัด (ซูมเข้าได้)', label:'ตัวถัง/เลข PEA' }
+];
 const SAVE_TIMEOUT_MS = 90000;   // ไม่มีการตอบกลับเกินนี้ถือว่าบันทึกไม่สำเร็จ
 
 function showToast(msg, kind){
@@ -1110,7 +1119,7 @@ function openDetail(feederId, id){
   const { f, d } = found;
   if(currentPopup && lmap){ try{ lmap.Overlays.remove(currentPopup); }catch(e){} currentPopup = null; }
   form = { f, d, gps: null, status: null, issues: {}, correctedRating:'', correctedDesc:'', peaNo:'',
-    note:'', noGps:false, updateCoords:false, photo:null,
+    note:'', noGps:false, updateCoords:false, photos:{},
     parentCheck:'skip', newParentId:'', savedVerify:false };
   document.getElementById('detailOverlay').classList.add('show');
   renderDetailForm();
@@ -1198,11 +1207,16 @@ function renderDetailForm(){
 
     <div class="sec">
       <div class="sec-title">4. รูปถ่ายและหมายเหตุ</div>
-      <div class="photo-pick">
-        <label>📷 ถ่ายรูป / เลือกรูป<input type="file" id="photoInput" accept="image/*" capture="environment"></label>
-        <img class="photo-prev" id="photoPrev" alt="">
-      </div>
-      <div class="photo-meta" id="photoMeta"></div>
+      ${PHOTO_SLOTS.map(sl=>`
+      <div class="photo-slot" id="slot-${sl.key}">
+        <div class="photo-slot-title">${sl.title}</div>
+        <div class="photo-slot-hint">${sl.hint}</div>
+        <div class="photo-pick">
+          <label><span class="pp-text">📷 ถ่ายรูป / เลือกรูป</span><input type="file" class="photoInput" data-slot="${sl.key}" accept="image/*" capture="environment"></label>
+          <img class="photo-prev" id="photoPrev-${sl.key}" alt="">
+        </div>
+        <div class="photo-meta" id="photoMeta-${sl.key}"></div>
+      </div>`).join('')}
       <textarea class="txt" id="noteInput" rows="2" placeholder="หมายเหตุ (ถ้ามี)" style="margin-top:10px;"></textarea>
     </div>
 
@@ -1239,21 +1253,22 @@ function bindDetailForm(){
   bindText('fixPeaNo', 'peaNo');
   bindText('noteInput', 'note');
 
-  document.getElementById('photoInput').addEventListener('change', async e=>{
+  body.querySelectorAll('.photoInput').forEach(inp=>inp.addEventListener('change', async e=>{
     const file = e.target.files[0];
+    const key = inp.dataset.slot;
     if(!file) return;
-    const meta = document.getElementById('photoMeta');
+    const meta = document.getElementById('photoMeta-' + key);
     meta.textContent = '⏳ กำลังย่อขนาดรูป...';
     try{
       const p = await compressImage(file);
-      form.photo = p;
-      showPhoto();
-      meta.textContent = `ย่อจาก ${(file.size/1048576).toFixed(1)} MB เหลือ ${Math.round(p.bytes/1024)} KB (${p.width}×${p.height}) เพื่อให้ส่งผ่านเน็ตมือถือได้เร็ว`;
+      p.origBytes = file.size;
+      form.photos[key] = p;
+      showPhoto(key);
     }catch(err){
-      form.photo = null;
+      delete form.photos[key];
       meta.textContent = '⚠ ย่อรูปไม่สำเร็จ กรุณาลองถ่ายหรือเลือกรูปใหม่';
     }
-  });
+  }));
   document.getElementById('reviewBtn').addEventListener('click', reviewForm);
 
   body.querySelectorAll('input[name="pc"]').forEach(r=>r.addEventListener('change', ()=>{
@@ -1318,16 +1333,22 @@ function restoreFormValues(){
   document.getElementById('noteInput').value = form.note;
   document.getElementById('noGpsChk').checked = form.noGps;
   if(form.gps) renderGpsResult();
-  if(form.photo) showPhoto();
+  Object.keys(form.photos).forEach(showPhoto);
   syncStatusUi();
   renderParentInfo();
   const pr = document.querySelector(`input[name="pc"][value="${form.parentCheck}"]`); if(pr) pr.checked = true;
   document.getElementById('parentSearch').value = form.newParentId;
   syncParentUi();
 }
-function showPhoto(){
-  const img = document.getElementById('photoPrev');
-  img.src = form.photo.dataUrl; img.style.display = 'block';
+function showPhoto(key){
+  const p = form.photos[key];
+  if(!p) return;
+  const img = document.getElementById('photoPrev-' + key);
+  img.src = p.dataUrl; img.style.display = 'block';
+  document.getElementById('slot-' + key).classList.add('has');
+  document.querySelector(`#slot-${key} .pp-text`).textContent = '✓ ถ่ายใหม่ / เปลี่ยนรูป';
+  document.getElementById('photoMeta-' + key).textContent =
+    `${Math.round(p.bytes/1024)} KB (${p.width}×${p.height})${p.origBytes ? ` · ย่อจาก ${(p.origBytes/1048576).toFixed(1)} MB` : ''}`;
 }
 function syncStatusUi(){
   document.getElementById('stOkLbl').classList.toggle('on', form.status === 'match');
@@ -1523,7 +1544,10 @@ function renderConfirm(){
   if(form.parentCheck === 'skip') rows.push(['ต้นทาง', 'ไม่ได้ตรวจ']);
   else if(pcPlan && pcPlan.kind === 'confirm') rows.push(['ต้นทาง', `✅ ${escapeHtml(pcPlan.newParent.id)} ตรงตามป้าย`]);
   else if(pcPlan) rows.push(['ต้นทาง', `${escapeHtml(pcPlan.oldProt ? pcPlan.oldProt.id : '-')} → <b>${escapeHtml(pcPlan.newParent.id)}</b>`]);
-  rows.push(['รูปถ่าย', form.photo ? `มี (${Math.round(form.photo.bytes/1024)} KB)` : 'ไม่มี']);
+  PHOTO_SLOTS.forEach(sl=>{
+    const ph = form.photos[sl.key];
+    rows.push([`รูป${sl.label}`, ph ? `✓ มี (${Math.round(ph.bytes/1024)} KB)` : '<span style="color:var(--warn)">ไม่มี</span>']);
+  });
   if(form.note.trim()) rows.push(['หมายเหตุ', escapeHtml(form.note.trim())]);
   rows.push(['ผู้สำรวจ', escapeHtml(CURRENT_USER.name || '(จะให้เข้าสู่ระบบก่อนบันทึก)')]);
 
@@ -1560,7 +1584,7 @@ function showSaveLock(state, errMsg){
   ov.classList.add('show');
   if(state === 'saving'){
     box.classList.remove('err'); list.style.display = 'none';
-    document.getElementById('saveTitle').textContent = form && form.photo ? '💾 กำลังอัปโหลดรูปและบันทึก' : '💾 กำลังบันทึกลง Google Sheet';
+    document.getElementById('saveTitle').textContent = form && Object.keys(form.photos).length ? `💾 กำลังอัปโหลดรูป ${Object.keys(form.photos).length} รูปและบันทึก` : '💾 กำลังบันทึกลง Google Sheet';
     document.getElementById('saveText').textContent = 'กรุณารอสักครู่ อย่าปิดหรือรีเฟรชหน้านี้';
   } else {
     box.classList.add('err');
@@ -1592,7 +1616,10 @@ async function saveSurvey(){
     const res = await fetch(GAS_URL, {
       method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, signal: ctrl ? ctrl.signal : undefined,
       body: JSON.stringify({ action:'fieldVerify', feeder:f.id, deviceId:d.id, verification,
-        photoBase64: form.photo ? form.photo.base64 : null, photoMimeType: form.photo ? form.photo.mime : null,
+        // photos = รูปหลายช่อง (Code.gs ใหม่) · photoBase64 = รูปต้นหม้อแปลงช่องเดียว เผื่อ Code.gs ยังเป็นเวอร์ชันเดิม
+        photos: PHOTO_SLOTS.filter(sl=>form.photos[sl.key]).map(sl=>({ kind: sl.key, base64: form.photos[sl.key].base64, mimeType: form.photos[sl.key].mime })),
+        photoBase64: (form.photos.pole || form.photos.tank) ? (form.photos.pole || form.photos.tank).base64 : null,
+        photoMimeType: 'image/jpeg',
         changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password, updatedDevice })
     });
     json = await res.json();
@@ -1612,7 +1639,17 @@ async function saveSurvey(){
   if(verification.correctedDesc) d.desc = verification.correctedDesc;
   if(verification.status === 'mismatch') d.source = 'field-verified';
   form.savedVerify = true;
-  form.photoFailed = json.photoUrl && String(json.photoUrl).startsWith('UPLOAD_FAILED');
+  // ตรวจผลอัปโหลดรายรูป — Code.gs ใหม่ตอบ photoUrls แยกช่อง / ถ้าไม่มี = Code.gs เดิม เก็บได้แค่รูปเดียว
+  const sentKinds = PHOTO_SLOTS.filter(sl=>form.photos[sl.key]).map(sl=>sl.key);
+  const failedLabels = [];
+  if(json.photoUrls){
+    sentKinds.forEach(k=>{ const u = json.photoUrls[k]; if(!u || String(u).startsWith('UPLOAD_FAILED')) failedLabels.push(PHOTO_SLOTS.find(sl=>sl.key===k).label); });
+    form.photoWarn = failedLabels.length ? `อัปโหลดรูป${failedLabels.join(' และ ')}ไม่สำเร็จ` : '';
+  } else {
+    const oneFailed = json.photoUrl && String(json.photoUrl).startsWith('UPLOAD_FAILED');
+    form.photoWarn = oneFailed ? 'อัปโหลดรูปไม่สำเร็จ'
+      : (sentKinds.length > 1 ? 'บันทึกได้แค่รูปแรก — Code.gs ยังเป็นเวอร์ชันเดิม ต้องอัปเดตก่อนจึงเก็บได้ 2 รูป' : '');
+  }
   saving = true;
   return saveParentStep(pcPlan);
 }
@@ -1652,13 +1689,13 @@ async function saveParentStep(pcPlan){
   }
   saving = false;
   showSaveLock('hide');
-  const photoFailed = form.photoFailed;
+  const photoWarn = form.photoWarn;
   const id = d.id;
   form.savedVerify = false;
   closeDetail();
   refreshView();
-  showToast(photoFailed ? '⚠ บันทึกผลแล้ว แต่อัปโหลดรูปไม่สำเร็จ — ถ่ายรูปแล้วบันทึกซ้ำภายหลังได้'
-    : `✓ บันทึกผลสำรวจ ${id}${pcPlan ? ' และต้นทาง' : ''} แล้ว`, photoFailed ? 'warn' : 'ok');
+  showToast(photoWarn ? `⚠ บันทึกผลแล้ว แต่${photoWarn}`
+    : `✓ บันทึกผลสำรวจ ${id}${pcPlan ? ' และต้นทาง' : ''} แล้ว`, photoWarn ? 'warn' : 'ok');
 }
 
 loadMemberList();
