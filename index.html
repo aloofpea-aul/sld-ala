@@ -216,6 +216,7 @@
   .pf-btn:hover{border-color:var(--pea-purple);}
   .pf-btn.active{background:var(--pea-purple);color:#fff;border-color:var(--pea-purple);font-weight:700;}
   #panelHeader h2{margin:0 0 4px;font-size:1.05rem;}
+  #panelHdrToggle{display:none;}
   #panelHeader .tie{font-size:.78rem;color:var(--muted);}
   #panelHeader .count-badge{display:inline-block;background:var(--paper);border:1px solid var(--line);
     border-radius:20px;padding:2px 10px;font-size:.75rem;margin-top:6px;}
@@ -502,6 +503,35 @@
     main{flex-direction:column;}
     #panel{max-width:none;border-left:none;border-top:1px solid var(--line);flex:1;}
     #diagramWrap{flex:1;min-height:320px;}
+    /* มือถือ/แท็บเล็ตแนวตั้ง: ยึดแอปเต็มจอพอดี กันพื้นที่ว่างสีครีมโผล่ใต้แถบสีวงจร (เกิดบน iPhone ที่เปิดจากหน้าโฮม) */
+    #app{position:fixed;inset:0;height:auto;}
+    /* หน้าภาพรวม (ยังไม่ได้เลือกวงจร): ไม่มีรายการอุปกรณ์ให้แสดง — ยุบแผงล่างเหลือบรรทัดเดียว ให้ผังได้พื้นที่เกือบเต็มจอ
+       แถบสีวงจรซ่อนไว้ด้วย เพราะในผังภาพรวมมีชื่อวงจรกำกับสีอยู่ที่ปลายเส้นแล้ว */
+    #app.is-overview #panel{flex:0 0 auto;}
+    #app.is-overview #panelHeader{padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom));border-bottom:none;}
+    #app.is-overview #panelHeader h2{font-size:.85rem;margin:0;font-weight:600;color:var(--muted);text-align:center;}
+    #app.is-overview #deviceList, #app.is-overview #legend,
+    #app.is-overview #panelTie, #app.is-overview #panelCount,
+    #app.is-overview #panelSeqBtn, #app.is-overview #panelFilterBar{display:none !important;}
+    /* หน้ารายละเอียดวงจร: ผังกับรายการแบ่งพื้นที่ใกล้เคียงกัน */
+    #app.is-detail #diagramWrap{flex:1.15;min-height:260px;}
+    #app.is-detail #panel{flex:1;min-height:0;}
+    /* ส่วนหัวแผงรายการบนมือถือ: ยุบ/ขยายได้ — ยุบไว้เป็นค่าเริ่มต้น ให้รายการอุปกรณ์ได้พื้นที่มากที่สุด */
+    #app.is-detail #panelHeader{padding:8px 12px 8px;}
+    #app.is-detail #panelTitleRow{display:flex;align-items:center;gap:8px;}
+    #app.is-detail #panelTitle{flex:1;min-width:0;font-size:.95rem;margin:0;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    #app.is-detail #panelHdrToggle{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;
+      border:1px solid var(--pea-purple);background:#fff;color:var(--pea-purple);border-radius:14px;
+      padding:5px 11px;font-family:inherit;font-size:.75rem;font-weight:700;cursor:pointer;white-space:nowrap;}
+    #app.is-detail #panelHdrToggle.has-filter{background:var(--pea-purple);color:#fff;}
+    #app.is-detail #panelHeader .count-badge{margin-top:4px;font-size:.7rem;padding:1px 8px;}
+    #app.is-detail #panel.hdr-collapsed #panelTie,
+    #app.is-detail #panel.hdr-collapsed #panelSeqBtn,
+    #app.is-detail #panel.hdr-collapsed #panelFilterBar{display:none !important;}
+    #app.is-detail #panelTie{margin-top:2px;}
+    #app.is-detail #panelSeqBtn{margin-top:6px;padding:6px 12px;}
+    #app.is-detail #panelFilterBar{margin-top:6px;gap:4px;}
   }
   @media (max-width:600px){
     header{padding:6px 8px;padding-top:calc(6px + env(safe-area-inset-top));gap:5px;flex-wrap:nowrap;}
@@ -530,7 +560,7 @@
 </style>
 </head>
 <body>
-<div id="app">
+<div id="app" class="is-overview">
   <header>
     <h1>Single Line Diagram</h1>
     <span class="sub" id="stationSub">สถานีไฟฟ้าอ่าวลึก · กฟส.อ่าวลึก กฟต.2</span>
@@ -583,6 +613,7 @@
         <button id="zoomOut">−</button>
       </div>
       <div id="hint">ลากเพื่อเลื่อนภาพ · หมุนล้อเมาส์เพื่อซูม</div>
+      <script>if(window.matchMedia("(pointer:coarse)").matches) document.getElementById("hint").textContent = "ลากเพื่อเลื่อนภาพ · ใช้สองนิ้วถ่างเพื่อซูม";</script>
       <div id="loadingOverlay">
         <div id="loadingIcon">⚡</div>
         <h2>Single Line Diagram</h2>
@@ -597,9 +628,12 @@
         </div>
       </div>
     </div>
-    <div id="panel">
+    <div id="panel" class="hdr-collapsed">
       <div id="panelHeader">
-        <h2 id="panelTitle">เลือกวงจรเพื่อดูรายละเอียด</h2>
+        <div id="panelTitleRow">
+          <h2 id="panelTitle">เลือกวงจรเพื่อดูรายละเอียด</h2>
+          <button id="panelHdrToggle" type="button" aria-expanded="false">ตัวกรอง ▾</button>
+        </div>
         <div class="tie" id="panelTie"></div>
         <div class="count-badge" id="panelCount" style="display:none;"></div>
         <button id="panelSeqBtn" style="display:none;">🔢 ยืนยันลำดับการเชื่อมต่อ</button>
@@ -1199,8 +1233,21 @@ function showToast(msg, kind){
   toastTimer = setTimeout(()=>{ t.className=''; }, 3200);
 }
 
+// ใส่คลาสบอกโหมดหน้าจอให้ #app — CSS บนมือถือใช้จัดสัดส่วนผัง/แผงรายการตามโหมด
+function setViewModeClass(mode){
+  const app = document.getElementById('app');
+  if(!app) return;
+  app.classList.toggle('is-overview', mode === 'overview');
+  app.classList.toggle('is-detail', mode === 'detail');
+  const title = document.getElementById('panelTitle');
+  if(mode === 'overview' && title && window.matchMedia('(max-width:820px)').matches){
+    title.textContent = 'แตะเส้นวงจรในผัง เพื่อดูรายการอุปกรณ์';
+  }
+}
+
 function renderOverview(){
   viewMode = 'overview';
+  setViewModeClass('overview');
   document.getElementById('backBtn').style.display = 'none';
   const g = document.getElementById('zoomG');
   resetPanZoom();
@@ -1505,6 +1552,7 @@ function showFeederDetail(fid){
   if(!f) return;
   selectedFeeder = fid;
   viewMode = 'detail';
+  setViewModeClass('detail');
   document.getElementById('backBtn').style.display = 'inline-block';
   renderFeederDetail(f);
   updateSidebar(f);
@@ -2055,7 +2103,27 @@ function updateSidebar(f){
   renderDeviceList(f);
 }
 
+// ปุ่มยุบ/ขยายส่วนหัวแผงรายการ (แสดงเฉพาะมือถือ) — ถ้ามีตัวกรองเปิดใช้อยู่ ปุ่มจะเป็นสีทึบพร้อมบอกตัวกรองที่ใช้
+// ผู้ใช้จะได้รู้ว่ารายการถูกกรองอยู่ แม้ส่วนตัวกรองจะยุบซ่อนไว้
+function refreshPanelHdrToggle(){
+  const btn = document.getElementById('panelHdrToggle');
+  const panel = document.getElementById('panel');
+  if(!btn || !panel) return;
+  const collapsed = panel.classList.contains('hdr-collapsed');
+  const typeLbl = { WF:'WF', WS:'WS', other:'อื่นๆ' }[panelTypeFilter];
+  const xfmrLbl = { has:'มีหม้อแปลง', none:'ไม่มีหม้อแปลง' }[panelXfmrFilter];
+  const active = [typeLbl, xfmrLbl].filter(Boolean);
+  btn.classList.toggle('has-filter', active.length > 0);
+  btn.textContent = (active.length ? 'กรอง: ' + active.join(', ') : 'ตัวกรอง') + (collapsed ? ' ▾' : ' ▴');
+  btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+}
+document.getElementById('panelHdrToggle').addEventListener('click', ()=>{
+  document.getElementById('panel').classList.toggle('hdr-collapsed');
+  refreshPanelHdrToggle();
+});
+
 function renderDeviceList(f){
+  refreshPanelHdrToggle();
   const list = document.getElementById('deviceList');
   const devices = visibleDevices(f).filter(d => deviceMatchesTypeFilter(d) && deviceMatchesXfmrFilter(f, d));
   let html = devices.map(d => rowOrForm(f, d)).join('');
