@@ -2110,13 +2110,11 @@ function initLeafletMap(){
     if(!info) return;
     const { f, d } = info;
     if(currentMapPopup){ leafletMap.Overlays.remove(currentMapPopup); currentMapPopup = null; }
-    currentMapPopup = new longdo.Popup({ lon: d.lon, lat: d.lat }, {
-      title: d.id,
-      detail: `${escapeHtml(d.rating||'(ไม่ทราบขนาด)')}<br>${escapeHtml(d.desc||'-')}`
-    });
-    leafletMap.Overlays.add(currentMapPopup);
+    hideMapHoverTip();
+    // คลิกหมุด = เปิดป๊อปอัพรายละเอียดเต็ม (ตัวเดียวกับคลิกจากรายการ) + เลือกวงจรนั้นในแผงด้านข้าง
     selectFeederForSidebar(f.id);
     setTimeout(()=>highlightAndScrollTo(d.id), 60);
+    openDeviceModal(d.id);
   });
 
   rebuildMapMarkers();
@@ -2263,7 +2261,7 @@ function rebuildMapMarkers(){
         shapeStyle = `width:${dotSize}px;height:${dotSize}px;border-radius:50%;
            background:${hexToRgba(f.color, fillOpacity)};border:${isTrunk?2:1}px solid ${f.color};`;
       }
-      const markerHtml = `<div class="tr-map-hit" style="width:${dotSize+16}px;height:${dotSize+16}px;display:flex;align-items:center;justify-content:center;">
+      const markerHtml = `<div class="tr-map-hit" data-fid="${escapeHtml(f.id)}" data-did="${escapeHtml(d.id)}" style="width:${dotSize+16}px;height:${dotSize+16}px;display:flex;align-items:center;justify-content:center;">
           <div class="map-device-label">${escapeHtml(idShort)}</div>
           <div style="position:relative;width:${dotSize}px;height:${dotSize}px;display:flex;align-items:center;justify-content:center;">
             ${warnOuterHtml ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-52%);">${warnOuterHtml}</div>` : ''}
@@ -2282,6 +2280,66 @@ function rebuildMapMarkers(){
   });
   if(useOsrm) console.log('[OSRM] จำนวนเส้นสายหลักที่พยายามยิงคำขอทั้งหมด:', osrmAttemptCount);
 }
+// ===== ชี้เมาส์ที่หมุดบนแผนที่จริง = แสดงข้อมูลย่อ (เฉพาะอุปกรณ์ที่มีเมาส์ — มือถือใช้แตะเปิดป๊อปอัพแทน) =====
+const MAP_TYPE_LABEL = { WS:'สวิตช์ (WS)', WR:'รีโคลสเซอร์ (WR)', MR:'MR', WF:'ฟิวส์ (WF)', WC:'คาปาซิเตอร์ (WC)', SW:'สวิตช์ (SW)', WB:'เบรกเกอร์ต้นทาง (WB)', TRANSFORMER:'หม้อแปลง', MVMETER:'มิเตอร์แรงกลาง' };
+function ensureMapHoverTip(){
+  let tip = document.getElementById('mapHoverTip');
+  if(!tip){
+    tip = document.createElement('div');
+    tip.id = 'mapHoverTip';
+    tip.style.cssText = 'position:fixed;z-index:5500;pointer-events:none;display:none;background:#fff;border:1px solid #e3ddd0;'+
+      'border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.22);padding:8px 10px;font-size:12px;line-height:1.55;max-width:260px;color:#222;';
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+function hideMapHoverTip(){ const t = document.getElementById('mapHoverTip'); if(t) t.style.display = 'none'; }
+function mapHoverTipHtml(f, d){
+  const rows = [];
+  rows.push(`<div style="font-weight:700;color:#4b2e83;font-family:Consolas,monospace;font-size:13px;">${escapeHtml(d.id)}</div>`);
+  rows.push(`<div style="color:#777;">${escapeHtml(MAP_TYPE_LABEL[d.type] || d.type || '')} · <span style="color:${escapeHtml(f.color)};font-weight:700;">${escapeHtml(f.id)}</span></div>`);
+  if(d.rating) rows.push(`ขนาด: <b>${escapeHtml(d.rating)}</b>${d.ratingConfidence==='estimated'?' <span style="color:#b5651d">(ประมาณ)</span>':''}`);
+  if(d.desc) rows.push(escapeHtml(d.desc));
+  if(d.parentId) rows.push(`ต่อจาก: <b>${escapeHtml(d.parentId)}</b>${d.parentConfidence==='estimated'?' <span style="color:#b5651d">(ประมาณจากพิกัด)</span>':''}`);
+  if(d.phase) rows.push(`เฟส: ${escapeHtml(d.phase)}`);
+  if(d.meterCount != null) rows.push(`ผู้ใช้ไฟ: ${d.meterCount} ราย`);
+  else if(d.customerImpact != null) rows.push(`ผู้ใช้ไฟที่ได้รับผลกระทบ: ${d.customerImpact} ราย`);
+  if(d.opsa && d.opsa.loadPercent != null){
+    const lp = d.opsa.loadPercent;
+    const c = lp >= 100 ? '#c62828' : lp >= 80 ? '#b26a00' : '#2e7d32';
+    rows.push(`โหลด (OPSA): <b style="color:${c}">${lp}%</b>`);
+  }
+  rows.push(`<div style="color:#999;font-size:11px;margin-top:3px;">คลิกเพื่อดูรายละเอียด / แก้ไข</div>`);
+  return rows.map(r => r.startsWith('<div') ? r : `<div>${r}</div>`).join('');
+}
+(function bindMapHover(){
+  if(!window.matchMedia || !window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
+  const mapDiv = document.getElementById('mapDiv');
+  if(!mapDiv) return;
+  mapDiv.addEventListener('mouseover', e=>{
+    const hit = e.target.closest && e.target.closest('.tr-map-hit[data-did]');
+    if(!hit) return;
+    const found = DATA.feeders.find(x=>x.id===hit.dataset.fid);
+    const d = found && found.devices.find(x=>x.id===hit.dataset.did);
+    if(!d) return;
+    const tip = ensureMapHoverTip();
+    tip.innerHTML = mapHoverTipHtml(found, d);
+    tip.style.display = 'block';
+  });
+  mapDiv.addEventListener('mousemove', e=>{
+    const tip = document.getElementById('mapHoverTip');
+    if(!tip || tip.style.display === 'none') return;
+    if(!(e.target.closest && e.target.closest('.tr-map-hit[data-did]'))){ tip.style.display = 'none'; return; }
+    const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + pad, y = e.clientY + pad;
+    if(x + w > window.innerWidth - 8) x = e.clientX - w - pad;
+    if(y + h > window.innerHeight - 8) y = e.clientY - h - pad;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  });
+  mapDiv.addEventListener('mouseleave', hideMapHoverTip);
+  mapDiv.addEventListener('mousedown', hideMapHoverTip);
+})();
+
 function hexToRgba(hex, alpha){
   const h = hex.replace('#','');
   const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16);
