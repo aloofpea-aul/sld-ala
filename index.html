@@ -892,6 +892,133 @@
 </div>
 
 <script>
+// ============ ล็อคหน้าจอระหว่างบันทึกลง Google Sheet ============
+// ทุกคำสั่งที่ "เขียนข้อมูล" (เพิ่ม/แก้ไข/ลบ/ยืนยันลำดับ/ตรวจภาคสนาม) จะผ่านจุดนี้จุดเดียว:
+//  - ระหว่างบันทึก: บังหน้าจอทั้งหมด กดอย่างอื่นไม่ได้ และเตือนถ้าจะปิด/รีเฟรชหน้า
+//  - บันทึกสำเร็จ: ปลดล็อคให้ทำงานต่อ
+//  - บันทึกไม่สำเร็จ / ไม่มีการตอบกลับเกิน 45 วินาที: ค้างหน้าต่างแจ้งเตือนไว้ ต้องกดรับทราบก่อน
+//    แนะนำให้โหลดข้อมูลล่าสุดจากชีต เพื่อให้หน้าจอตรงกับข้อมูลจริง
+// ไม่มีการ "ส่งซ้ำอัตโนมัติ" โดยตั้งใจ — กันกรณีงานหลายขั้น (เช่น ลบที่ต้องย้ายอุปกรณ์ลูก) ถูกทำซ้ำผิดลำดับ
+const SAVE_LOCK_ACTIONS = new Set(['upsert','delete','bulkSetVerified','fieldVerify']);
+const SAVE_TIMEOUT_MS = 45000;
+const saveLock = { pending:0, errors:[], hideTimer:null };
+(function installSaveLock(){
+  const css = document.createElement('style');
+  css.textContent = `
+    #saveLockOverlay{position:fixed;inset:0;z-index:9500;background:rgba(20,10,40,.55);display:none;
+      align-items:center;justify-content:center;padding:20px;}
+    #saveLockOverlay.show{display:flex;}
+    #saveLockBox{background:#fff;border-radius:12px;max-width:380px;width:100%;padding:22px 20px;text-align:center;
+      box-shadow:0 12px 40px rgba(0,0,0,.35);font-family:inherit;}
+    #saveLockBox h3{margin:10px 0 6px;font-size:1.05rem;color:var(--pea-purple);}
+    #saveLockBox p{margin:0;font-size:.88rem;color:var(--muted);line-height:1.6;}
+    #saveLockBox.err h3{color:var(--bad);}
+    #saveLockSpin{width:38px;height:38px;border-radius:50%;border:4px solid #e6e1f3;border-top-color:var(--pea-purple);
+      margin:0 auto;animation:slspin .8s linear infinite;}
+    @keyframes slspin{to{transform:rotate(360deg);}}
+    #saveLockErrList{margin:10px 0 0;padding:8px 10px;background:#fdecea;border-radius:8px;font-size:.8rem;
+      color:var(--bad);text-align:left;max-height:120px;overflow:auto;}
+    #saveLockBtns{display:none;flex-direction:column;gap:8px;margin-top:16px;}
+    #saveLockBox.err #saveLockBtns{display:flex;}
+    #saveLockBox.err #saveLockSpin{display:none;}
+    #saveLockBtns button{padding:11px 14px;border-radius:8px;font-family:inherit;font-size:.92rem;cursor:pointer;
+      border:1px solid var(--line);background:#fff;}
+    #saveLockBtns .primary{background:var(--pea-purple);color:#fff;border-color:var(--pea-purple);font-weight:700;}`;
+  document.head.appendChild(css);
+  const ov = document.createElement('div');
+  ov.id = 'saveLockOverlay';
+  ov.innerHTML = `<div id="saveLockBox">
+      <div id="saveLockSpin"></div>
+      <h3 id="saveLockTitle">💾 กำลังบันทึกลง Google Sheet</h3>
+      <p id="saveLockText">กรุณารอสักครู่ อย่าปิดหรือรีเฟรชหน้านี้</p>
+      <div id="saveLockErrList" style="display:none;"></div>
+      <div id="saveLockBtns">
+        <button class="primary" id="saveLockReloadBtn">🔄 โหลดข้อมูลล่าสุดจากชีต (แนะนำ)</button>
+        <button id="saveLockCloseBtn">รับทราบ ปิดหน้าต่างนี้</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  // แผ่นบังเต็มจอ (position:fixed, z-index สูงสุด) กันคลิก/แตะโดนปุ่มด้านหลังอยู่แล้ว
+  document.getElementById('saveLockReloadBtn').addEventListener('click', ()=>location.reload());
+  document.getElementById('saveLockCloseBtn').addEventListener('click', ()=>{
+    saveLock.errors = [];
+    ov.classList.remove('show');
+  });
+  window.addEventListener('beforeunload', e=>{
+    if(saveLock.pending > 0){ e.preventDefault(); e.returnValue = 'กำลังบันทึกข้อมูลอยู่ ถ้าปิดตอนนี้ข้อมูลอาจไม่ถูกบันทึก'; return e.returnValue; }
+  });
+
+  function showSaving(){
+    clearTimeout(saveLock.hideTimer);
+    const box = document.getElementById('saveLockBox');
+    if(box.classList.contains('err')) return; // มีข้อผิดพลาดค้างอยู่ ให้ผู้ใช้รับทราบก่อน
+    document.getElementById('saveLockTitle').textContent = '💾 กำลังบันทึกลง Google Sheet';
+    document.getElementById('saveLockText').textContent = 'กรุณารอสักครู่ อย่าปิดหรือรีเฟรชหน้านี้';
+    ov.classList.add('show');
+  }
+  function settle(){
+    // รอสั้นๆ ก่อนปลดล็อค — งานที่บันทึกหลายรายการติดกันจะได้ไม่กระพริบ และไม่แทรกกดอย่างอื่นระหว่างรายการ
+    clearTimeout(saveLock.hideTimer);
+    saveLock.hideTimer = setTimeout(()=>{
+      if(saveLock.pending > 0) return;
+      const box = document.getElementById('saveLockBox');
+      if(saveLock.errors.length){
+        box.classList.add('err');
+        document.getElementById('saveLockTitle').textContent = '⚠ บันทึกลง Google Sheet ไม่สำเร็จ';
+        document.getElementById('saveLockText').textContent =
+          'ข้อมูลบางส่วนอาจยังไม่ถูกบันทึก หน้าจออาจไม่ตรงกับข้อมูลจริงในชีต แนะนำให้โหลดข้อมูลล่าสุดก่อนทำงานต่อ';
+        const list = document.getElementById('saveLockErrList');
+        list.style.display = 'block';
+        list.innerHTML = saveLock.errors.slice(-6).map(x=>'• '+escapeHtml(x)).join('<br>');
+        ov.classList.add('show');
+      } else {
+        box.classList.remove('err');
+        document.getElementById('saveLockErrList').style.display = 'none';
+        ov.classList.remove('show');
+      }
+    }, 300);
+  }
+  // เมื่อกดปิดหน้าต่างแจ้งเตือนแล้ว ล้างสถานะ err เพื่อให้รอบถัดไปแสดงหน้ากำลังบันทึกได้ตามปกติ
+  document.getElementById('saveLockCloseBtn').addEventListener('click', ()=>{
+    document.getElementById('saveLockBox').classList.remove('err');
+    document.getElementById('saveLockErrList').style.display = 'none';
+  });
+
+  const origFetch = window.fetch.bind(window);
+  window.fetch = async function(input, init){
+    let action = null;
+    try{
+      if(init && String(init.method||'').toUpperCase() === 'POST' && typeof init.body === 'string'){
+        action = JSON.parse(init.body).action || null;
+      }
+    }catch(e){ action = null; }
+    if(!SAVE_LOCK_ACTIONS.has(action)) return origFetch(input, init);
+
+    const label = (()=>{ try{ const b = JSON.parse(init.body); return `${action} ${b.id || (b.device && b.device.id) || b.feeder || ''}`.trim(); }catch(e){ return action; } })();
+    saveLock.pending++;
+    showSaving();
+    const ctrl = (typeof AbortController !== 'undefined' && !init.signal) ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(()=>ctrl.abort(), SAVE_TIMEOUT_MS) : null;
+    try{
+      const res = await origFetch(input, ctrl ? Object.assign({}, init, { signal: ctrl.signal }) : init);
+      let okFlag = res.ok;
+      try{
+        const j = await res.clone().json();
+        if(!j || j.ok === false){ okFlag = false; saveLock.errors.push(`${label}: ${(j && (j.error||j.message)) || 'ชีตตอบกลับว่าไม่สำเร็จ'}`); }
+      }catch(e){ okFlag = false; saveLock.errors.push(`${label}: ข้อมูลตอบกลับจากชีตอ่านไม่ได้`); }
+      if(!res.ok && okFlag === false && !saveLock.errors.length) saveLock.errors.push(`${label}: HTTP ${res.status}`);
+      return res;
+    }catch(e){
+      saveLock.errors.push(`${label}: ${e && e.name === 'AbortError' ? 'ไม่มีการตอบกลับเกิน 45 วินาที' : 'เชื่อมต่อ Google Sheet ไม่ได้ (เช็คอินเทอร์เน็ต)'}`);
+      throw e;
+    }finally{
+      if(timer) clearTimeout(timer);
+      saveLock.pending = Math.max(0, saveLock.pending - 1);
+      settle();
+    }
+  };
+})();
+
 // ============ CONFIG ============
 const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbzqsOqJJQlF4SS1UX_YM6hmhd3lUXCVocAJiK7l28Tzddms9SQ9Z7p-iYgrrgd2B2meWw/exec";
 let GAS_URL = localStorage.getItem('sld_gas_url') || DEFAULT_GAS_URL;
