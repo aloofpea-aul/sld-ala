@@ -2301,8 +2301,9 @@ function rebuildMapMarkers(){
         const dist = leafParentDistance(f, d);
         if(dist != null && dist > LEAF_FAR_PARENT_M) return;
       }
-      // เส้นหม้อแปลงไม่ยืดความยาว (ยืดแล้วเส้นเลยหม้อแปลงไปทับบริเวณอื่น) — ยืดเฉพาะสายหลักตามอัตราส่วนเดิม
-      const lineScale = isLeafAssetType(d.type) ? 1.0 : scale;
+      // ไม่ยืดความยาวเส้นแล้ว (ทุกประเภท) — เดิมยืดตามอัตราส่วนความยาวสายจริง แต่อุปกรณ์ที่เรียงต่อกันตามแนวถนน
+      // พอยืดทุกช่วง เส้นจะเลยจุดปลายไปซ้อนกับช่วงถัดไป เห็นเป็นเส้นขนานหลายเส้น (ไม่มีผลกับการคำนวณใดๆ)
+      const lineScale = 1.0;
       const endLat = parent.lat + (d.lat - parent.lat) * lineScale;
       const endLon = parent.lon + (d.lon - parent.lon) * lineScale;
       const line = new longdo.Polyline(
