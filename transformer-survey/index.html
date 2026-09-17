@@ -782,7 +782,7 @@ function renderMapMarkers(){
 
   const note = document.getElementById('mapNote');
   if(noGps > 0){
-    note.textContent = `⚠ ${noGps} ตัวยังไม่มีพิกัด จึงไม่แสดงบนแผนที่ — ดูได้จากตัวกรอง "ไม่มีพิกัด" ในหน้ารายการ`;
+    note.textContent = `⚠ ${noGps} เครื่องยังไม่มีพิกัด จึงไม่แสดงบนแผนที่ — ดูได้จากตัวกรอง "ไม่มีพิกัด" ในหน้ารายการ`;
     note.style.display = 'block';
   } else note.style.display = 'none';
 }
@@ -1143,7 +1143,7 @@ function renderParentInfo(){
       <span class="k">อุปกรณ์ตัดตอนต้นทาง</span><span class="v">${prot ? `${escapeHtml(prot.id)} ${escapeHtml(prot.rating||'')}` : '-'}</span>
     </div>
     <div class="up-path">เส้นทางไฟ: หม้อแปลงนี้ ‹ ${pathIds.map(id=>`<code>${escapeHtml(id)}</code>`).join(' ‹ ')}${chain.length > 6 ? ' ‹ …' : ''}</div>
-    ${parent !== prot && prot ? `<div class="up-path">ในระบบต่อพ่วงผ่านหม้อแปลงอีกตัว — ถ้าดูป้ายที่เสาแล้วตรงกับ <code>${escapeHtml(prot.id)}</code> จะปรับให้ต่อกับ ${escapeHtml(prot.id)} โดยตรง</div>` : ''}`;
+    ${parent !== prot && prot ? `<div class="up-path">ในระบบต่อพ่วงผ่านหม้อแปลงอีกเครื่อง — ถ้าดูป้ายที่เสาแล้วตรงกับ <code>${escapeHtml(prot.id)}</code> จะปรับให้ต่อกับ ${escapeHtml(prot.id)} โดยตรง</div>` : ''}`;
 }
 function syncParentUi(){
   ['ok','change','skip'].forEach(v=>{
