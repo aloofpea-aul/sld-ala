@@ -362,6 +362,29 @@
     background:#fff;cursor:pointer;font-family:inherit;font-size:.95rem;}
   .device-modal-actions .btn-primary{background:var(--pea-purple);color:#fff;border-color:var(--pea-purple);}
   .device-modal-actions .btn-danger{background:#fff;color:var(--bad);border-color:var(--bad);}
+  .device-modal-actions .btn-danger-solid{background:var(--bad);color:#fff;border-color:var(--bad);font-weight:700;}
+  .device-modal-actions button:disabled{opacity:.45;cursor:not-allowed;}
+  .device-modal-actions{flex-wrap:wrap;}
+  /* หน้าเพิ่ม/ลบอุปกรณ์ */
+  #panelActionRow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center;}
+  #panelActionRow #panelSeqBtn{margin-top:0;}
+  .pda-btn{border:1px solid var(--pea-purple);background:#fff;color:var(--pea-purple);border-radius:6px;
+    padding:7px 12px;font-family:inherit;font-size:.8rem;font-weight:600;cursor:pointer;white-space:nowrap;}
+  .pda-btn:hover{background:#f2f0fa;}
+  .pda-btn.pda-del{border-color:#e3b3b3;color:var(--bad);}
+  .pda-btn.pda-del:hover{background:#fdecea;}
+  .dm-step{font-size:.78rem;color:var(--muted);margin-bottom:10px;font-weight:600;}
+  .dm-hint{font-size:.8rem;color:var(--muted);margin:4px 0 8px;}
+  .dm-msg{font-size:.85rem;margin-top:8px;min-height:1em;}
+  .dm-msg.err{color:var(--bad);font-weight:600;}
+  .dm-confirm-box{border-radius:8px;padding:10px 12px;font-size:.85rem;margin:6px 0 10px;background:var(--paper);line-height:1.6;}
+  .dm-confirm-box.add{background:#f2f0fa;color:var(--pea-purple-dark);}
+  .dm-confirm-box.warn{background:#fff4e5;color:#8a4b00;}
+  .dm-confirm-box.danger{background:#fdecea;color:var(--bad);font-weight:600;}
+  .dm-child-list{font-family:"Consolas",monospace;font-size:.8rem;}
+  .dm-ack{display:flex;gap:8px;align-items:flex-start;font-size:.9rem;margin-top:10px;padding:10px 12px;
+    border:1px solid #e3b3b3;border-radius:8px;cursor:pointer;line-height:1.5;}
+  .dm-ack input{margin-top:4px;width:18px;height:18px;flex:0 0 auto;}
   #deviceBody .frow{display:flex;gap:8px;margin-bottom:8px;}
   #deviceBody .frow input, #deviceBody .frow select{flex:1;padding:9px 11px;border-radius:6px;
     border:1px solid var(--line);font-family:inherit;font-size:.95rem;box-sizing:border-box;min-width:0;}
@@ -538,7 +561,7 @@
     #app.is-overview #panelHeader h2{font-size:.85rem;margin:0;font-weight:600;color:var(--muted);text-align:center;}
     #app.is-overview #deviceList, #app.is-overview #legend,
     #app.is-overview #panelTie, #app.is-overview #panelCount,
-    #app.is-overview #panelSeqBtn, #app.is-overview #panelFilterBar{display:none !important;}
+    #app.is-overview #panelSeqBtn, #app.is-overview #panelFilterBar, #app.is-overview #panelActionRow{display:none !important;}
     /* หน้ารายละเอียดวงจร: ผังกับรายการแบ่งพื้นที่ใกล้เคียงกัน */
     #app.is-detail #diagramWrap{flex:1.15;min-height:260px;}
     #app.is-detail #panel{flex:1;min-height:0;}
@@ -554,6 +577,7 @@
     #app.is-detail #panelHeader .count-badge{margin-top:4px;font-size:.7rem;padding:1px 8px;}
     #app.is-detail #panel.hdr-collapsed #panelTie,
     #app.is-detail #panel.hdr-collapsed #panelSeqBtn,
+    #app.is-detail #panel.hdr-collapsed #panelActionRow,
     #app.is-detail #panel.hdr-collapsed #panelFilterBar{display:none !important;}
     #app.is-detail #panelTie{margin-top:2px;}
     /* ปุ่มยุบทั้งแผงรายการ — ยุบแล้วเหลือแค่แถบชื่อวงจรบรรทัดเดียว ผังได้พื้นที่เกือบเต็มจอ */
@@ -565,11 +589,14 @@
     #app.is-detail #panel.list-collapsed #panelCount,
     #app.is-detail #panel.list-collapsed #panelTie,
     #app.is-detail #panel.list-collapsed #panelSeqBtn,
+    #app.is-detail #panel.list-collapsed #panelActionRow,
     #app.is-detail #panel.list-collapsed #panelFilterBar,
     #app.is-detail #panel.list-collapsed #panelHdrToggle,
     #app.is-detail #panel.list-collapsed #deviceList,
     #app.is-detail #panel.list-collapsed #legend{display:none !important;}
-    #app.is-detail #panelSeqBtn{margin-top:6px;padding:6px 12px;}
+    #app.is-detail #panelSeqBtn{margin-top:0;padding:6px 12px;}
+    #app.is-detail #panelActionRow{margin-top:6px;}
+    #app.is-detail .pda-btn{padding:6px 10px;}
     #app.is-detail #panelFilterBar{margin-top:6px;gap:4px;}
   }
   @media (max-width:600px){
@@ -694,7 +721,11 @@
         </div>
         <div class="tie" id="panelTie"></div>
         <div class="count-badge" id="panelCount" style="display:none;"></div>
-        <button id="panelSeqBtn" style="display:none;">🔢 ยืนยันลำดับการเชื่อมต่อ</button>
+        <div id="panelActionRow">
+          <button id="panelSeqBtn" style="display:none;">🔢 ยืนยันลำดับการเชื่อมต่อ</button>
+          <button id="panelAddBtn" class="pda-btn" style="display:none;" title="เพิ่มอุปกรณ์ใหม่ในวงจรนี้">＋ เพิ่ม</button>
+          <button id="panelDelBtn" class="pda-btn pda-del" style="display:none;" title="ลบอุปกรณ์ออกจากวงจรนี้">🗑 ลบ</button>
+        </div>
         <div id="panelFilterBar" style="display:none;">
           <div class="pf-group">
             <span class="pf-label">ประเภท:</span>
@@ -2157,6 +2188,10 @@ function updateSidebar(f){
   const seqBtn = document.getElementById('panelSeqBtn');
   seqBtn.style.display = '';
   seqBtn.onclick = ()=> openSeqReview(f.id); // เปิดหน้ายืนยันลำดับ พร้อมเลือกวงจรนี้ไว้ให้เลย ไม่ต้องเลือกซ้ำ
+  const addBtnH = document.getElementById('panelAddBtn'), delBtnH = document.getElementById('panelDelBtn');
+  addBtnH.style.display = ''; delBtnH.style.display = '';
+  addBtnH.onclick = ()=> openAddDeviceModal(f);
+  delBtnH.onclick = ()=> openDeleteDevicePicker(f);
   document.getElementById('panelFilterBar').style.display = '';
   renderDeviceList(f);
 }
@@ -2217,7 +2252,7 @@ function renderDeviceList(f){
       e.stopPropagation(); deleteDevice(f, btn.dataset.id);
     }));
     const addBtn = document.getElementById('addDeviceBtn');
-    if(addBtn) addBtn.addEventListener('click', ()=>{ editingDeviceId='__new__'; renderDeviceList(f); });
+    if(addBtn) addBtn.addEventListener('click', ()=>openAddDeviceModal(f));
     list.querySelectorAll('.btn-save').forEach(btn=>btn.addEventListener('click', e=>{
       e.stopPropagation(); submitForm(f, btn.dataset.id);
     }));
@@ -2372,10 +2407,262 @@ function submitForm(f, formId){
   renderFeederDetail(f);
 }
 
-async function deleteDevice(f, devId){
-  if(!confirm(`ลบอุปกรณ์ ${devId} ออกจากวงจร ${f.id} ? (อุปกรณ์ที่ต่ออยู่ปลายสาขาถัดจากตัวนี้จะถูกย้ายไปต่อกับสาขาแม่ของตัวนี้แทน)`)) return;
-  await deleteDeviceConfirmed(f, devId);
+// ============ เพิ่ม / ลบ อุปกรณ์ (มีหน้ายืนยันทุกครั้ง) ============
+// หลักการเพื่อความปลอดภัยของข้อมูลจริง:
+//  1) ทุกการเพิ่ม/ลบ ต้องผ่านหน้า "สรุปก่อนยืนยัน" เสมอ (ลบ: ต้องติ๊กยืนยันก่อน ปุ่มลบจึงกดได้)
+//  2) บันทึกขึ้น Google Sheet ให้สำเร็จก่อน แล้วค่อยแก้ข้อมูลบนหน้าจอ — ถ้าบันทึกไม่สำเร็จ หน้าจอจะไม่เปลี่ยน ไม่หลอกว่าเพิ่ม/ลบแล้ว
+//  3) ลบอุปกรณ์ที่มีอุปกรณ์ต่ออยู่ถัดไป: บันทึกการย้ายอุปกรณ์ลูกไปต่อกับสาขาแม่ก่อน แล้วจึงลบ — สายไม่ขาดหลังรีเฟรช
+const DEVICE_TYPES_EDITABLE = ['WS','WR','MR','WF','WC','SW','WB'];
+function escAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
+function allDeviceIdsLower(){
+  const set = new Set();
+  DATA.feeders.forEach(ff=>ff.devices.forEach(x=>set.add(String(x.id).trim().toLowerCase())));
+  return set;
 }
+function suggestNextDeviceId(f, type){
+  const prefix = `${f.id}${type}-`;
+  let max = 100;
+  f.devices.forEach(x=>{
+    const id = String(x.id);
+    if(id.startsWith(prefix)){ const n = parseInt(id.slice(prefix.length), 10); if(!isNaN(n) && n > max && n < 900) max = n; }
+  });
+  return prefix + (max + 1);
+}
+function deviceDatalistHtml(f, listId, excludeId){
+  const items = f.devices
+    .filter(x => x.id !== excludeId)
+    .sort((a,b)=> a.id.localeCompare(b.id, undefined, {numeric:true, sensitivity:'base'}))
+    .map(x => `<option value="${escAttr(x.id)}">${escapeHtml(x.desc||'')}</option>`).join('');
+  return `<datalist id="${listId}">${items}</datalist>`;
+}
+function modalMsg(html, kind){
+  const el = document.getElementById('dmMsg');
+  if(el){ el.innerHTML = html; el.className = 'dm-msg ' + (kind||''); }
+}
+function setModalBusy(busy){
+  document.querySelectorAll('#deviceBody .device-modal-actions button, #deviceBody input, #deviceBody select')
+    .forEach(el=>{ el.disabled = busy; });
+}
+function refreshAfterDeviceChange(f, focusId){
+  if(selectedFeeder === f.id){
+    updateSidebar(f);
+    renderFeederDetail(f);
+    if(focusId) setTimeout(()=>highlightAndScrollTo(focusId), 80);
+  }
+}
+
+/* ---------- เพิ่มอุปกรณ์ ---------- */
+function openAddDeviceModal(f, draft){
+  const d = draft || { id: suggestNextDeviceId(f, 'WF'), type:'WF', rating:'', desc:'', parentId:'', reason:'' };
+  document.getElementById('deviceModalTitle').textContent = '＋ เพิ่มอุปกรณ์ในวงจร ' + f.id;
+  document.getElementById('deviceBody').innerHTML = `
+    <div class="dm-step">ขั้นที่ 1/2 · กรอกข้อมูลอุปกรณ์</div>
+    <label class="flabel">ประเภท</label>
+    <div class="frow"><select class="add-type">
+      ${DEVICE_TYPES_EDITABLE.map(t=>`<option value="${t}" ${t===d.type?'selected':''}>${t}</option>`).join('')}
+    </select></div>
+    <label class="flabel">รหัสอุปกรณ์ (ต้องไม่ซ้ำกับที่มีอยู่)</label>
+    <div class="frow"><input type="text" class="add-id" value="${escAttr(d.id)}" autocomplete="off"></div>
+    <label class="flabel">ขนาด (เช่น 10K, 400A)</label>
+    <div class="frow"><input type="text" class="add-rating" value="${escAttr(d.rating)}"></div>
+    <label class="flabel">จุดติดตั้ง / ผู้ใช้ไฟ</label>
+    <div class="frow"><input type="text" class="add-desc" value="${escAttr(d.desc)}"></div>
+    <label class="flabel">ต่อจากอุปกรณ์ใด (พิมพ์บางส่วนแล้วเลือก · เว้นว่าง = ต่อจากสถานีโดยตรง)</label>
+    <div class="frow"><input type="text" class="add-parent" list="addParentList" value="${escAttr(d.parentId)}" autocomplete="off"></div>
+    ${deviceDatalistHtml(f, 'addParentList')}
+    <label class="flabel">เหตุผล / ที่มา (แนะนำให้ระบุ เช่น ติดตั้งใหม่ตามงาน/เลขที่คำร้อง)</label>
+    <div class="frow"><input type="text" class="add-reason" value="${escAttr(d.reason)}"></div>
+    <div id="dmMsg" class="dm-msg"></div>
+    <div class="device-modal-actions">
+      <button id="addCancelBtn">ยกเลิก</button>
+      <button class="btn-primary" id="addNextBtn">ถัดไป: ตรวจสอบข้อมูล ›</button>
+    </div>`;
+  document.getElementById('deviceOverlay').classList.add('show');
+  const body = document.getElementById('deviceBody');
+  const typeSel = body.querySelector('.add-type');
+  const idInput = body.querySelector('.add-id');
+  let lastSuggested = d.id;
+  typeSel.addEventListener('change', ()=>{
+    // เปลี่ยนประเภทแล้วเสนอรหัสถัดไปให้ใหม่ — เฉพาะกรณีผู้ใช้ยังไม่ได้พิมพ์รหัสเอง
+    if(idInput.value.trim() === lastSuggested){
+      lastSuggested = suggestNextDeviceId(f, typeSel.value);
+      idInput.value = lastSuggested;
+    }
+  });
+  document.getElementById('addCancelBtn').addEventListener('click', closeDeviceModal);
+  document.getElementById('addNextBtn').addEventListener('click', ()=>{
+    const draftNow = {
+      id: idInput.value.trim().toUpperCase(),
+      type: typeSel.value,
+      rating: body.querySelector('.add-rating').value.trim(),
+      desc: body.querySelector('.add-desc').value.trim(),
+      parentId: body.querySelector('.add-parent').value.trim(),
+      reason: body.querySelector('.add-reason').value.trim()
+    };
+    if(!draftNow.id){ modalMsg('กรุณาระบุรหัสอุปกรณ์', 'err'); return; }
+    if(allDeviceIdsLower().has(draftNow.id.toLowerCase())){ modalMsg(`รหัส <b>${escapeHtml(draftNow.id)}</b> มีอยู่แล้วในระบบ กรุณาใช้รหัสอื่น`, 'err'); return; }
+    if(draftNow.parentId){
+      const p = f.devices.find(x=>x.id.trim().toLowerCase() === draftNow.parentId.toLowerCase());
+      if(!p){ modalMsg(`ไม่พบอุปกรณ์ <b>${escapeHtml(draftNow.parentId)}</b> ในวงจร ${f.id} — เลือกจากรายการที่แสดงตอนพิมพ์`, 'err'); return; }
+      draftNow.parentId = p.id;
+    }
+    renderAddDeviceConfirm(f, draftNow);
+  });
+}
+function renderAddDeviceConfirm(f, d){
+  const parent = d.parentId ? f.devices.find(x=>x.id===d.parentId) : null;
+  const rows = [
+    ['วงจร', f.id],
+    ['รหัสอุปกรณ์', d.id],
+    ['ประเภท', d.type],
+    ['ขนาด', d.rating || '(ไม่ระบุ)'],
+    ['จุดติดตั้ง', d.desc || '(ไม่ระบุ)'],
+    ['ต่อจากอุปกรณ์', parent ? `${parent.id}${parent.desc ? ' · '+parent.desc : ''}` : '(ต่อจากสถานีโดยตรง)'],
+    ['เหตุผล', d.reason || '(ไม่ระบุ)']
+  ];
+  document.getElementById('deviceModalTitle').textContent = 'ยืนยันการเพิ่มอุปกรณ์';
+  document.getElementById('deviceBody').innerHTML = `
+    <div class="dm-step">ขั้นที่ 2/2 · ตรวจสอบก่อนบันทึก</div>
+    <div class="dm-confirm-box add">กรุณาตรวจสอบข้อมูลให้ถูกต้อง เมื่อกดยืนยัน ระบบจะบันทึกลง Google Sheet ทันที</div>
+    <div>${rows.map(([k,v])=>`<div class="device-view-row"><span class="k">${escapeHtml(k)}</span><span class="v">${escapeHtml(String(v))}</span></div>`).join('')}</div>
+    <div id="dmMsg" class="dm-msg"></div>
+    <div class="device-modal-actions">
+      <button id="addBackBtn">‹ ย้อนกลับแก้ไข</button>
+      <button class="btn-primary" id="addConfirmBtn">✓ ยืนยันเพิ่มอุปกรณ์</button>
+    </div>`;
+  document.getElementById('addBackBtn').addEventListener('click', ()=>openAddDeviceModal(f, d));
+  document.getElementById('addConfirmBtn').addEventListener('click', async ()=>{
+    if(dataIsFallback){ modalMsg('บันทึกไม่ได้ — ตอนนี้กำลังดูข้อมูลสำรองในไฟล์ (เชื่อมต่อ Google Sheet ไม่สำเร็จ) กรุณารีเฟรชหน้าเว็บแล้วลองใหม่', 'err'); return; }
+    if(!(await requireAuth())){ modalMsg('ยังไม่ได้ยืนยันตัวตน จึงยังไม่ได้บันทึก', 'err'); return; }
+    setModalBusy(true);
+    modalMsg('⏳ กำลังบันทึก...', '');
+    const device = { id:d.id, type:d.type, rating:d.rating, desc:d.desc, parentId: d.parentId || null, source:'manual' };
+    const result = await persistDeviceQuiet(f.id, device, d.reason ? 'เพิ่มอุปกรณ์ใหม่: ' + d.reason : 'เพิ่มอุปกรณ์ใหม่');
+    setModalBusy(false);
+    if(!result || !result.ok){
+      modalMsg('⚠ บันทึกไม่สำเร็จ ยังไม่ได้เพิ่มอุปกรณ์: ' + escapeHtml((result && (result.error||result.message)) || ''), 'err');
+      return;
+    }
+    f.devices.push(device);
+    closeDeviceModal();
+    showToast(`เพิ่ม ${device.id} ในวงจร ${f.id} แล้ว`, 'ok');
+    refreshAfterDeviceChange(f, device.id);
+  });
+}
+
+/* ---------- ลบอุปกรณ์ ---------- */
+function openDeleteDevicePicker(f){
+  document.getElementById('deviceModalTitle').textContent = '🗑 ลบอุปกรณ์ออกจากวงจร ' + f.id;
+  document.getElementById('deviceBody').innerHTML = `
+    <div class="dm-step">ขั้นที่ 1/2 · เลือกอุปกรณ์ที่จะลบ</div>
+    <label class="flabel">รหัสอุปกรณ์ (พิมพ์บางส่วนแล้วเลือกจากรายการ)</label>
+    <div class="frow"><input type="text" class="del-id" list="delDevList" autocomplete="off"></div>
+    ${deviceDatalistHtml(f, 'delDevList')}
+    <div class="dm-hint">หรือคลิกอุปกรณ์ในรายการ/ผัง แล้วกดปุ่ม "ลบ" ในหน้ารายละเอียดก็ได้</div>
+    <div id="dmMsg" class="dm-msg"></div>
+    <div class="device-modal-actions">
+      <button id="delCancelBtn">ยกเลิก</button>
+      <button class="btn-danger" id="delNextBtn">ถัดไป ›</button>
+    </div>`;
+  document.getElementById('deviceOverlay').classList.add('show');
+  document.getElementById('delCancelBtn').addEventListener('click', closeDeviceModal);
+  document.getElementById('delNextBtn').addEventListener('click', ()=>{
+    const q = document.querySelector('#deviceBody .del-id').value.trim().toLowerCase();
+    const d = f.devices.find(x=>x.id.trim().toLowerCase() === q);
+    if(!d){ modalMsg('ไม่พบรหัสอุปกรณ์นี้ในวงจร — เลือกจากรายการที่แสดงตอนพิมพ์', 'err'); return; }
+    renderDeleteDeviceConfirm(f, d, ()=>openDeleteDevicePicker(f));
+  });
+}
+function renderDeleteDeviceConfirm(f, d, onBack){
+  const children = f.devices.filter(x=>x.parentId === d.id);
+  const parent = d.parentId ? f.devices.find(x=>x.id===d.parentId) : null;
+  const parentLabel = parent ? parent.id : 'สถานีโดยตรง';
+  const rows = [
+    ['วงจร', f.id], ['รหัสอุปกรณ์', d.id], ['ประเภท', d.type||'-'],
+    ['ขนาด', d.rating||'-'], ['จุดติดตั้ง', d.desc||'-'], ['ต่อจากอุปกรณ์', parent ? parent.id : '(ต่อจากสถานีโดยตรง)']
+  ];
+  const childNote = children.length
+    ? `<div class="dm-confirm-box warn">อุปกรณ์ที่ต่ออยู่ถัดจากตัวนี้ <b>${children.length} รายการ</b> จะถูกย้ายไปต่อกับ <b>${escapeHtml(parentLabel)}</b> แทน:<br>
+        <span class="dm-child-list">${children.slice(0,8).map(c=>escapeHtml(c.id)).join(', ')}${children.length>8 ? ` และอีก ${children.length-8} รายการ` : ''}</span></div>`
+    : `<div class="dm-confirm-box">ไม่มีอุปกรณ์ต่ออยู่ถัดจากตัวนี้</div>`;
+  document.getElementById('deviceModalTitle').textContent = 'ยืนยันการลบอุปกรณ์';
+  document.getElementById('deviceBody').innerHTML = `
+    <div class="dm-step">${onBack ? 'ขั้นที่ 2/2 · ' : ''}ตรวจสอบก่อนลบ</div>
+    <div class="dm-confirm-box danger">การลบจะมีผลกับ Google Sheet ทันที กรุณาตรวจสอบให้แน่ใจว่าเลือกอุปกรณ์ถูกตัว</div>
+    <div>${rows.map(([k,v])=>`<div class="device-view-row"><span class="k">${escapeHtml(k)}</span><span class="v">${escapeHtml(String(v))}</span></div>`).join('')}</div>
+    ${childNote}
+    <label class="dm-ack"><input type="checkbox" id="delAckChk"><span>ตรวจสอบแล้ว ต้องการลบ <b>${escapeHtml(d.id)}</b> ออกจากวงจร ${f.id}</span></label>
+    <div id="dmMsg" class="dm-msg"></div>
+    <div class="device-modal-actions">
+      <button id="delBackBtn">${onBack ? '‹ ย้อนกลับ' : 'ยกเลิก'}</button>
+      <button class="btn-danger-solid" id="delConfirmBtn" disabled>🗑 ยืนยันลบอุปกรณ์</button>
+    </div>`;
+  document.getElementById('deviceOverlay').classList.add('show');
+  const ack = document.getElementById('delAckChk');
+  const confirmBtn = document.getElementById('delConfirmBtn');
+  ack.addEventListener('change', ()=>{ confirmBtn.disabled = !ack.checked; });
+  document.getElementById('delBackBtn').addEventListener('click', ()=>{ onBack ? onBack() : renderDeviceModalView(f, d); });
+  confirmBtn.addEventListener('click', async ()=>{
+    if(!ack.checked) return;
+    if(dataIsFallback){ modalMsg('ลบไม่ได้ — ตอนนี้กำลังดูข้อมูลสำรองในไฟล์ (เชื่อมต่อ Google Sheet ไม่สำเร็จ) กรุณารีเฟรชหน้าเว็บแล้วลองใหม่', 'err'); return; }
+    if(!(await requireAuth())){ modalMsg('ยังไม่ได้ยืนยันตัวตน จึงยังไม่ได้ลบ', 'err'); return; }
+    setModalBusy(true);
+    const newParent = d.parentId || null;
+    // 1) ย้ายอุปกรณ์ลูกไปต่อกับสาขาแม่ก่อน (บันทึกทีละตัว)
+    const moved = [];
+    for(let i=0;i<children.length;i++){
+      const c = children[i];
+      modalMsg(`⏳ กำลังย้ายอุปกรณ์ที่ต่ออยู่ (${i+1}/${children.length})...`, '');
+      const r = await persistDeviceQuiet(f.id, Object.assign({}, c, { parentId:newParent }), `ย้ายไปต่อกับ ${newParent||'สถานี'} เนื่องจากลบ ${d.id}`);
+      if(!r || !r.ok){
+        // ย้อนตัวที่ย้ายไปแล้วกลับที่เดิม (พยายามให้ข้อมูลในชีตไม่ค้างครึ่งๆ กลางๆ)
+        for(const m of moved) await persistDeviceQuiet(f.id, Object.assign({}, m, { parentId:d.id }), `ยกเลิกการย้าย (ลบ ${d.id} ไม่สำเร็จ)`);
+        setModalBusy(false); ack.checked = false; confirmBtn.disabled = true;
+        modalMsg(`⚠ ย้ายอุปกรณ์ ${escapeHtml(c.id)} ไม่สำเร็จ จึงยกเลิกการลบทั้งหมด ข้อมูลยังเหมือนเดิม: ` + escapeHtml((r && (r.error||r.message)) || ''), 'err');
+        return;
+      }
+      moved.push(c);
+    }
+    // 2) ลบตัวอุปกรณ์
+    modalMsg('⏳ กำลังลบ...', '');
+    const del = await persistDeleteQuiet(f.id, d.id);
+    if(!del || !del.ok){
+      for(const m of moved) await persistDeviceQuiet(f.id, Object.assign({}, m, { parentId:d.id }), `ยกเลิกการย้าย (ลบ ${d.id} ไม่สำเร็จ)`);
+      setModalBusy(false); ack.checked = false; confirmBtn.disabled = true;
+      modalMsg('⚠ ลบไม่สำเร็จ ข้อมูลยังเหมือนเดิม: ' + escapeHtml((del && (del.error||del.message)) || ''), 'err');
+      return;
+    }
+    // 3) บันทึกสำเร็จครบแล้ว จึงแก้ข้อมูลบนหน้าจอ
+    moved.forEach(c=>{ c.parentId = newParent; });
+    const idx = f.devices.findIndex(x=>x.id===d.id);
+    if(idx>=0) f.devices.splice(idx,1);
+    closeDeviceModal();
+    showToast(`ลบ ${d.id} ออกจากวงจร ${f.id} แล้ว`, 'ok');
+    refreshAfterDeviceChange(f, null);
+  });
+}
+async function persistDeleteQuiet(feederId, devId){
+  if(dataIsFallback) return { ok:false, error:'กำลังดูข้อมูลสำรองในไฟล์ — ลบไม่ได้ กรุณารีเฟรชหน้าเว็บก่อน' };
+  if(GAS_URL){
+    try{
+      const res = await fetch(GAS_URL, {
+        method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({ action:'delete', feeder:feederId, id:devId, changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
+      });
+      return await res.json();
+    }catch(e){ return { ok:false, error:'เชื่อมต่อ Google Sheet ไม่สำเร็จ' }; }
+  } else {
+    setLocalOverride(feederId, devId, null);
+    return { ok:true };
+  }
+}
+// ใช้เส้นทางเดียวกันทั้งเว็บ — ทุกจุดที่เคยลบ/เพิ่มแบบเดิม จะผ่านหน้ายืนยันชุดนี้
+async function deleteDevice(f, devId){
+  const d = f.devices.find(x=>x.id===devId);
+  if(d) renderDeleteDeviceConfirm(f, d, null);
+}
+
 async function deleteDeviceConfirmed(f, devId){
   // ต้องยืนยันตัวตนให้เสร็จก่อนเสมอ ค่อยแก้ข้อมูลจริง — กันปัญหา "ลบแล้วหายชั่วคราว แต่พอรีเฟรชกลับมาใหม่"
   // (เพราะยังไม่ได้บันทึกขึ้น Google Sheet จริงถ้ายังไม่ผ่านขั้นตอนเลือกชื่อผู้ใช้งาน)
@@ -2944,11 +3231,7 @@ function renderDeviceModalView(f, d){
     if(seqCurrentFeeder === f.id && document.getElementById('seqOverlay').classList.contains('show')) renderSeqList(f.id);
     if(selectedFeeder === f.id){ renderFeederDetail(f); renderDeviceList(f); }
   });
-  document.getElementById('dmDelBtn').addEventListener('click', ()=>{
-    if(!confirm(`ลบอุปกรณ์ ${d.id} ออกจากวงจร ${f.id} ? (อุปกรณ์ที่ต่ออยู่ปลายสาขาถัดจากตัวนี้จะถูกย้ายไปต่อกับสาขาแม่ของตัวนี้แทน)`)) return;
-    closeDeviceModal();
-    deleteDeviceConfirmed(f, d.id);
-  });
+  document.getElementById('dmDelBtn').addEventListener('click', ()=>renderDeleteDeviceConfirm(f, d, ()=>renderDeviceModalView(f, d)));
 }
 function renderDeviceModalFieldVerify(f, d){
   document.getElementById('deviceModalTitle').textContent = '📷 ตรวจสอบภาคสนาม: ' + d.id;
