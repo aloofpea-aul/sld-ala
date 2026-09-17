@@ -187,6 +187,19 @@
   textarea.txt{resize:vertical;}
   .photo-pick{display:flex;gap:10px;align-items:center;}
   .photo-slot{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;}
+  /* ผลสำรวจครั้งก่อน */
+  .hist{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px;background:#fff;}
+  .hist-title{font-weight:700;font-size:.86rem;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+  .hist-meta{font-size:.78rem;color:var(--muted);line-height:1.6;}
+  .hist-note{font-size:.8rem;margin-top:4px;line-height:1.5;word-break:break-word;}
+  .hist-photos{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}
+  .hist-photo{display:block;text-decoration:none;color:var(--muted);font-size:.72rem;text-align:center;}
+  .hist-photo .ph-box{aspect-ratio:4/3;border-radius:8px;border:1px solid var(--line);background:var(--paper) center/cover no-repeat;
+    display:flex;align-items:center;justify-content:center;margin-bottom:3px;overflow:hidden;}
+  .hist-photo img{width:100%;height:100%;object-fit:cover;display:block;}
+  .hist-older{margin-top:8px;font-size:.78rem;}
+  .hist-older summary{cursor:pointer;color:var(--pea-purple);font-weight:600;}
+  .hist-older .ho-row{border-top:1px dashed var(--line);padding:6px 0;}
   .photo-slot-title{font-size:.84rem;font-weight:700;margin-bottom:2px;}
   .photo-slot-hint{font-size:.74rem;color:var(--muted);margin-bottom:8px;}
   .photo-slot.has .photo-pick label{border-style:solid;border-color:var(--good);color:var(--good);}
@@ -1159,6 +1172,7 @@ function renderDetailForm(){
   document.getElementById('detailBody').innerHTML = `
     ${infoRows(f, d)}
     ${status !== 'unverified' ? `<div class="last-check ${status}">ผลตรวจล่าสุด: <b>${status==='mismatch'?'❌ ไม่ถูกต้อง':'✅ ถูกต้อง'}</b> ${d.verified.date ? `(${escapeHtml(d.verified.date)})`:''}</div>` : ''}
+    ${status !== 'unverified' ? `<div class="hist" id="histBox"><div class="hist-meta">⏳ กำลังโหลดผลสำรวจและรูปถ่ายครั้งก่อน...</div></div>` : ''}
     <div class="nav-row">
       ${hasGps(d) ? `<a href="https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lon}" target="_blank" rel="noopener">🧭 นำทาง${dist!=null?` (${fmtDist(dist)})`:''}</a>` : ''}
       ${hasGps(d) ? `<button type="button" id="showOnMapBtn">🗺 ดูบนแผนที่</button>` : ''}
@@ -1225,6 +1239,57 @@ function renderDetailForm(){
   `;
   bindDetailForm();
   restoreFormValues();
+  if(document.getElementById('histBox')) renderHistoryBox(d.id);
+}
+
+// ===== ผลสำรวจ/รูปถ่ายครั้งก่อน (ดึงจากชีต FieldVerification ผ่าน Code.gs action getFieldHistory) =====
+const historyCache = new Map();
+function driveThumb(url){
+  const m = String(url||'').match(/\/d\/([\w-]{20,})/) || String(url||'').match(/[?&]id=([\w-]{20,})/);
+  return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w600` : null;
+}
+function histPhotoHtml(url, label){
+  if(!url) return `<div class="hist-photo"><div class="ph-box">ไม่มีรูป</div>${label}</div>`;
+  if(String(url).startsWith('UPLOAD_FAILED')) return `<div class="hist-photo"><div class="ph-box" style="color:var(--bad)">อัปโหลดไม่สำเร็จ</div>${label}</div>`;
+  const th = driveThumb(url);
+  return `<a class="hist-photo" href="${escapeHtml(url)}" target="_blank" rel="noopener">
+    <div class="ph-box">${th ? `<img src="${escapeHtml(th)}" alt="${escapeHtml(label)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('แตะเพื่อเปิดรูป'))">` : 'แตะเพื่อเปิดรูป'}</div>${label} ↗</a>`;
+}
+async function loadFieldHistory(deviceId, force){
+  if(!force && historyCache.has(deviceId)) return historyCache.get(deviceId);
+  const url = GAS_URL + (GAS_URL.includes('?') ? '&' : '?') + 'action=getFieldHistory&limit=5&deviceId=' + encodeURIComponent(deviceId);
+  const res = await fetch(url, { cache:'no-store' });
+  const json = await res.json();
+  if(json && json.feeders) return { outdated: true }; // Code.gs เดิมยังไม่รู้จัก action นี้ (คืนข้อมูลทั้งหมดแทน)
+  if(!json || !json.ok) throw new Error((json && json.error) || 'โหลดไม่สำเร็จ');
+  historyCache.set(deviceId, json);
+  return json;
+}
+async function renderHistoryBox(deviceId){
+  const box = document.getElementById('histBox');
+  if(!box) return;
+  let h;
+  try{ h = await loadFieldHistory(deviceId); }
+  catch(e){ if(document.getElementById('histBox')) box.innerHTML = `<div class="hist-meta">โหลดผลสำรวจครั้งก่อนไม่สำเร็จ <button class="btn-sub" style="padding:4px 10px;font-size:.76rem;" onclick="renderHistoryBox('${escapeHtml(deviceId)}')">ลองใหม่</button></div>`; return; }
+  if(!form || form.d.id !== deviceId || !document.getElementById('histBox')) return; // เปลี่ยนไปดูเครื่องอื่นแล้ว
+  if(h.outdated){ box.innerHTML = '<div class="hist-meta">ดูรูปถ่ายครั้งก่อนได้หลังอัปเดต Code.gs เวอร์ชันใหม่</div>'; return; }
+  const recs = h.records || [];
+  if(!recs.length){ box.innerHTML = '<div class="hist-meta">ยังไม่มีบันทึกผลสำรวจภาคสนามในชีต</div>'; return; }
+  const r0 = recs[0];
+  const stTxt = r => r.status === 'mismatch' ? '❌ ไม่ถูกต้อง' : '✅ ถูกต้อง';
+  box.innerHTML = `
+    <div class="hist-title">🗂 ผลสำรวจครั้งล่าสุด</div>
+    <div class="hist-meta">${escapeHtml(r0.time)} · ${escapeHtml(r0.inspector || '-')} · <b>${stTxt(r0)}</b>
+      ${r0.gpsDistanceMeters != null && r0.gpsDistanceMeters !== '' ? ` · ห่าง ${escapeHtml(r0.gpsDistanceMeters)} ม.` : ''}</div>
+    ${r0.correctedRating || r0.correctedDesc ? `<div class="hist-note">แก้ไข: ${escapeHtml([r0.correctedRating, r0.correctedDesc].filter(Boolean).join(' · '))}</div>` : ''}
+    ${r0.note ? `<div class="hist-note">${escapeHtml(r0.note)}</div>` : ''}
+    <div class="hist-photos">${histPhotoHtml(r0.photoPoleUrl, 'ต้นหม้อแปลง')}${histPhotoHtml(r0.photoTankUrl, 'ตัวถัง/เลข PEA')}</div>
+    ${recs.length > 1 ? `<details class="hist-older"><summary>ดูครั้งก่อนหน้าอีก ${recs.length - 1} ครั้ง</summary>
+      ${recs.slice(1).map(r=>`<div class="ho-row"><div class="hist-meta">${escapeHtml(r.time)} · ${escapeHtml(r.inspector||'-')} · <b>${stTxt(r)}</b></div>
+        ${r.note ? `<div class="hist-note">${escapeHtml(r.note)}</div>` : ''}
+        <div class="hist-meta">${r.photoPoleUrl && !r.photoPoleUrl.startsWith('UPLOAD_FAILED') ? `<a href="${escapeHtml(r.photoPoleUrl)}" target="_blank" rel="noopener">รูปต้นหม้อแปลง ↗</a>` : ''}
+          ${r.photoTankUrl && !r.photoTankUrl.startsWith('UPLOAD_FAILED') ? ` · <a href="${escapeHtml(r.photoTankUrl)}" target="_blank" rel="noopener">รูปตัวถัง ↗</a>` : ''}</div></div>`).join('')}
+    </details>` : ''}`;
 }
 
 function bindDetailForm(){
@@ -1639,6 +1704,7 @@ async function saveSurvey(){
   if(verification.correctedDesc) d.desc = verification.correctedDesc;
   if(verification.status === 'mismatch') d.source = 'field-verified';
   form.savedVerify = true;
+  historyCache.delete(d.id);
   // ตรวจผลอัปโหลดรายรูป — Code.gs ใหม่ตอบ photoUrls แยกช่อง / ถ้าไม่มี = Code.gs เดิม เก็บได้แค่รูปเดียว
   const sentKinds = PHOTO_SLOTS.filter(sl=>form.photos[sl.key]).map(sl=>sl.key);
   const failedLabels = [];
