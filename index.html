@@ -216,7 +216,7 @@
   .pf-btn:hover{border-color:var(--pea-purple);}
   .pf-btn.active{background:var(--pea-purple);color:#fff;border-color:var(--pea-purple);font-weight:700;}
   #panelHeader h2{margin:0 0 4px;font-size:1.05rem;}
-  #panelHdrToggle{display:none;}
+  #panelHdrToggle, #panelCollapseBtn{display:none;}
   #panelHeader .tie{font-size:.78rem;color:var(--muted);}
   #panelHeader .count-badge{display:inline-block;background:var(--paper);border:1px solid var(--line);
     border-radius:20px;padding:2px 10px;font-size:.75rem;margin-top:6px;}
@@ -530,6 +530,19 @@
     #app.is-detail #panel.hdr-collapsed #panelSeqBtn,
     #app.is-detail #panel.hdr-collapsed #panelFilterBar{display:none !important;}
     #app.is-detail #panelTie{margin-top:2px;}
+    /* ปุ่มยุบทั้งแผงรายการ — ยุบแล้วเหลือแค่แถบชื่อวงจรบรรทัดเดียว ผังได้พื้นที่เกือบเต็มจอ */
+    #app.is-detail #panelCollapseBtn{display:inline-flex;align-items:center;flex:0 0 auto;
+      border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:14px;
+      padding:5px 11px;font-family:inherit;font-size:.75rem;font-weight:700;cursor:pointer;white-space:nowrap;}
+    #app.is-detail #panel.list-collapsed{flex:0 0 auto;}
+    #app.is-detail #panel.list-collapsed #panelHeader{border-bottom:none;padding-bottom:calc(8px + env(safe-area-inset-bottom));}
+    #app.is-detail #panel.list-collapsed #panelCount,
+    #app.is-detail #panel.list-collapsed #panelTie,
+    #app.is-detail #panel.list-collapsed #panelSeqBtn,
+    #app.is-detail #panel.list-collapsed #panelFilterBar,
+    #app.is-detail #panel.list-collapsed #panelHdrToggle,
+    #app.is-detail #panel.list-collapsed #deviceList,
+    #app.is-detail #panel.list-collapsed #legend{display:none !important;}
     #app.is-detail #panelSeqBtn{margin-top:6px;padding:6px 12px;}
     #app.is-detail #panelFilterBar{margin-top:6px;gap:4px;}
   }
@@ -561,6 +574,24 @@
 </head>
 <body>
 <div id="app" class="is-overview">
+<script>
+// iPhone ที่เปิดจากไอคอนหน้าโฮม (status bar แบบโปร่ง) บาง iOS รายงานความสูงจอขาดไปเท่าแถบสถานะ
+// ทำให้มีแถบว่างสีครีมใต้สุด — กรณีนี้กำหนดความสูงแอปจากความสูงจอจริงแทน (มีผลเฉพาะโหมดเปิดจากหน้าโฮม)
+(function(){
+  if(!window.navigator.standalone) return;
+  function fixAppHeight(){
+    const app = document.getElementById('app');
+    if(!app) return;
+    const portrait = window.matchMedia('(orientation:portrait)').matches;
+    const screenH = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+    if(window.innerHeight < screenH - 10){ app.style.bottom = 'auto'; app.style.height = screenH + 'px'; }
+    else { app.style.bottom = ''; app.style.height = ''; }
+  }
+  window.addEventListener('resize', fixAppHeight);
+  window.addEventListener('orientationchange', ()=>setTimeout(fixAppHeight, 300));
+  document.addEventListener('DOMContentLoaded', fixAppHeight);
+})();
+</script>
   <header>
     <h1>Single Line Diagram</h1>
     <span class="sub" id="stationSub">สถานีไฟฟ้าอ่าวลึก · กฟส.อ่าวลึก กฟต.2</span>
@@ -633,6 +664,7 @@
         <div id="panelTitleRow">
           <h2 id="panelTitle">เลือกวงจรเพื่อดูรายละเอียด</h2>
           <button id="panelHdrToggle" type="button" aria-expanded="false">ตัวกรอง ▾</button>
+          <button id="panelCollapseBtn" type="button" aria-expanded="true" title="ยุบ/ขยายรายการอุปกรณ์">ย่อ ▾</button>
         </div>
         <div class="tie" id="panelTie"></div>
         <div class="count-badge" id="panelCount" style="display:none;"></div>
@@ -2117,6 +2149,14 @@ function refreshPanelHdrToggle(){
   btn.textContent = (active.length ? 'กรอง: ' + active.join(', ') : 'ตัวกรอง') + (collapsed ? ' ▾' : ' ▴');
   btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
 }
+// ยุบ/ขยายแผงรายการทั้งแผง (มือถือ) — ผังใช้ viewBox คงที่ จึงขยายตามพื้นที่ใหม่เองโดยไม่ต้องคำนวณผังใหม่
+document.getElementById('panelCollapseBtn').addEventListener('click', ()=>{
+  const panel = document.getElementById('panel');
+  const collapsed = panel.classList.toggle('list-collapsed');
+  const btn = document.getElementById('panelCollapseBtn');
+  btn.textContent = collapsed ? 'รายการ ▴' : 'ย่อ ▾';
+  btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+});
 document.getElementById('panelHdrToggle').addEventListener('click', ()=>{
   document.getElementById('panel').classList.toggle('hdr-collapsed');
   refreshPanelHdrToggle();
