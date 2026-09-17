@@ -236,6 +236,32 @@
   .impact-badge{font-size:.73rem;color:#6a1b9a;background:#f3e5f9;padding:0 4px;border-radius:3px;}
   .device-row .ddesc{color:var(--ink);flex:1;}
   .device-row .ddesc:empty::after{content:"—";color:#ccc;}
+  /* ===== แถวรายการอุปกรณ์แบบ 2 บรรทัด (จัดระเบียบใหม่) ===== */
+  .device-row{display:flex;align-items:center;gap:8px;padding:8px 16px;font-size:.85rem;cursor:pointer;}
+  .device-row .dr-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
+  .device-row .dr-line{display:flex;align-items:center;gap:6px;min-width:0;}
+  .device-row .dr-spacer{flex:1;}
+  .device-row .did{font-size:.88rem;}
+  .device-row .drating{min-width:0;font-size:.78rem;font-weight:600;}
+  .device-row .ddesc{flex:1;min-width:0;font-size:.8rem;color:#555;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .device-row .dr-status{display:inline-flex;gap:4px;flex:0 0 auto;}
+  /* ป้ายทุกแบบในแถว: ขนาดและรูปทรงเดียวกัน ไม่ตกบรรทัด */
+  .device-row .rating-badge-est, .device-row .phase-badge, .device-row .impact-badge,
+  .device-row .src-badge, .device-row .verify-badge-ok, .device-row .verify-badge-mismatch,
+  .device-row .seq-badge-ok{
+    display:inline-flex;align-items:center;height:19px;padding:0 7px;border-radius:10px;
+    font-size:.68rem;font-weight:600;white-space:nowrap;line-height:1;flex:0 0 auto;margin:0;}
+  .device-row .rating-badge-est{background:#fff3e0;color:#b5651d;}
+  .device-row .phase-badge{background:#e3f0fd;color:#1565c0;}
+  .device-row .impact-badge{background:#f3e5f9;color:#6a1b9a;min-width:52px;justify-content:center;}
+  .device-row .src-badge{background:#fff4e5;color:#b5651d;}
+  .device-row .verify-badge-ok{background:#e8f5e9;color:#2e7d32;}
+  .device-row .verify-badge-mismatch{background:#fdecea;color:#c62828;}
+  .device-row .seq-badge-ok{background:#e8f5e9;color:#2e7d32;}
+  .device-row .row-actions{flex:0 0 auto;}
+  /* ตัวกรอง: ป้าย "ประเภท / หม้อแปลง" กว้างเท่ากัน ปุ่มจึงเริ่มตรงแนวเดียวกัน */
+  .pf-label{min-width:62px;}
   .row-actions{display:flex;gap:2px;}
   .row-actions button{border:none;background:none;cursor:pointer;font-size:.85rem;padding:2px 4px;
     border-radius:4px;}
@@ -2240,7 +2266,7 @@ function rowOrForm(f, d){
   if(editMode && editingDeviceId === d.id) return renderForm(f, d);
   if(fieldMode && fieldVerifyDeviceId === d.id) return renderFieldForm(f, d);
   const srcBadge = d.source === 'manual'
-    ? '<span title="ยังไม่พบในฐานข้อมูล GIS — ควรตรวจสอบภาคสนาม" style="color:#b5651d;font-size:.68rem;">🔍ต้องตรวจสอบ</span>'
+    ? '<span class="src-badge" title="ยังไม่พบในฐานข้อมูล GIS — ควรตรวจสอบภาคสนาม">🔍 ต้องตรวจสอบ</span>'
     : '';
   const estBadge = d.ratingConfidence === 'estimated'
     ? '<span class="rating-badge-est" title="ประมาณจากฐานข้อมูล ยังไม่ยืนยันจริง">ประมาณ</span>' : '';
@@ -2254,13 +2280,25 @@ function rowOrForm(f, d){
   const impactBadge = (d.customerImpact != null)
     ? `<span class="impact-badge" title="จำนวนผู้ใช้ไฟที่ได้รับผลกระทบหากอุปกรณ์นี้ทำงาน/ตัดไฟ">👥${d.customerImpact}</span>` : '';
   const seqBadge = d.sequenceVerified
-    ? '<span class="seq-badge-ok" title="ยืนยันลำดับการเชื่อมต่อแล้ว ถูกต้องตรงกับแบบ A0">✅ ยืนยันแล้ว</span>' : '';
+    ? '<span class="seq-badge-ok" title="ยืนยันลำดับการเชื่อมต่อแล้ว ถูกต้องตรงกับแบบ A0">✓ ยืนยันลำดับ</span>' : '';
+  const statusChips = srcBadge + verifyBadge + seqBadge;
+  // แถวอุปกรณ์แบบ 2 บรรทัด จัดคอลัมน์ให้ตรงกันทุกแถว:
+  //   บรรทัด 1: รหัส · พิกัด  ………  เฟส · จำนวนผู้ใช้ไฟ
+  //   บรรทัด 2: ชื่อสถานที่ (ยาวเกินจะตัด … ชี้เมาส์ดูชื่อเต็มได้)  ………  สถานะตรวจสอบ/ยืนยัน
   return `
     <div class="device-row" data-id="${d.id}">
-      <span class="did">${d.id}</span>
-      <span class="drating">${d.rating || ''}${estBadge}</span>
-      <span class="ddesc">${escapeHtml(d.desc || '')}</span>
-      ${phaseBadge}${impactBadge}${srcBadge}${verifyBadge}${seqBadge}
+      <div class="dr-main">
+        <div class="dr-line">
+          <span class="did">${d.id}</span>
+          <span class="drating">${d.rating || ''}</span>${estBadge}
+          <span class="dr-spacer"></span>
+          ${phaseBadge}${impactBadge}
+        </div>
+        <div class="dr-line">
+          <span class="ddesc" title="${escapeHtml(d.desc || '')}">${escapeHtml(d.desc || '')}</span>
+          ${statusChips ? `<span class="dr-status">${statusChips}</span>` : ''}
+        </div>
+      </div>
       ${editMode ? `<span class="row-actions">
         <button class="act-edit" data-id="${d.id}" title="แก้ไข">✎</button>
         <button class="act-del" data-id="${d.id}" title="ลบ">🗑</button>
