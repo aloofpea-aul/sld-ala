@@ -1831,7 +1831,7 @@ function renderFeederDetail(f){
       shapeSvg = `<circle cx="${mx}" cy="${my}" r="3.2" fill="${fillColor}"/>`;
     }
     const idShort = String(d.id).replace(f.id,'');
-    const labelBits = idShort + (d.rating ? ' ('+d.rating+')' : '') + (d.meterCount ? ' ⚡'+d.meterCount : '');
+    const labelBits = idShort + (d.rating ? ' ('+d.rating+')' : '') + (d.meterCount ? ' 👥'+d.meterCount : '');
     // หม้อแปลง/มิเตอร์แรงกลางมีจำนวนมาก (หลักพัน) — ไม่ใส่ป้ายชื่อค้างไว้ (จะทับกันหมด) ใช้ tooltip ตอนชี้เมาส์แทน
     const isLeaf = isLeafAssetType(d.type);
     // วงแหวนเขียว + เครื่องหมายถูก — จุดที่ยืนยันลำดับการเชื่อมต่อแล้วจากหน้า "ยืนยันลำดับการเชื่อมต่อ"
@@ -1851,7 +1851,7 @@ function renderFeederDetail(f){
       if(opsa.minVoltage != null) tipText += `\nแรงดันต่ำสุด: ${opsa.minVoltage} V`;
       if(opsa.peakLoadPercent != null) tipText += `\n% โหลดสูงสุด (${opsa.peakMonth||'-'}): ${opsa.peakLoadPercent}%`;
     }
-    const titleSvg = isLeaf ? `<title>${escapeHtml(tipText)}</title>` : '';
+    const titleSvg = ''; // ใช้กล่องข้อมูลตอนชี้เมาส์ (เหมือนแผนที่จริง) แทน tooltip ของเบราว์เซอร์
     // วงกลมโปร่งใสขยายพื้นที่คลิก/แตะ — จุดอุปกรณ์เล็กมาก กดโดนยากโดยเฉพาะบนมือถือ
     const hitSvg = `<circle cx="${mx}" cy="${my}" r="${isLeaf?6:10}" fill="transparent"/>`;
     html += `<g class="tap-dot" data-id="${d.id}">${hitSvg}${shapeSvg}${verifiedSvg}${titleSvg}
@@ -1867,6 +1867,7 @@ function renderFeederDetail(f){
       e.stopPropagation();
       // ถ้าเพิ่งลากเลื่อนผัง ไม่นับเป็นการคลิกเลือกอุปกรณ์ (กันป๊อปอัพเด้งขึ้นเองตอนปล่อยเมาส์บนจุด)
       if(panMoved) return;
+      hideMapHoverTip();
       const id = elm.getAttribute('data-id');
       highlightAndScrollTo(id);
       // คลิกจุดในผัง = เปิดรายละเอียด/แก้ไขได้เหมือนคลิกจากรายการด้านข้าง
@@ -2338,6 +2339,39 @@ function mapHoverTipHtml(f, d){
   });
   mapDiv.addEventListener('mouseleave', hideMapHoverTip);
   mapDiv.addEventListener('mousedown', hideMapHoverTip);
+})();
+
+// ===== ชี้เมาส์ที่จุดอุปกรณ์ในผัง Single Line = แสดงข้อมูลย่อ (ใช้กล่องเดียวกับแผนที่จริง) =====
+function positionHoverTip(tip, e){
+  const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = e.clientX + pad, y = e.clientY + pad;
+  if(x + w > window.innerWidth - 8) x = e.clientX - w - pad;
+  if(y + h > window.innerHeight - 8) y = e.clientY - h - pad;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+(function bindDiagramHover(){
+  if(!window.matchMedia || !window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
+  const wrap = document.getElementById('diagramWrap');
+  if(!wrap) return;
+  let lastId = null;
+  wrap.addEventListener('mousemove', e=>{
+    const tip = ensureMapHoverTip();
+    const g = e.target.closest && e.target.closest('.tap-dot[data-id]');
+    if(!g || dragging || viewMode !== 'detail'){ tip.style.display = 'none'; lastId = null; return; }
+    const id = g.getAttribute('data-id');
+    if(id !== lastId){
+      const f = DATA.feeders.find(x=>x.id===selectedFeeder);
+      const d = f && f.devices.find(x=>x.id===id);
+      if(!d){ tip.style.display = 'none'; return; }
+      tip.innerHTML = mapHoverTipHtml(f, d);
+      lastId = id;
+    }
+    tip.style.display = 'block';
+    positionHoverTip(tip, e);
+  });
+  wrap.addEventListener('mouseleave', ()=>{ hideMapHoverTip(); lastId = null; });
+  wrap.addEventListener('mousedown', ()=>{ hideMapHoverTip(); lastId = null; });
+  wrap.addEventListener('wheel', ()=>{ hideMapHoverTip(); lastId = null; }, { passive:true });
 })();
 
 function hexToRgba(hex, alpha){
