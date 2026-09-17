@@ -91,11 +91,32 @@
   #mapView{flex:1;position:relative;min-height:0;display:none;}
   #mapEl{position:absolute;inset:0;}
   .map-btns{position:absolute;top:10px;right:10px;z-index:20;display:flex;flex-direction:column;gap:6px;}
+  #mapView.ls-visible .map-btns{top:58px;} /* ถ้าซ่อนตัวเลือกชั้นแผนที่ของ Longdo ไม่ได้ ให้เลื่อนปุ่มลงไม่ให้ทับ */
+  @media (max-width:520px){
+    .map-btn{padding:8px 10px;font-size:1rem;line-height:1;}
+    .map-btn .mb-text{display:none;}
+  }
   .map-btn{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-size:.78rem;cursor:pointer;
     box-shadow:0 2px 8px rgba(0,0,0,.18);white-space:nowrap;text-align:left;}
   .map-btn.on{background:var(--pea-purple);color:#fff;border-color:var(--pea-purple);}
-  #mapLegend{position:absolute;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:20;background:rgba(255,255,255,.95);
-    border-radius:8px;padding:7px 10px;display:flex;gap:12px;flex-wrap:wrap;font-size:.72rem;box-shadow:0 2px 8px rgba(0,0,0,.15);}
+  #mapLegend{position:absolute;left:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:20;background:rgba(255,255,255,.95);
+    border-radius:8px;padding:6px 10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:.72rem;box-shadow:0 2px 8px rgba(0,0,0,.15);max-width:calc(100% - 20px);}
+  #mapLegend .lg-items{display:none;gap:10px;flex-wrap:wrap;}
+  #mapLegend.open .lg-items{display:flex;}
+  #mapLegend .lg-toggle{border:none;background:none;font-family:inherit;font-size:.74rem;font-weight:700;color:var(--pea-purple);cursor:pointer;padding:2px 0;}
+  #mapView.card-open #mapLegend{display:none;}
+  /* การ์ดข้อมูลหม้อแปลงที่แตะบนแผนที่ — แทนป๊อปอัพของ Longdo ที่ไปทับกับคำอธิบายสัญลักษณ์ */
+  #mapCard{position:absolute;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:25;background:#fff;border-radius:12px;
+    box-shadow:0 6px 24px rgba(0,0,0,.25);padding:12px 14px;display:none;max-width:460px;margin:0 auto;}
+  #mapView.card-open #mapCard{display:block;}
+  #mapCard .mc-head{display:flex;align-items:center;gap:8px;}
+  #mapCard .mc-id{font-family:"Consolas",monospace;font-weight:700;font-size:1.02rem;color:var(--pea-purple-dark);}
+  #mapCard .mc-close{margin-left:auto;border:none;background:var(--paper);border-radius:50%;width:30px;height:30px;font-size:1rem;cursor:pointer;color:var(--muted);flex-shrink:0;}
+  #mapCard .mc-line{font-size:.84rem;color:#444;margin-top:3px;line-height:1.5;}
+  #mapCard .mc-status{display:flex;align-items:center;gap:6px;font-size:.8rem;margin-top:4px;flex-wrap:wrap;}
+  #mapCard .mc-actions{display:flex;gap:8px;margin-top:10px;}
+  #mapCard .mc-actions a{flex:0 0 auto;text-decoration:none;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:.84rem;color:var(--ink);background:#fff;}
+  #mapCard .mc-actions .btn-main{flex:1;}
   #mapLegend span{display:inline-flex;align-items:center;gap:5px;}
   .lg-tri{width:11px;height:11px;background:#777;clip-path:polygon(50% 0%,0% 100%,100% 100%);display:inline-block;}
   .lg-dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
@@ -274,16 +295,20 @@
     <div id="mapEl"></div>
     <div id="mapNote"></div>
     <div class="map-btns">
-      <button class="map-btn" id="satBtn">🛰 ภาพดาวเทียม</button>
-      <button class="map-btn" id="locateBtn">📍 ตำแหน่งฉัน</button>
-      <button class="map-btn" id="fitBtn">⤢ ดูทั้งหมด</button>
+      <button class="map-btn" id="satBtn" title="ภาพดาวเทียม">🛰<span class="mb-text"> ภาพดาวเทียม</span></button>
+      <button class="map-btn" id="locateBtn" title="ตำแหน่งฉัน">📍<span class="mb-text"> ตำแหน่งฉัน</span></button>
+      <button class="map-btn" id="fitBtn" title="ดูทั้งหมด">⤢<span class="mb-text"> ดูทั้งหมด</span></button>
     </div>
+    <div id="mapCard" role="dialog" aria-live="polite"></div>
     <div id="mapLegend">
+      <button type="button" class="lg-toggle" id="legendToggle">ⓘ สัญลักษณ์</button>
+      <div class="lg-items">
       <span><i class="lg-tri"></i>หม้อแปลง (สีตามวงจร)</span>
       <span><i class="lg-dot" style="background:var(--good)"></i>ถูกต้อง</span>
       <span><i class="lg-dot" style="background:var(--bad)"></i>ไม่ถูกต้อง</span>
       <span><i class="lg-dot" style="background:#fff;border:1px solid #999"></i>ยังไม่ตรวจ</span>
       <span><i class="lg-dot" style="background:#1a73e8"></i>ตำแหน่งฉัน</span>
+      </div>
     </div>
     <div id="mapFail">โหลดแผนที่ไม่สำเร็จ<br>ต้องเชื่อมต่ออินเทอร์เน็ตเพื่อดูแผนที่<br>
       <button class="btn-sub" onclick="location.reload()" style="margin-top:10px;">🔄 ลองใหม่</button></div>
@@ -707,6 +732,10 @@ function initMap(){
       location: { lon: 98.76, lat: 8.35 }, zoom: 12, lastView: false });
     try{ lmap.Ui.DPad.visible(false); }catch(e){}
     try{ lmap.Ui.Crosshair.visible(false); }catch(e){}
+    // ใช้ปุ่มภาพดาวเทียมของแอปเอง — ซ่อนตัวเลือกชั้นแผนที่ของ Longdo ที่มุมขวาบนซึ่งทับกับปุ่มของแอป
+    let lsHidden = false;
+    try{ lmap.Ui.LayerSelector.visible(false); lsHidden = true; }catch(e){}
+    document.getElementById('mapView').classList.toggle('ls-visible', !lsHidden);
     lmap.Event.bind('overlayClick', function(overlay){
       const info = markerLookup.get(overlay);
       if(info) showMapPopup(info.f, info.d);
@@ -747,6 +776,7 @@ function renderMapMarkers(){
   lmap.Overlays.clear();
   markerLookup = new Map();
   currentPopup = null;
+  closeMapCard();
   const { filtered } = getFilteredTransformers();
   const feederIds = new Set(filtered.map(x=>x.f.id));
 
@@ -790,16 +820,29 @@ function showMapPopup(f, d){
   if(currentPopup){ try{ lmap.Overlays.remove(currentPopup); }catch(e){} currentPopup = null; }
   const status = trStatus(d);
   const dist = distanceFromMe(d);
-  const statusText = status==='verified' ? '✅ ตรวจแล้ว ถูกต้อง' : status==='mismatch' ? '❌ ตรวจแล้ว ไม่ถูกต้อง' : '⚪ ยังไม่ตรวจ';
-  window.__popupTarget = { feeder: f.id, id: d.id };
-  currentPopup = new longdo.Popup({ lon: d.lon, lat: d.lat }, {
-    title: d.id,
-    detail: `<div class="pop-body"><b>${escapeHtml(d.rating||'ไม่ทราบขนาด')}</b> · ${escapeHtml(f.id)}<br>
-      ${escapeHtml(d.desc||'-')}<br>${statusText}${dist!=null?` · ห่าง ${fmtDist(dist)}`:''}
-      <button class="pop-btn" onclick="openDetail(window.__popupTarget.feeder, window.__popupTarget.id)">📍 สำรวจ / ดูรายละเอียด</button></div>`,
-    size: { width: 240 }
-  });
-  lmap.Overlays.add(currentPopup);
+  const statusDot = `<span class="st-dot ${status}" style="width:10px;height:10px;"></span>`;
+  const statusText = status==='verified' ? 'ตรวจแล้ว ถูกต้อง' : status==='mismatch' ? 'ตรวจแล้ว ไม่ถูกต้อง' : 'ยังไม่ตรวจ';
+  const card = document.getElementById('mapCard');
+  card.innerHTML = `
+    <div class="mc-head">
+      <span class="mc-id">${escapeHtml(d.id)}</span>
+      <span class="fd-chip" style="background:${escapeHtml(f.color||'#888')}">${escapeHtml(f.id)}</span>
+      <span class="tr-rating">${escapeHtml(d.rating||'')}</span>
+      <button class="mc-close" id="mapCardClose" aria-label="ปิด">✕</button>
+    </div>
+    <div class="mc-line">${escapeHtml(d.desc||'(ไม่ทราบจุดติดตั้ง)')}</div>
+    <div class="mc-status">${statusDot}<span>${statusText}</span>${dist!=null?`<span style="color:#1a73e8;font-weight:700;">· ห่าง ${fmtDist(dist)}</span>`:''}
+      ${d.parentConfidence==='confirmed' ? '<span class="pc-badge ok">ต้นทางยืนยันแล้ว</span>' : ''}</div>
+    <div class="mc-actions">
+      ${hasGps(d) ? `<a href="https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lon}" target="_blank" rel="noopener">🧭 นำทาง</a>` : ''}
+      <button class="btn-main" id="mapCardOpen">📍 สำรวจ / ดูรายละเอียด</button>
+    </div>`;
+  document.getElementById('mapView').classList.add('card-open');
+  document.getElementById('mapCardClose').onclick = closeMapCard;
+  document.getElementById('mapCardOpen').onclick = ()=>{ closeMapCard(); openDetail(f.id, d.id); };
+}
+function closeMapCard(){
+  document.getElementById('mapView').classList.remove('card-open');
 }
 function fitMapToMarkers(){
   if(!lmap) return;
@@ -824,15 +867,20 @@ function addMeOverlay(){
 }
 document.getElementById('locateBtn').addEventListener('click', async ()=>{
   const btn = document.getElementById('locateBtn');
-  btn.textContent = '⏳ กำลังหา...';
+  btn.innerHTML = '⏳<span class="mb-text"> กำลังหา...</span>';
   try{
     await getQuickPosition();
     if(lmap){ addMeOverlay(); lmap.location({ lon: myPos.lon, lat: myPos.lat }, true); lmap.zoom(17, true); }
     if(sortNear) refreshView();
   }catch(e){ showToast(e.message, 'err'); }
-  btn.textContent = '📍 ตำแหน่งฉัน';
+  btn.innerHTML = '📍<span class="mb-text"> ตำแหน่งฉัน</span>';
 });
 document.getElementById('fitBtn').addEventListener('click', fitMapToMarkers);
+document.getElementById('legendToggle').addEventListener('click', ()=>{
+  const lg = document.getElementById('mapLegend');
+  const open = lg.classList.toggle('open');
+  document.getElementById('legendToggle').textContent = open ? '✕ ปิดสัญลักษณ์' : 'ⓘ สัญลักษณ์';
+});
 document.getElementById('satBtn').addEventListener('click', ()=>{
   if(!lmap) return;
   satelliteOn = !satelliteOn;
@@ -840,7 +888,7 @@ document.getElementById('satBtn').addEventListener('click', ()=>{
     const sat = longdo.Layers.HYBRID || longdo.Layers.SATELLITE;
     lmap.Layers.setBase(satelliteOn && sat ? sat : longdo.Layers.NORMAL);
     document.getElementById('satBtn').classList.toggle('on', satelliteOn);
-    document.getElementById('satBtn').textContent = satelliteOn ? '🗺 แผนที่ถนน' : '🛰 ภาพดาวเทียม';
+    document.getElementById('satBtn').innerHTML = satelliteOn ? '🗺<span class="mb-text"> แผนที่ถนน</span>' : '🛰<span class="mb-text"> ภาพดาวเทียม</span>';
   }catch(e){ satelliteOn = false; showToast('เปลี่ยนเป็นภาพดาวเทียมไม่สำเร็จ', 'err'); }
 });
 
