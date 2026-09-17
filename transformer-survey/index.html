@@ -440,7 +440,7 @@ const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbzqsOqJJQlF4SS1
 let GAS_URL = localStorage.getItem('sld_gas_url') || DEFAULT_GAS_URL;
 
 // ===== เกณฑ์การสำรวจ =====
-const GPS_TOLERANCE_M = 10;      // ระยะที่ถือว่าตำแหน่งตรงกัน
+const GPS_TOLERANCE_M = 20;      // ระยะที่ถือว่าตำแหน่งตรงกัน (เผื่อความคลาดเคลื่อนของ GPS มือถือและพิกัดในฐานข้อมูล)
 const GPS_GOOD_ACCURACY_M = 15;  // ความแม่นยำ GPS ที่ยอมให้ใช้แก้พิกัดในระบบได้
 const GPS_MAX_SECONDS = 20;      // จับ GPS นานสุดกี่วินาที (หยุดก่อนได้ถ้าแม่นพอแล้ว)
 const PHOTO_MAX_DIM = 1600;      // ย่อรูปด้านยาวสุดไม่เกินกี่พิกเซล ก่อนส่งขึ้นชีต
