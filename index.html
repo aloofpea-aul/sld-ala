@@ -190,6 +190,9 @@
   #leafPill button{border:none;background:transparent;border-radius:14px;padding:5px 11px;font-family:inherit;font-size:.76rem;cursor:pointer;color:var(--muted);white-space:nowrap;}
   #leafPill button.on{background:var(--pea-purple);color:#fff;font-weight:700;}
   #leafPill .lp-n{opacity:.8;font-weight:400;}
+  #panelTypeWarn{margin-top:8px;padding:8px 10px;border-radius:8px;background:#fff4e5;color:#7a4a00;font-size:.78rem;line-height:1.55;}
+  #panelTypeWarn button{margin-left:4px;border:1px solid #b26a00;background:#fff;color:#7a4a00;border-radius:6px;padding:3px 9px;font-family:inherit;font-size:.76rem;font-weight:700;cursor:pointer;}
+  #app.is-overview #panelTypeWarn{display:none !important;}
   #panelCount.clickable{cursor:pointer;}
   #panelCount.clickable:hover{border-color:var(--pea-purple);color:var(--pea-purple);}
   #mapControlToggleBtn{width:36px;height:36px;border-radius:8px;border:1px solid var(--line);
@@ -749,6 +752,7 @@
           <button id="panelAddBtn" class="pda-btn" style="display:none;" title="เพิ่มอุปกรณ์ใหม่ในวงจรนี้">＋ เพิ่ม</button>
           <button id="panelDelBtn" class="pda-btn pda-del" style="display:none;" title="ลบอุปกรณ์ออกจากวงจรนี้">🗑 ลบ</button>
         </div>
+        <div id="panelTypeWarn" style="display:none;"></div>
         <div id="panelFilterBar" style="display:none;">
           <div class="pf-group">
             <span class="pf-label">ประเภทอุปกรณ์:</span>
@@ -2564,6 +2568,7 @@ function updateSidebar(f){
     ? `${shown} อุปกรณ์สวิตช์ (+${hidden} หม้อแปลง/มิเตอร์ ซ่อนอยู่ · แสดง)`
     : nLeafAll > 0 ? `${f.devices.length - nLeafAll} อุปกรณ์สวิตช์ + ${nLeafAll} หม้อแปลง/มิเตอร์ · ซ่อน` : `${shown} อุปกรณ์`;
   setTimeout(refreshLeafControls, 0);
+  renderTypeRepairBanner(f);
   const seqBtn = document.getElementById('panelSeqBtn');
   seqBtn.style.display = '';
   seqBtn.onclick = ()=> openSeqReview(f.id); // เปิดหน้ายืนยันลำดับ พร้อมเลือกวงจรนี้ไว้ให้เลย ไม่ต้องเลือกซ้ำ
@@ -2736,7 +2741,7 @@ function renderForm(f, d){
       <div class="frow">
         <input type="text" class="f-id" placeholder="รหัสอุปกรณ์ เช่น ${f.id}WF-999" value="${id}" ${isNew?'':'readonly'}>
         <select class="f-type">
-          ${['WS','WR','MR','WF','WC','SW'].map(t=>`<option value="${t}" ${t===type?'selected':''}>${t}</option>`).join('')}
+          ${deviceTypeOptionsHtml(type)}
         </select>
       </div>
       <div class="frow">
@@ -2791,7 +2796,76 @@ function submitForm(f, formId){
 //  1) ทุกการเพิ่ม/ลบ ต้องผ่านหน้า "สรุปก่อนยืนยัน" เสมอ (ลบ: ต้องติ๊กยืนยันก่อน ปุ่มลบจึงกดได้)
 //  2) บันทึกขึ้น Google Sheet ให้สำเร็จก่อน แล้วค่อยแก้ข้อมูลบนหน้าจอ — ถ้าบันทึกไม่สำเร็จ หน้าจอจะไม่เปลี่ยน ไม่หลอกว่าเพิ่ม/ลบแล้ว
 //  3) ลบอุปกรณ์ที่มีอุปกรณ์ต่ออยู่ถัดไป: บันทึกการย้ายอุปกรณ์ลูกไปต่อกับสาขาแม่ก่อน แล้วจึงลบ — สายไม่ขาดหลังรีเฟรช
-const DEVICE_TYPES_EDITABLE = ['WS','WR','MR','WF','WC','SW','WB'];
+const DEVICE_TYPES_EDITABLE = ['WS','WR','MR','WF','WC','SW','WB','TRANSFORMER','MVMETER'];
+// ตัวเลือกประเภทอุปกรณ์ในทุกฟอร์มแก้ไข — ต้องมีหม้อแปลง/มิเตอร์แรงกลางด้วย
+// (เดิมไม่มี: แก้ไขหม้อแปลงแล้วกดบันทึก ช่องประเภทจะเลือกตัวแรก "WS" ให้เอง ทำให้หม้อแปลงกลายเป็นสวิตช์ในชีต)
+const DEVICE_TYPE_LABELS = { WS:'WS สวิตช์', WR:'WR รีโคลสเซอร์', MR:'MR', WF:'WF ฟิวส์', WC:'WC คาปาซิเตอร์', SW:'SW สวิตช์', WB:'WB เบรกเกอร์ต้นทาง', TRANSFORMER:'หม้อแปลง (TRANSFORMER)', MVMETER:'มิเตอร์แรงกลาง (MVMETER)' };
+function deviceTypeOptionsHtml(current){
+  const list = DEVICE_TYPES_EDITABLE.slice();
+  if(current && !list.includes(current)) list.unshift(current); // ประเภทอื่นที่ไม่รู้จัก — คงค่าเดิมไว้ ไม่เปลี่ยนเอง
+  return list.map(t=>`<option value="${escapeHtml(t)}" ${t===current?'selected':''}>${escapeHtml(DEVICE_TYPE_LABELS[t]||t)}</option>`).join('');
+}
+// ===== ตรวจหาหม้อแปลง/มิเตอร์ที่ประเภทถูกเปลี่ยนผิด (ผลจากบั๊กฟอร์มแก้ไขเดิม) =====
+const EMBEDDED_TYPE_BY_ID = (()=>{ const m = {}; try{ EMBEDDED_DATA.feeders.forEach(ff=>ff.devices.forEach(x=>{ m[x.id] = x.type; })); }catch(e){} return m; })();
+function expectedLeafType(d){
+  const orig = EMBEDDED_TYPE_BY_ID[d.id];
+  if(orig === 'TRANSFORMER' || orig === 'MVMETER') return orig;
+  if(!orig){
+    if(/^\d{2}-\d{6}(-\d+)?$/.test(d.id)) return 'TRANSFORMER';
+    if(/^MV-/.test(d.id)) return 'MVMETER';
+  }
+  return null;
+}
+function findMistypedLeafDevices(f){
+  return f.devices.map(d=>({ d, expected: expectedLeafType(d) })).filter(x=> x.expected && x.d.type !== x.expected);
+}
+function renderTypeRepairBanner(f){
+  const box = document.getElementById('panelTypeWarn');
+  if(!box) return;
+  const bad = findMistypedLeafDevices(f);
+  if(!bad.length){ box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = 'block';
+  box.innerHTML = `⚠ พบ <b>${bad.length}</b> อุปกรณ์ที่ควรเป็นหม้อแปลง/มิเตอร์ แต่ประเภทในชีตถูกเปลี่ยนไป (เช่น เป็น ${escapeHtml(bad[0].d.type)}) — ทำให้แสดงเป็นวงกลมและนับโหลดผิด
+    <button type="button" id="typeRepairBtn">ตรวจและแก้กลับ ›</button>`;
+  document.getElementById('typeRepairBtn').onclick = ()=> openTypeRepairModal(f);
+}
+function openTypeRepairModal(f){
+  const bad = findMistypedLeafDevices(f);
+  document.getElementById('deviceModalTitle').textContent = 'แก้ประเภทอุปกรณ์กลับให้ถูกต้อง';
+  document.getElementById('deviceBody').innerHTML = `
+    <div class="dm-confirm-box warn">รายการด้านล่างเคยเป็นหม้อแปลง/มิเตอร์แรงกลาง แต่ประเภทในชีตถูกเปลี่ยน (สาเหตุจากฟอร์มแก้ไขเดิมที่ไม่มีตัวเลือกหม้อแปลง)
+      — จะแก้เฉพาะช่อง "ประเภท" ข้อมูลอื่นเช่น ต่อจากอุปกรณ์ใด ขนาด ชื่อ คงไว้ตามที่แก้ล่าสุด</div>
+    <div>${bad.map((x,i)=>`<label class="dm-ack" style="margin-top:6px;"><input type="checkbox" class="trFix" data-i="${i}" checked>
+      <span><b>${escapeHtml(x.d.id)}</b> ${escapeHtml(x.d.rating||'')} ${escapeHtml(x.d.desc||'')}<br>
+      ประเภท ${escapeHtml(x.d.type)} → <b>${escapeHtml(DEVICE_TYPE_LABELS[x.expected])}</b> · ต่อจาก ${escapeHtml(x.d.parentId||'-')}</span></label>`).join('')}</div>
+    <div id="dmMsg" class="dm-msg"></div>
+    <div class="device-modal-actions">
+      <button id="trCancelBtn">ยกเลิก</button>
+      <button class="btn-primary" id="trConfirmBtn">✓ ยืนยันแก้ประเภท</button>
+    </div>`;
+  document.getElementById('deviceOverlay').classList.add('show');
+  document.getElementById('trCancelBtn').onclick = closeDeviceModal;
+  document.getElementById('trConfirmBtn').onclick = async ()=>{
+    const picked = [...document.querySelectorAll('#deviceBody .trFix:checked')].map(c=>bad[+c.dataset.i]);
+    if(!picked.length){ modalMsg('เลือกอย่างน้อย 1 รายการ', 'err'); return; }
+    if(dataIsFallback){ modalMsg('บันทึกไม่ได้ — กำลังดูข้อมูลสำรองในไฟล์ กรุณารีเฟรชหน้าเว็บก่อน', 'err'); return; }
+    if(!(await requireAuth())){ modalMsg('ยังไม่ได้ยืนยันตัวตน จึงยังไม่ได้บันทึก', 'err'); return; }
+    setModalBusy(true);
+    let okN = 0; const fails = [];
+    for(const x of picked){
+      modalMsg(`⏳ กำลังบันทึก ${okN + fails.length + 1}/${picked.length}...`, '');
+      const row = Object.assign({}, x.d, { type: x.expected });
+      const r = await persistDeviceQuiet(f.id, row, `แก้ประเภทกลับเป็น ${x.expected} (ถูกเปลี่ยนเป็น ${x.d.type} จากฟอร์มแก้ไขเดิม)`);
+      if(r && r.ok){ x.d.type = x.expected; okN++; } else fails.push(x.d.id);
+    }
+    setModalBusy(false);
+    refreshAfterDeviceChange(f, null);
+    if(leafletMap && mapMode) rebuildMapMarkers();
+    if(fails.length){ modalMsg(`แก้สำเร็จ ${okN} รายการ · ไม่สำเร็จ: ${escapeHtml(fails.join(', '))}`, 'err'); return; }
+    closeDeviceModal();
+    showToast(`แก้ประเภทกลับแล้ว ${okN} รายการ`, 'ok');
+  };
+}
 function escAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
 function allDeviceIdsLower(){
   const set = new Set();
@@ -3698,7 +3772,7 @@ function renderDeviceModalEdit(f, d){
       <div class="frow"><input type="text" class="dm-id" value="${d.id}" readonly></div>
       <label class="flabel">ประเภท</label>
       <div class="frow"><select class="dm-type">
-        ${['WS','WR','MR','WF','WC','SW','WB'].map(t=>`<option value="${t}" ${t===d.type?'selected':''}>${t}</option>`).join('')}
+        ${deviceTypeOptionsHtml(d.type)}
       </select></div>
       <label class="flabel">ขนาด A0 (ใช้งานจริง — ค่านี้จะถูกบันทึกและใช้ในระบบ)</label>
       <div class="frow"><input type="text" class="dm-rating" value="${d.rating||''}"></div>
