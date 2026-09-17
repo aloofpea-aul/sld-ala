@@ -174,6 +174,24 @@
   .confirm-box{border-radius:8px;padding:10px 12px;font-size:.85rem;line-height:1.6;margin-bottom:10px;}
   .confirm-box.info{background:var(--pea-soft);color:var(--pea-purple-dark);}
   .confirm-box.warn{background:#fff4e5;color:#7a4a00;}
+  /* ต้นทางหม้อแปลง */
+  .pc-badge{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:9px;margin-left:4px;vertical-align:1px;}
+  .pc-badge.est{background:#fff4e5;color:var(--warn);}
+  .pc-badge.ok{background:#e8f5e9;color:var(--good);}
+  .up-path{font-size:.76rem;color:var(--muted);line-height:1.6;margin:6px 0 2px;word-break:break-word;}
+  .up-path code{font-family:"Consolas",monospace;color:var(--ink);}
+  .seg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;}
+  .seg3 label{display:flex;align-items:center;justify-content:center;text-align:center;padding:9px 4px;border:2px solid var(--line);border-radius:9px;font-size:.78rem;font-weight:700;cursor:pointer;line-height:1.3;}
+  .seg3 input{display:none;}
+  .seg3 label.on{border-color:var(--pea-purple);background:var(--pea-soft);color:var(--pea-purple-dark);}
+  #parentPick{display:none;margin-top:10px;}
+  .cand-list{border:1px solid var(--line);border-radius:8px;margin-top:6px;overflow:hidden;}
+  .cand{display:flex;align-items:center;gap:6px;padding:9px 10px;border-bottom:1px solid #f0efe9;font-size:.82rem;cursor:pointer;background:#fff;}
+  .cand:last-child{border-bottom:none;}
+  .cand.on{background:var(--pea-soft);box-shadow:inset 3px 0 0 var(--pea-purple);}
+  .cand .cid{font-family:"Consolas",monospace;font-weight:700;}
+  .cand .cmeta{color:var(--muted);font-size:.74rem;}
+  .cand .cdist{margin-left:auto;color:#1a73e8;font-weight:700;font-size:.74rem;white-space:nowrap;}
 
   /* ---------- เข้าสู่ระบบ ---------- */
   #userPickOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:7000;padding:20px;}
@@ -247,6 +265,7 @@
       <button class="chip" data-filter="verified">ถูกต้อง<span class="n"></span></button>
       <button class="chip" data-filter="mismatch">ไม่ถูกต้อง<span class="n"></span></button>
       <button class="chip" data-filter="nogps">ไม่มีพิกัด<span class="n"></span></button>
+      <button class="chip" data-filter="parentest">ต้นทางยังไม่ยืนยัน<span class="n"></span></button>
     </div>
   </div>
 
@@ -525,6 +544,7 @@ function distanceFromMe(d){
 function matchFilter(d, filter){
   if(filter === 'all') return true;
   if(filter === 'nogps') return !hasGps(d);
+  if(filter === 'parentest') return d.parentConfidence !== 'confirmed';
   return trStatus(d) === filter;
 }
 function getFilteredTransformers(){
@@ -892,6 +912,52 @@ function gpsVerdict(d, gps){
   return { kind:'bad', dist };
 }
 
+// ============ ต้นทางหม้อแปลง — ตรวจว่าหม้อแปลงรับไฟจากอุปกรณ์ตัดตอนตัวใด ============
+// ข้อมูลเดิมประมาณจากพิกัด (จุดที่ใกล้ที่สุด) หม้อแปลงหลายตัวจึงถูกต่อพ่วงกับหม้อแปลงอีกตัว
+// "อุปกรณ์ป้องกันต้นทาง" = ไล่ขึ้นไปตามสายจนเจออุปกรณ์ตัดตอน (ข้ามหม้อแปลง/มิเตอร์ที่ต่อพ่วงกัน)
+const PARENT_CANDIDATE_TYPES = new Set(['WF','WS','WR','MR','SW','WB']);
+const DEVICE_TYPE_TH = { WF:'ฟิวส์', WS:'สวิตช์', WR:'รีโคลสเซอร์', MR:'MR', SW:'สวิตช์', WB:'เบรกเกอร์ต้นทาง', WC:'คาปาซิเตอร์', TRANSFORMER:'หม้อแปลง', MVMETER:'มิเตอร์แรงกลาง' };
+function upstreamChain(f, d){
+  const byId = {};
+  f.devices.forEach(x=>{ byId[x.id] = x; });
+  const chain = [];
+  const seen = new Set([d.id]);
+  let cur = byId[d.parentId];
+  while(cur && !seen.has(cur.id) && chain.length < 200){
+    chain.push(cur); seen.add(cur.id);
+    cur = cur.parentId ? byId[cur.parentId] : null;
+  }
+  return chain;
+}
+function protectiveDevice(f, d){
+  return upstreamChain(f, d).find(x=>PARENT_CANDIDATE_TYPES.has(x.type)) || null;
+}
+function parentCandidates(f, d, ref){
+  const out = [];
+  DATA.feeders.forEach(ff=>{
+    ff.devices.forEach(x=>{
+      if(!PARENT_CANDIDATE_TYPES.has(x.type) || x.id === d.id) return;
+      const dist = (ref && hasGps(x)) ? gpsDistanceMeters(ref.lat, ref.lon, x.lat, x.lon) : null;
+      out.push({ f: ff, x, dist, same: ff.id === f.id });
+    });
+  });
+  out.sort((a,b)=>{
+    if(a.dist != null && b.dist != null) return a.dist - b.dist;
+    if(a.dist != null) return -1;
+    if(b.dist != null) return 1;
+    return (b.same - a.same) || a.x.id.localeCompare(b.x.id, undefined, {numeric:true});
+  });
+  return out;
+}
+function findDeviceAny(id){
+  const q = String(id||'').trim().toLowerCase();
+  for(const ff of DATA.feeders){
+    const x = ff.devices.find(y=>y.id.toLowerCase() === q);
+    if(x) return { f: ff, x };
+  }
+  return null;
+}
+
 // ============ หน้ารายละเอียด + สำรวจ ============
 const ISSUES = [
   { key:'location', label:'ตำแหน่งในระบบไม่ตรงกับที่ติดตั้งจริง' },
@@ -911,7 +977,8 @@ function openDetail(feederId, id){
   const { f, d } = found;
   if(currentPopup && lmap){ try{ lmap.Overlays.remove(currentPopup); }catch(e){} currentPopup = null; }
   form = { f, d, gps: null, status: null, issues: {}, correctedRating:'', correctedDesc:'', peaNo:'',
-    note:'', noGps:false, updateCoords:false, photo:null };
+    note:'', noGps:false, updateCoords:false, photo:null,
+    parentCheck:'skip', newParentId:'', savedVerify:false };
   document.getElementById('detailOverlay').classList.add('show');
   renderDetailForm();
 }
@@ -933,7 +1000,7 @@ function infoRows(f, d){
     ['ขนาด', escapeHtml(d.rating || 'ไม่ทราบ')],
     ['จุดติดตั้ง', escapeHtml(d.desc || 'ไม่ทราบ')],
     ['เฟส', escapeHtml(d.phase || '-')],
-    ['ต่อจากอุปกรณ์', escapeHtml(d.parentId || '-')]
+    ['ต่อจากอุปกรณ์', `${escapeHtml(d.parentId || '-')}${d.parentConfidence==='confirmed' ? '<span class="pc-badge ok">ยืนยันแล้ว</span>' : '<span class="pc-badge est">ประมาณจากพิกัด</span>'}`]
   ];
   if(d.meterCount != null || d.customerImpact != null) rows.push(['ผู้ใช้ไฟ', `${d.meterCount ?? d.customerImpact} ราย`]);
   if(lp != null) rows.push(['โหลด (OPSA)', `${Math.round(lp)}%${d.opsa.peakMonth ? ` (สูงสุด ${Math.round(d.opsa.peakLoadPercent||lp)}% ${escapeHtml(d.opsa.peakMonth)})`:''}`,
@@ -981,7 +1048,23 @@ function renderDetailForm(){
     </div>
 
     <div class="sec">
-      <div class="sec-title">3. รูปถ่ายและหมายเหตุ</div>
+      <div class="sec-title">3. ต้นทาง: หม้อแปลงรับไฟจากอุปกรณ์ใด</div>
+      <div id="parentInfo"></div>
+      <div class="seg3" style="margin-top:8px;">
+        <label id="pcOk"><input type="radio" name="pc" value="ok">✅ ตรงตามป้าย</label>
+        <label id="pcChange"><input type="radio" name="pc" value="change">✏ ไม่ตรง</label>
+        <label id="pcSkip"><input type="radio" name="pc" value="skip">⏭ ไม่ได้ตรวจ</label>
+      </div>
+      <div id="parentPick">
+        <div style="font-size:.8rem;color:var(--muted);">เลือกอุปกรณ์ที่เห็นป้ายรหัสจริงที่เสาต้นทาง (เรียงตามระยะใกล้)</div>
+        <input class="txt" id="parentSearch" list="parentList" placeholder="พิมพ์รหัส เช่น ALA01WF-111" autocomplete="off" style="margin-top:6px;">
+        <datalist id="parentList"></datalist>
+        <div class="cand-list" id="candList"></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">4. รูปถ่ายและหมายเหตุ</div>
       <div class="photo-pick">
         <label>📷 ถ่ายรูป / เลือกรูป<input type="file" id="photoInput" accept="image/*" capture="environment"></label>
         <img class="photo-prev" id="photoPrev" alt="">
@@ -1039,6 +1122,58 @@ function bindDetailForm(){
     }
   });
   document.getElementById('reviewBtn').addEventListener('click', reviewForm);
+
+  body.querySelectorAll('input[name="pc"]').forEach(r=>r.addEventListener('change', ()=>{
+    form.parentCheck = r.value; syncParentUi();
+  }));
+  document.getElementById('parentSearch').addEventListener('input', e=>{
+    form.newParentId = e.target.value.trim(); renderCandidates();
+  });
+}
+function renderParentInfo(){
+  const { f, d } = form;
+  const chain = upstreamChain(f, d);
+  const prot = protectiveDevice(f, d);
+  const parent = chain[0];
+  const pathIds = chain.slice(0, 6).map(x=>x.id);
+  const el = document.getElementById('parentInfo');
+  if(!parent){ el.innerHTML = '<div class="confirm-box warn">ในระบบยังไม่ระบุต้นทางของหม้อแปลงนี้</div>'; return; }
+  el.innerHTML = `<div class="info-grid" style="margin-bottom:0;">
+      <span class="k">ในระบบต่อจาก</span><span class="v">${escapeHtml(parent.id)} <span style="font-weight:400;color:var(--muted)">${escapeHtml(DEVICE_TYPE_TH[parent.type]||parent.type)}</span></span>
+      <span class="k">อุปกรณ์ตัดตอนต้นทาง</span><span class="v">${prot ? `${escapeHtml(prot.id)} ${escapeHtml(prot.rating||'')}` : '-'}</span>
+    </div>
+    <div class="up-path">เส้นทางไฟ: หม้อแปลงนี้ ‹ ${pathIds.map(id=>`<code>${escapeHtml(id)}</code>`).join(' ‹ ')}${chain.length > 6 ? ' ‹ …' : ''}</div>
+    ${parent !== prot && prot ? `<div class="up-path">ในระบบต่อพ่วงผ่านหม้อแปลงอีกตัว — ถ้าดูป้ายที่เสาแล้วตรงกับ <code>${escapeHtml(prot.id)}</code> จะปรับให้ต่อกับ ${escapeHtml(prot.id)} โดยตรง</div>` : ''}`;
+}
+function syncParentUi(){
+  ['ok','change','skip'].forEach(v=>{
+    const id = v==='ok' ? 'pcOk' : v==='change' ? 'pcChange' : 'pcSkip';
+    document.getElementById(id).classList.toggle('on', form.parentCheck === v);
+  });
+  document.getElementById('parentPick').style.display = form.parentCheck === 'change' ? 'block' : 'none';
+  if(form.parentCheck === 'change') renderCandidates();
+}
+function renderCandidates(){
+  const { f, d } = form;
+  const ref = form.gps || (hasGps(d) ? d : null);
+  const cands = parentCandidates(f, d, ref);
+  const prot = protectiveDevice(f, d);
+  const dl = document.getElementById('parentList');
+  if(!dl.childElementCount) dl.innerHTML = cands.slice(0, 600).map(c=>`<option value="${escapeHtml(c.x.id)}">${escapeHtml(c.x.desc||'')}</option>`).join('');
+  const q = form.newParentId.toLowerCase();
+  const shown = (q ? cands.filter(c=>c.x.id.toLowerCase().includes(q) || (c.x.desc||'').toLowerCase().includes(q)) : cands).slice(0, 6);
+  const list = document.getElementById('candList');
+  if(!shown.length){ list.innerHTML = '<div class="cand" style="cursor:default;color:var(--muted)">ไม่พบอุปกรณ์ที่ตรงกับคำค้นหา</div>'; return; }
+  list.innerHTML = shown.map(c=>`<div class="cand ${c.x.id===form.newParentId?'on':''}" data-id="${escapeHtml(c.x.id)}">
+      <span class="cid">${escapeHtml(c.x.id)}</span>
+      <span class="cmeta">${escapeHtml(DEVICE_TYPE_TH[c.x.type]||c.x.type)} ${escapeHtml(c.x.rating||'')}${c.same?'':` · <b style="color:var(--bad)">${escapeHtml(c.f.id)}</b>`}${prot && c.x.id===prot.id?' · ในระบบปัจจุบัน':''}</span>
+      <span class="cdist">${c.dist!=null ? fmtDist(c.dist) : ''}</span>
+    </div>`).join('');
+  list.querySelectorAll('.cand[data-id]').forEach(el=>el.addEventListener('click', ()=>{
+    form.newParentId = el.dataset.id;
+    document.getElementById('parentSearch').value = el.dataset.id;
+    renderCandidates();
+  }));
 }
 function restoreFormValues(){
   const body = document.getElementById('detailBody');
@@ -1052,6 +1187,10 @@ function restoreFormValues(){
   if(form.gps) renderGpsResult();
   if(form.photo) showPhoto();
   syncStatusUi();
+  renderParentInfo();
+  const pr = document.querySelector(`input[name="pc"][value="${form.parentCheck}"]`); if(pr) pr.checked = true;
+  document.getElementById('parentSearch').value = form.newParentId;
+  syncParentUi();
 }
 function showPhoto(){
   const img = document.getElementById('photoPrev');
@@ -1158,7 +1297,39 @@ function reviewForm(){
     if(form.issues.desc && !form.correctedDesc.trim()) return fail('ระบุชื่อ/จุดติดตั้งที่ถูกต้อง');
     if(form.issues.peaNo && !form.peaNo.trim()) return fail('ระบุเลขที่อ่านได้จากตัวถัง');
   }
+  if(form.parentCheck === 'ok' && !protectiveDevice(form.f, d))
+    return fail('ในระบบยังไม่มีต้นทางให้ยืนยัน — เลือก "ไม่ตรง" แล้วระบุอุปกรณ์ที่เห็นจริง');
+  if(form.parentCheck === 'change'){
+    const hit = findDeviceAny(form.newParentId);
+    if(!form.newParentId) return fail('เลือกอุปกรณ์ต้นทางที่เห็นป้ายจริง');
+    if(!hit || !PARENT_CANDIDATE_TYPES.has(hit.x.type)) return fail(`ไม่พบอุปกรณ์ตัดตอนรหัส "${form.newParentId}" ในระบบ — เลือกจากรายการ`);
+    form.newParentId = hit.x.id;
+    const prot = protectiveDevice(form.f, d);
+    if(prot && prot.id === hit.x.id) return fail(`${hit.x.id} คืออุปกรณ์ต้นทางในระบบอยู่แล้ว — ให้เลือก "ตรงตามป้าย" แทน`);
+  }
   renderConfirm();
+}
+
+// แผนการแก้ต้นทาง: null = ไม่แก้ / confirm = ยืนยัน (ปรับให้ต่อกับอุปกรณ์ตัดตอนโดยตรง) / change = เปลี่ยนต้นทาง
+function parentChangePlan(){
+  if(!form || form.parentCheck === 'skip') return null;
+  const { f, d } = form;
+  const oldProt = protectiveDevice(f, d);
+  if(form.parentCheck === 'ok'){
+    if(!oldProt) return null;
+    return { kind:'confirm', newParent: oldProt, newFeeder: f, oldParentId: d.parentId, oldProt };
+  }
+  const hit = findDeviceAny(form.newParentId);
+  if(!hit) return null;
+  return { kind:'change', newParent: hit.x, newFeeder: hit.f, oldParentId: d.parentId, oldProt };
+}
+// อุปกรณ์ทั้งแถว (upsert เขียนทับ 20 คอลัมน์) — ต้องส่งค่าเดิมครบทุกช่อง ไม่งั้นช่องที่ไม่ได้ส่งจะถูกล้าง
+function fullDeviceRow(d, overrides){
+  const keys = ['id','type','rating','desc','lat','lon','source','parentId','meterCount','verified','ratingConfidence',
+    'unpositioned','phase','customerImpact','sequenceVerified','mainChildId','siblingPriority','parentConfidence'];
+  const row = {};
+  keys.forEach(k=>{ if(d[k] !== undefined) row[k] = d[k]; });
+  return Object.assign(row, overrides || {});
 }
 
 function buildPayload(){
@@ -1170,6 +1341,8 @@ function buildPayload(){
   if(form.updateCoords && hasGps(d)) tags.push(`ย้ายพิกัดจาก ${d.lat.toFixed(6)},${d.lon.toFixed(6)}`);
   if(!gps && form.noGps) tags.push('จับ GPS ไม่ได้');
   if(gps) tags.push(`GPS ±${Math.round(gps.accuracy)}ม.`);
+  const pc = parentChangePlan();
+  if(pc) tags.push(pc.kind === 'confirm' ? `ต้นทางหน้างาน: ${pc.newParent.id} (ตรงตามระบบ)` : `ต้นทางหน้างาน: ${pc.newParent.id} (ในระบบเดิม ${pc.oldProt ? pc.oldProt.id : '-'})`);
   const note = (tags.length ? `[${tags.join(' | ')}] ` : '') + form.note.trim();
   const date = new Date().toISOString().slice(0,10);
   const verification = {
@@ -1186,6 +1359,21 @@ function buildPayload(){
   return { f, d, verification, updatedDevice };
 }
 
+function parentNoteHtml(){
+  const pc = parentChangePlan();
+  if(!pc) return '';
+  const { d, f } = form;
+  if(pc.kind === 'confirm'){
+    return d.parentId !== pc.newParent.id
+      ? `<div class="confirm-box info">🔗 ยืนยันต้นทาง: ปรับให้หม้อแปลงต่อกับ <b>${escapeHtml(pc.newParent.id)}</b> โดยตรง (เดิมต่อพ่วงผ่าน ${escapeHtml(d.parentId)}) — โหลดยังอยู่ใต้อุปกรณ์ตัวเดิม ตัวเลขฟิวส์แนะนำไม่เปลี่ยน</div>`
+      : `<div class="confirm-box info">🔗 ยืนยันต้นทาง ${escapeHtml(pc.newParent.id)} ว่าถูกต้อง (ติดสถานะ "ยืนยันแล้ว")</div>`;
+  }
+  const crossFeeder = pc.newFeeder.id !== f.id;
+  return `<div class="confirm-box warn">🔗 จะ<b>เปลี่ยนต้นทาง</b> หม้อแปลง ${escapeHtml(d.rating||'')} จาก ${escapeHtml(pc.oldProt ? pc.oldProt.id : '-')} ไปอยู่ใต้ <b>${escapeHtml(pc.newParent.id)}</b>
+    — ในหน้า SLD ขนาดฟิวส์แนะนำของทั้ง 2 ตัวจะคำนวณใหม่ตามโหลดที่ย้าย
+    ${crossFeeder ? `<br>⚠ อุปกรณ์นี้อยู่<b>วงจร ${escapeHtml(pc.newFeeder.id)}</b> (เดิม ${escapeHtml(f.id)}) หม้อแปลงจะถูกย้ายวงจรด้วย` : ''}</div>`;
+}
+
 function renderConfirm(){
   const { f, d, verification: vf, updatedDevice } = buildPayload();
   const rows = [
@@ -1198,6 +1386,10 @@ function renderConfirm(){
   if(form.gps) rows.push(['พิกัดที่จับได้', `${form.gps.lat.toFixed(6)}, ${form.gps.lon.toFixed(6)} (±${Math.round(form.gps.accuracy)} ม.)`]);
   else rows.push(['พิกัด', 'จับไม่ได้']);
   if(vf.gpsDistanceMeters != null) rows.push(['ห่างจากในระบบ', `${vf.gpsDistanceMeters.toFixed(1)} ม.`]);
+  const pcPlan = parentChangePlan();
+  if(form.parentCheck === 'skip') rows.push(['ต้นทาง', 'ไม่ได้ตรวจ']);
+  else if(pcPlan && pcPlan.kind === 'confirm') rows.push(['ต้นทาง', `✅ ${escapeHtml(pcPlan.newParent.id)} ตรงตามป้าย`]);
+  else if(pcPlan) rows.push(['ต้นทาง', `${escapeHtml(pcPlan.oldProt ? pcPlan.oldProt.id : '-')} → <b>${escapeHtml(pcPlan.newParent.id)}</b>`]);
   rows.push(['รูปถ่าย', form.photo ? `มี (${Math.round(form.photo.bytes/1024)} KB)` : 'ไม่มี']);
   if(form.note.trim()) rows.push(['หมายเหตุ', escapeHtml(form.note.trim())]);
   rows.push(['ผู้สำรวจ', escapeHtml(CURRENT_USER.name || '(จะให้เข้าสู่ระบบก่อนบันทึก)')]);
@@ -1213,10 +1405,11 @@ function renderConfirm(){
   document.getElementById('detailBody').innerHTML = `
     <div class="step">ตรวจสอบข้อมูลก่อนบันทึก</div>
     <div class="info-grid">${rows.map(([k,v])=>`<span class="k">${k}</span><span class="v">${v}</span>`).join('')}</div>
-    ${coordNote}${dataNote}
+    ${coordNote}${dataNote}${parentNoteHtml()}
     <div class="form-err" id="formErr"></div>
+    ${form.savedVerify ? '<div class="confirm-box info">✓ ผลสำรวจบันทึกแล้ว เหลือเฉพาะการบันทึกต้นทาง</div>' : ''}
     <div class="actions">
-      <button class="btn-sub" id="backBtn">‹ แก้ไข</button>
+      <button class="btn-sub" id="backBtn" ${form.savedVerify ? 'style="display:none"' : ''}>‹ แก้ไข</button>
       <button class="btn-main" id="confirmSaveBtn">✓ ยืนยันบันทึกผลสำรวจ</button>
     </div>`;
   document.getElementById('backBtn').addEventListener('click', renderDetailForm);
@@ -1255,8 +1448,10 @@ async function saveSurvey(){
   }
   const { f, d, verification, updatedDevice } = buildPayload();
   verification.inspector = CURRENT_USER.name;
+  const pcPlan = parentChangePlan();
   saving = true;
   showSaveLock('saving');
+  if(form.savedVerify){ return saveParentStep(pcPlan); } // ผลสำรวจบันทึกไปแล้ว — ลองใหม่เฉพาะส่วนต้นทาง
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = ctrl ? setTimeout(()=>ctrl.abort(), SAVE_TIMEOUT_MS) : null;
   let json = null, errMsg = '';
@@ -1277,16 +1472,60 @@ async function saveSurvey(){
   }
   if(errMsg){ showSaveLock('error', errMsg); return; }
 
-  // บันทึกสำเร็จแล้ว จึงแก้ข้อมูลบนหน้าจอให้ตรงกับชีต
+  // บันทึกสำเร็จแล้ว จึงแก้ข้อมูลบนหน้าจอให้ตรงกับชีต (Code.gs แก้ช่องเหล่านี้ในแถวเดียวกัน)
   d.verified = { status: verification.status, date: verification.date };
   if(updatedDevice){ d.lat = updatedDevice.lat; d.lon = updatedDevice.lon; }
   if(verification.correctedRating) d.rating = verification.correctedRating;
   if(verification.correctedDesc) d.desc = verification.correctedDesc;
+  if(verification.status === 'mismatch') d.source = 'field-verified';
+  form.savedVerify = true;
+  form.photoFailed = json.photoUrl && String(json.photoUrl).startsWith('UPLOAD_FAILED');
+  saving = true;
+  return saveParentStep(pcPlan);
+}
+
+// ขั้นที่ 2: บันทึกต้นทาง (upsert ทั้งแถวด้วยค่าล่าสุด) — ถ้าล้มเหลว ผลสำรวจยังอยู่ ลองใหม่ได้เฉพาะขั้นนี้
+async function saveParentStep(pcPlan){
+  const { f, d } = form;
+  let errMsg = '';
+  if(pcPlan){
+    const newRow = fullDeviceRow(d, { parentId: pcPlan.newParent.id, parentConfidence: 'confirmed' });
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(()=>ctrl.abort(), SAVE_TIMEOUT_MS) : null;
+    try{
+      const res = await fetch(GAS_URL, {
+        method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, signal: ctrl ? ctrl.signal : undefined,
+        body: JSON.stringify({ action:'upsert', feeder: pcPlan.newFeeder.id, device: newRow,
+          reason: `สำรวจหม้อแปลง: ต้นทาง ${pcPlan.kind==='confirm'?'ยืนยัน':'เปลี่ยนเป็น'} ${pcPlan.newParent.id}`,
+          changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
+      });
+      const json = await res.json();
+      if(!json || !json.ok) errMsg = (json && (json.error || json.message)) || 'ชีตตอบกลับว่าไม่สำเร็จ';
+    }catch(e){
+      errMsg = e && e.name === 'AbortError' ? `ไม่มีการตอบกลับเกิน ${SAVE_TIMEOUT_MS/1000} วินาที` : 'เชื่อมต่อ Google Sheet ไม่ได้ (เช็คอินเทอร์เน็ต)';
+    }finally{ if(timer) clearTimeout(timer); }
+    if(errMsg){
+      saving = false;
+      showSaveLock('error', 'บันทึกผลสำรวจแล้ว แต่บันทึกต้นทางไม่สำเร็จ: ' + errMsg);
+      document.getElementById('saveText').textContent = 'ผลสำรวจ รูป และพิกัด บันทึกเรียบร้อยแล้ว เหลือเฉพาะข้อมูลต้นทาง — กด "ลองบันทึกอีกครั้ง" ระบบจะส่งเฉพาะส่วนที่ค้าง ไม่บันทึกผลสำรวจซ้ำ';
+      return;
+    }
+    d.parentId = pcPlan.newParent.id;
+    d.parentConfidence = 'confirmed';
+    if(pcPlan.newFeeder.id !== f.id){
+      f.devices = f.devices.filter(x=>x !== d);
+      pcPlan.newFeeder.devices.push(d);
+    }
+  }
+  saving = false;
   showSaveLock('hide');
-  const photoFailed = json.photoUrl && String(json.photoUrl).startsWith('UPLOAD_FAILED');
+  const photoFailed = form.photoFailed;
+  const id = d.id;
+  form.savedVerify = false;
   closeDetail();
   refreshView();
-  showToast(photoFailed ? '⚠ บันทึกผลแล้ว แต่อัปโหลดรูปไม่สำเร็จ — ถ่ายรูปแล้วบันทึกซ้ำภายหลังได้' : `✓ บันทึกผลสำรวจ ${d.id} แล้ว`, photoFailed ? 'warn' : 'ok');
+  showToast(photoFailed ? '⚠ บันทึกผลแล้ว แต่อัปโหลดรูปไม่สำเร็จ — ถ่ายรูปแล้วบันทึกซ้ำภายหลังได้'
+    : `✓ บันทึกผลสำรวจ ${id}${pcPlan ? ' และต้นทาง' : ''} แล้ว`, photoFailed ? 'warn' : 'ok');
 }
 
 loadMemberList();
