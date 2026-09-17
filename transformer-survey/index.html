@@ -454,6 +454,7 @@ const SAVE_TIMEOUT_MS = 90000;
 
 // ===== ข้อมูลโหลด OPSA (ชุดเดียวกับหน้า SLD — ยังไม่มีใน Google Sheet จึงฝังไว้ในแอป) =====
 // รูปแบบ: id → [loadPct, Ia, Ib, Ic, In, unbalancePct, minV, maxReachM, peakMonth, peakPct, cuLoss, coreLoss, lineLoss, kvaA, kvaB, kvaC]
+const OPSA_DATA_LABEL = 'ข้อมูล OPSA ณ 7 ก.ย. 2569 (รันข้อมูล 12 ส.ค. 2569) · ชุดเดียวกับหน้า SLD · ไม่ใช่ค่าวัดสด';
 const OPSA_LOAD_MID = 80, OPSA_LOAD_HIGH = 100;   // %โหลด: เขียว < 80 · ส้ม 80–99 · แดง ≥ 100
 const OPSA_UNBALANCE_WARN = 25;                   // ไม่สมดุลเกิน 25% = เตือน
 const OPSA_LOW_VOLTAGE = 200;                     // แรงดันต่ำสุดปลายสายต่ำกว่า 200 V = ไฟตก
@@ -1220,15 +1221,30 @@ document.getElementById('detailOverlay').addEventListener('click', e=>{
 });
 
 function loadLevel(p){ return p == null ? null : p >= OPSA_LOAD_HIGH ? 'hi' : p >= OPSA_LOAD_MID ? 'mid' : 'ok'; }
-function ratedPhaseCurrents(d){
-  // พิกัดกระแสต่อเฟส (ด้านแรงต่ำ 230 V ต่อเฟส) จาก kVA ต่อเฟส — ถ้าไม่มี ใช้ขนาดรวม ÷ จำนวนเฟสที่ต่อ
+// พิกัดกระแสต่อเฟส (ด้านแรงต่ำ 230 V ต่อเฟส) = ขนาดรวม ÷ จำนวนเฟสที่มีกระแสจริง
+function ratedPerPhase(d, liveCount){
   const total = parseFloat(String(d.rating||'').replace(/[^0-9.]/g,''));
-  const letters = String(d.phase||'').toUpperCase().replace(/[^ABC]/g,'');
-  return [0,1,2].map(i=>{
-    const kva = d.kvaPhase && d.kvaPhase[i] != null ? d.kvaPhase[i]
-      : (letters.includes('ABC'[i]) && total ? total / letters.length : null);
-    return kva ? kva * 1000 / 230 : null;
-  });
+  if(!total || !liveCount) return null;
+  return (total / liveCount) * 1000 / 230;
+}
+// อ่านกระแสจาก OPSA ให้ครบทุกช่อง Ia / Ib / Ic / In เสมอ แล้วค่อยติดป้ายเฟส
+// OPSA ไล่ลงช่องตั้งแต่ Ia เสมอ ไม่ว่าหม้อแปลงจะเกาะเฟสใด (BN ก็อยู่ในช่อง Ia)
+// - จำนวนช่องที่มีกระแส = จำนวนเฟสในระบบ → ติดป้ายตามเฟสจริง เช่น BN → B, ABN → A กับ B
+// - ไม่เท่ากัน → คงป้ายตามช่องของ OPSA (Ia/Ib/Ic) พร้อมเตือนให้ตรวจเฟสหน้างาน
+function opsaPhaseRows(d){
+  const o = d.opsa || {};
+  const cols = [['Ia','A', o.ia], ['Ib','B', o.ib], ['Ic','C', o.ic]].filter(x=>x[2] != null);
+  const letters = String(d.phase||'').toUpperCase().replace(/[^ABC]/g,'').split('');
+  const rated = ratedPerPhase(d, cols.length);
+  let labels, note = '';
+  if(cols.length && letters.length === cols.length){
+    labels = letters;
+    if(letters.join('') !== cols.map(c=>c[1]).join('')) note = `OPSA ลงกระแสเรียงจากช่อง Ia เสมอ — ที่แสดงคือเฟส ${letters.join('')} ตามข้อมูลในระบบ`;
+  } else {
+    labels = cols.map(c=>c[0]);
+    if(cols.length && letters.length) note = `OPSA มีกระแส ${cols.length} ช่อง แต่ในระบบระบุ ${letters.join('')} (${letters.length} เฟส) — ตรวจเฟสหน้างานให้แน่ใจ`;
+  }
+  return { rows: cols.map((c,i)=>({ label: labels[i], current: c[2] })), rated, note };
 }
 function opsaCardHtml(d){
   const o = d.opsa;
@@ -1236,18 +1252,17 @@ function opsaCardHtml(d){
   const lv = loadLevel(o.loadPercent), pv = loadLevel(o.peakLoadPercent);
   const badgeTxt = { ok:'ปกติ', mid:'ใกล้เต็ม', hi:'โหลดเกิน' }[lv];
   const scaleMax = 150, pos = v => Math.min(100, v / scaleMax * 100);
-  const rated = ratedPhaseCurrents(d);
-  const phases = [['A', o.ia, rated[0]], ['B', o.ib, rated[1]], ['C', o.ic, rated[2]]].filter(x=>x[1] != null);
-  const ratedTxt = rated.filter(Boolean);
-  const phaseRows = phases.map(([n, cur, rt])=>{
-    const pct = rt ? cur / rt * 100 : null;
+  const ph = opsaPhaseRows(d);
+  const phases = ph.rows, phaseNote = ph.note, refCur = ph.rated;
+  const phaseRows = phases.map(r=>{
+    const pct = refCur ? r.current / refCur * 100 : null;
     const cls = pct == null ? 'ok' : pct >= 100 ? 'hi' : pct >= 80 ? 'mid' : 'ok';
     const col = { ok:'var(--good)', mid:'#e0a030', hi:'var(--bad)' }[cls];
-    return `<span>${n}</span><div class="ph-bar"><i style="width:${Math.min(100, pct == null ? 0 : pct)}%;background:${col}"></i></div>
-      <span style="text-align:right" class="c-${cls === 'ok' ? '' : cls}">${Math.round(cur)} A</span>`;
+    return `<span>${escapeHtml(r.label)}</span><div class="ph-bar"><i style="width:${Math.min(100, pct == null ? 0 : pct)}%;background:${col}"></i></div>
+      <span style="text-align:right" class="c-${cls === 'ok' ? '' : cls}">${Math.round(r.current)} A</span>`;
   }).join('');
-  const refCur = ratedTxt.length ? Math.max(...ratedTxt) : null;
-  const nRow = o.inN != null && phases.length > 1
+  // กระแสนิวทรัล (In) แสดงเสมอเมื่อมีค่า แม้เป็นระบบ 1 เฟส
+  const nRow = o.inN != null
     ? `<span>N</span><div class="ph-bar"><i style="width:${refCur ? Math.min(100, o.inN/refCur*100) : 0}%;background:#9aa0a6"></i></div><span style="text-align:right">${Math.round(o.inN)} A</span>` : '';
   const threePhase = phases.length >= 2;
   const unb = threePhase && o.unbalancePercent != null ? o.unbalancePercent : null;
@@ -1268,16 +1283,17 @@ function opsaCardHtml(d){
       <b style="left:${pos(OPSA_LOAD_MID)}%"></b><b style="left:${pos(OPSA_LOAD_HIGH)}%;background:#333"></b></div>
     <div class="opsa-scale"><span style="left:2%">0</span><span style="left:${pos(OPSA_LOAD_MID)}%">80</span><span style="left:${pos(OPSA_LOAD_HIGH)}%">100</span><span style="left:95%">150%</span></div>
     ${phases.length ? `<div class="opsa-sub">กระแสแต่ละเฟส ${refCur ? `<small>(พิกัด ${Math.round(refCur)} A/เฟส)</small>` : ''}</div><div class="ph-grid">${phaseRows}${nRow}</div>` : ''}
+    ${phaseNote ? `<div class="opsa-foot"${phaseNote.indexOf('ตรวจเฟสหน้างาน') >= 0 ? ' style="color:var(--warn);font-weight:600;"' : ''}>${phaseNote.indexOf('ตรวจเฟสหน้างาน') >= 0 ? '⚠ ' : ''}${escapeHtml(phaseNote)}</div>` : ''}
     <div class="opsa-boxes">
-      <div class="opsa-box ${unbCls}"><div class="k">ไม่สมดุล (เตือน &gt; ${OPSA_UNBALANCE_WARN}%)</div><div class="v ${unbCls ? 'c-mid' : ''}">${unb != null ? Math.round(unb) + '%' : '1 เฟส'}</div></div>
+      <div class="opsa-box ${unbCls}"><div class="k">ไม่สมดุล (เตือน &gt; ${OPSA_UNBALANCE_WARN}%)</div><div class="v ${unbCls ? 'c-mid' : ''}">${unb != null ? Math.round(unb) + '%' : (phases.length === 1 ? '1 เฟส' : '-')}</div></div>
       <div class="opsa-box ${lowV ? 'hi' : ''}"><div class="k">แรงดันต่ำสุดปลายสาย</div><div class="v ${lowV ? 'c-hi' : ''}">${o.minVoltage != null ? Math.round(o.minVoltage) + ' V' : '-'}${lowV ? ' · ไฟตก' : ''}</div></div>
       <div class="opsa-box"><div class="k">ระยะสายแรงต่ำไกลสุด</div><div class="v">${o.maxReachM != null ? fmt(Math.round(o.maxReachM)) + ' ม.' : '-'}</div></div>
       <div class="opsa-box"><div class="k">ผู้ใช้ไฟ</div><div class="v">${d.meterCount != null ? d.meterCount + ' ราย' : '-'}</div></div>
     </div>
-    <div class="opsa-sub">หน่วยสูญเสีย <small>(kWh)</small></div>
+    <div class="opsa-sub">หน่วยสูญเสีย <small>(kWh/เดือน)</small></div>
     <div class="opsa-loss"><span>ทองแดง ${fmt(o.copperLossKwh)}</span><span>แกนเหล็ก ${fmt(o.coreLossKwh)}</span><span>สายแรงต่ำ ${fmt(o.lineLossKwh)}</span></div>
     ${hints.length ? `<div class="opsa-hint">📷 หน้างาน: ${hints.map(escapeHtml).join('<br>')}</div>` : ''}
-    <div class="opsa-foot">ข้อมูล OPSA ชุดเดียวกับหน้า SLD · ไม่ใช่ค่าวัดสด</div>
+    <div class="opsa-foot">${OPSA_DATA_LABEL}</div>
   </div>`;
 }
 
