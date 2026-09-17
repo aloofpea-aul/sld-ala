@@ -183,6 +183,15 @@
 
   #zoomCtrls{position:absolute;right:14px;bottom:14px;display:flex;flex-direction:column;gap:6px;z-index:5;}
   #mapControlPanel{position:absolute;left:14px;top:14px;z-index:1000;}
+  /* ปุ่มแสดง/ซ่อนหม้อแปลง บนผังและแผนที่ — ค่าเดียวกับเมนู "แสดงหม้อแปลง/มิเตอร์" และป้ายจำนวนในแผงรายการ */
+  #leafPill{position:absolute;top:12px;left:56px;z-index:30;display:flex;align-items:center;gap:2px;background:#fff;
+    border:1px solid var(--line);border-radius:18px;padding:3px;box-shadow:0 2px 8px rgba(0,0,0,.12);font-size:.78rem;}
+  #leafPill .lp-label{padding:0 8px 0 8px;color:var(--ink);white-space:nowrap;font-weight:600;}
+  #leafPill button{border:none;background:transparent;border-radius:14px;padding:5px 11px;font-family:inherit;font-size:.76rem;cursor:pointer;color:var(--muted);white-space:nowrap;}
+  #leafPill button.on{background:var(--pea-purple);color:#fff;font-weight:700;}
+  #leafPill .lp-n{opacity:.8;font-weight:400;}
+  #panelCount.clickable{cursor:pointer;}
+  #panelCount.clickable:hover{border-color:var(--pea-purple);color:var(--pea-purple);}
   #mapControlToggleBtn{width:36px;height:36px;border-radius:8px;border:1px solid var(--line);
     background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.15);font-size:16px;cursor:pointer;}
   #mapControlBody{display:none;margin-top:6px;background:#fff;border:1px solid var(--line);
@@ -261,7 +270,7 @@
   .device-row .seq-badge-ok{background:#e8f5e9;color:#2e7d32;}
   .device-row .row-actions{flex:0 0 auto;}
   /* ตัวกรอง: ป้าย "ประเภท / หม้อแปลง" กว้างเท่ากัน ปุ่มจึงเริ่มตรงแนวเดียวกัน */
-  .pf-label{min-width:62px;}
+  .pf-label{min-width:122px;}
   .row-actions{display:flex;gap:2px;}
   .row-actions button{border:none;background:none;cursor:pointer;font-size:.85rem;padding:2px 4px;
     border-radius:4px;}
@@ -688,6 +697,11 @@
         </div>
       </div>
       <button id="locateBtn" title="ตำแหน่งปัจจุบัน" style="display:none;">📍</button>
+      <div id="leafPill" role="group" aria-label="แสดงหม้อแปลงและมิเตอร์" style="display:none;">
+        <span class="lp-label">🔺 หม้อแปลง/มิเตอร์</span>
+        <button type="button" data-leaf="1">แสดง</button>
+        <button type="button" data-leaf="0">ซ่อน</button>
+      </div>
       <svg id="svg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet">
         <g id="zoomG"></g>
       </svg>
@@ -728,14 +742,14 @@
         </div>
         <div id="panelFilterBar" style="display:none;">
           <div class="pf-group">
-            <span class="pf-label">ประเภท:</span>
+            <span class="pf-label">ประเภทอุปกรณ์:</span>
             <button class="pf-btn active" data-filter-type="all">ทั้งหมด</button>
             <button class="pf-btn" data-filter-type="WF">WF</button>
             <button class="pf-btn" data-filter-type="WS">WS</button>
             <button class="pf-btn" data-filter-type="other">อื่นๆ</button>
           </div>
           <div class="pf-group">
-            <span class="pf-label">หม้อแปลง:</span>
+            <span class="pf-label" title="กรองสวิตช์/ฟิวส์ ตามว่ามีหม้อแปลงต่ออยู่ปลายน้ำหรือไม่">มีหม้อแปลงปลายน้ำ:</span>
             <button class="pf-btn active" data-filter-xfmr="all">ทั้งหมด</button>
             <button class="pf-btn" data-filter-xfmr="has">มีต่ออยู่</button>
             <button class="pf-btn" data-filter-xfmr="none">ไม่มี</button>
@@ -1451,6 +1465,7 @@ function showToast(msg, kind){
 
 // ใส่คลาสบอกโหมดหน้าจอให้ #app — CSS บนมือถือใช้จัดสัดส่วนผัง/แผงรายการตามโหมด
 function setViewModeClass(mode){
+  setTimeout(()=>{ if(typeof refreshLeafControls === 'function') refreshLeafControls(); }, 0);
   const app = document.getElementById('app');
   if(!app) return;
   app.classList.toggle('is-overview', mode === 'overview');
@@ -2042,6 +2057,8 @@ initPanZoomEvents();
 // ============ REAL GPS MAP (Leaflet) ============
 function toggleMapMode(){
   mapMode = !mapMode;
+  hideMapHoverTip();
+  setTimeout(refreshLeafControls, 0);
   const mapDiv = document.getElementById('mapDiv');
   const btn = document.getElementById('mapToggleBtn');
   const panel = document.getElementById('mapControlPanel');
@@ -2109,13 +2126,9 @@ function initLeafletMap(){
   leafletMap.Event.bind('overlayClick', function(overlay){
     const info = markerDeviceLookup.get(overlay);
     if(!info) return;
-    const { f, d } = info;
-    if(currentMapPopup){ leafletMap.Overlays.remove(currentMapPopup); currentMapPopup = null; }
-    hideMapHoverTip();
     // คลิกหมุด = เปิดป๊อปอัพรายละเอียดเต็ม (ตัวเดียวกับคลิกจากรายการ) + เลือกวงจรนั้นในแผงด้านข้าง
-    selectFeederForSidebar(f.id);
-    setTimeout(()=>highlightAndScrollTo(d.id), 60);
-    openDeviceModal(d.id);
+    // ไม่ซูมแผนที่ตาม — ผู้ใช้กำลังดูบริเวณนั้นอยู่แล้ว
+    openMapDeviceInfo(info.f, info.d);
   });
 
   rebuildMapMarkers();
@@ -2314,32 +2327,88 @@ function mapHoverTipHtml(f, d){
   return rows.map(r => r.startsWith('<div') ? r : `<div>${r}</div>`).join('');
 }
 (function bindMapHover(){
-  if(!window.matchMedia || !window.matchMedia('(hover:hover) and (pointer:fine)').matches) return;
+  // หมุดบนแผนที่ Longdo เป็นชั้นภาพที่เบราว์เซอร์ส่งเหตุการณ์เมาส์ถึงตัวหมุดไม่แน่นอน
+  // จึงคำนวณเองว่าเมาส์อยู่ใกล้หมุดตัวไหน จากขอบเขตแผนที่ที่แสดงอยู่ (ไม่ต้องพึ่งเหตุการณ์ของ Longdo)
   const mapDiv = document.getElementById('mapDiv');
   if(!mapDiv) return;
-  mapDiv.addEventListener('mouseover', e=>{
-    const hit = e.target.closest && e.target.closest('.tr-map-hit[data-did]');
-    if(!hit) return;
-    const found = DATA.feeders.find(x=>x.id===hit.dataset.fid);
-    const d = found && found.devices.find(x=>x.id===hit.dataset.did);
-    if(!d) return;
-    const tip = ensureMapHoverTip();
-    tip.innerHTML = mapHoverTipHtml(found, d);
-    tip.style.display = 'block';
-  });
-  mapDiv.addEventListener('mousemove', e=>{
-    const tip = document.getElementById('mapHoverTip');
-    if(!tip || tip.style.display === 'none') return;
-    if(!(e.target.closest && e.target.closest('.tr-map-hit[data-did]'))){ tip.style.display = 'none'; return; }
-    const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
-    let x = e.clientX + pad, y = e.clientY + pad;
-    if(x + w > window.innerWidth - 8) x = e.clientX - w - pad;
-    if(y + h > window.innerHeight - 8) y = e.clientY - h - pad;
-    tip.style.left = x + 'px'; tip.style.top = y + 'px';
-  });
-  mapDiv.addEventListener('mouseleave', hideMapHoverTip);
-  mapDiv.addEventListener('mousedown', hideMapHoverTip);
+  const canHover = window.matchMedia && window.matchMedia('(hover:hover) and (pointer:fine)').matches;
+  const HIT_PX = 13;
+  const mercY = lat => Math.log(Math.tan(Math.PI/4 + lat*Math.PI/360));
+  function nearestMarkerAt(clientX, clientY){
+    if(!mapMode || !leafletMap || !markerDeviceLookup || !markerDeviceLookup.size) return null;
+    const rect = mapDiv.getBoundingClientRect();
+    const mx = clientX - rect.left, my = clientY - rect.top;
+    if(mx < 0 || my < 0 || mx > rect.width || my > rect.height) return null;
+    let b;
+    try{ b = leafletMap.bound(); }catch(e){ return null; }
+    if(!b || b.maxLon === b.minLon || b.maxLat === b.minLat) return null;
+    const yTop = mercY(b.maxLat), yBot = mercY(b.minLat);
+    let best = null, bestD = HIT_PX;
+    markerDeviceLookup.forEach(info=>{
+      const d = info.d;
+      if(d.lat == null || d.lon == null) return;
+      const x = (d.lon - b.minLon) / (b.maxLon - b.minLon) * rect.width;
+      const y = (yTop - mercY(d.lat)) / (yTop - yBot) * rect.height;
+      const dist = Math.hypot(x - mx, y - my);
+      // หมุดสวิตช์/ฟิวส์ใหญ่กว่าหม้อแปลง — ถ้าระยะใกล้เคียงกันให้เลือกสวิตช์ก่อน
+      const score = dist - (isLeafAssetType(d.type) ? 0 : 2);
+      if(score < bestD){ bestD = score; best = info; }
+    });
+    return best;
+  }
+  window.__nearestMapMarkerAt = nearestMarkerAt;
+  const isUiTarget = t => t && t.closest && t.closest('button, a, input, select, label, textarea, #mapControlPanel, [class*="popup"], [class*="ldmap_"][class*="menu"]');
+
+  if(canHover){
+    let raf = null, lastEv = null, lastKey = null;
+    window.addEventListener('mousemove', e=>{
+      lastEv = e;
+      if(raf) return;
+      raf = requestAnimationFrame(()=>{
+        raf = null;
+        const ev = lastEv;
+        const tip = ensureMapHoverTip();
+        const overlayOpen = document.getElementById('deviceOverlay') && document.getElementById('deviceOverlay').classList.contains('show');
+        const info = (!overlayOpen && !(ev.buttons & 1) && !isUiTarget(ev.target) && mapDiv.contains(ev.target))
+          ? nearestMarkerAt(ev.clientX, ev.clientY) : null;
+        if(!info){ if(lastKey !== null){ tip.style.display = 'none'; lastKey = null; mapDiv.style.cursor = ''; } return; }
+        const key = info.f.id + '|' + info.d.id;
+        if(key !== lastKey){ tip.innerHTML = mapHoverTipHtml(info.f, info.d); lastKey = key; }
+        tip.style.display = 'block';
+        mapDiv.style.cursor = 'pointer';
+        positionHoverTip(tip, ev);
+      });
+    }, true);
+    mapDiv.addEventListener('mouseleave', ()=>{ hideMapHoverTip(); });
+    mapDiv.addEventListener('wheel', ()=>{ hideMapHoverTip(); }, { passive:true, capture:true });
+  }
+
+  // คลิก/แตะหมุด = เปิดป๊อปอัพรายละเอียด (ทำงานแม้เหตุการณ์ overlayClick ของ Longdo ไม่ส่งมา)
+  let downXY = null;
+  window.addEventListener('pointerdown', e=>{ downXY = mapDiv.contains(e.target) ? { x:e.clientX, y:e.clientY } : null; }, true);
+  window.addEventListener('pointerup', e=>{
+    if(!downXY || !mapDiv.contains(e.target) || isUiTarget(e.target)) return;
+    const moved = Math.hypot(e.clientX - downXY.x, e.clientY - downXY.y) > 6; // ลากแผนที่ ไม่นับเป็นคลิก
+    downXY = null;
+    if(moved) return;
+    const info = nearestMarkerAt(e.clientX, e.clientY);
+    if(info) openMapDeviceInfo(info.f, info.d);
+  }, true);
 })();
+
+// เปิดป๊อปอัพจากหมุดบนแผนที่ — ใช้ร่วมกันทั้งเหตุการณ์ของ Longdo และการคำนวณตำแหน่งเอง (กันเปิดซ้ำ 2 ครั้ง)
+let lastMapOpen = { key:null, t:0 };
+function openMapDeviceInfo(f, d){
+  const key = f.id + '|' + d.id, now = Date.now();
+  if(lastMapOpen.key === key && now - lastMapOpen.t < 600) return;
+  lastMapOpen = { key, t: now };
+  if(currentMapPopup && leafletMap){ try{ leafletMap.Overlays.remove(currentMapPopup); }catch(e){} currentMapPopup = null; }
+  hideMapHoverTip();
+  if(selectedFeeder !== f.id) selectFeederForSidebar(f.id);
+  setTimeout(()=>{ const row = [...document.querySelectorAll('.device-row')].find(r=>r.dataset.id===d.id);
+    if(row){ row.scrollIntoView({block:'center'}); row.style.background='#fff2cc'; setTimeout(()=>{ row.style.background=''; }, 1200); } }, 60);
+  openDeviceModal(d.id);
+}
 
 // ===== ชี้เมาส์ที่จุดอุปกรณ์ในผัง Single Line = แสดงข้อมูลย่อ (ใช้กล่องเดียวกับแผนที่จริง) =====
 function positionHoverTip(tip, e){
@@ -2401,9 +2470,11 @@ function updateSidebar(f){
   badge.style.display = 'inline-block';
   const shown = visibleDevices(f).length;
   const hidden = f.devices.length - shown;
+  const nLeafAll = f.devices.filter(d=>isLeafAssetType(d.type)).length;
   badge.textContent = hidden > 0
-    ? `${shown} อุปกรณ์สวิตช์ (+${hidden} หม้อแปลง/มิเตอร์ ซ่อนอยู่)`
-    : `${shown} อุปกรณ์`;
+    ? `${shown} อุปกรณ์สวิตช์ (+${hidden} หม้อแปลง/มิเตอร์ ซ่อนอยู่ · แสดง)`
+    : nLeafAll > 0 ? `${f.devices.length - nLeafAll} อุปกรณ์สวิตช์ + ${nLeafAll} หม้อแปลง/มิเตอร์ · ซ่อน` : `${shown} อุปกรณ์`;
+  setTimeout(refreshLeafControls, 0);
   const seqBtn = document.getElementById('panelSeqBtn');
   seqBtn.style.display = '';
   seqBtn.onclick = ()=> openSeqReview(f.id); // เปิดหน้ายืนยันลำดับ พร้อมเลือกวงจรนี้ไว้ให้เลย ไม่ต้องเลือกซ้ำ
@@ -3768,8 +3839,41 @@ document.addEventListener('click', e => {
   if(!e.target.closest('#searchResults')) document.getElementById('searchResultsList').style.display='none';
 });
 
+// ===== แสดง/ซ่อนหม้อแปลง — ค่าเดียว ใช้ร่วมกัน 3 จุด: ปุ่มบนผัง/แผนที่, เมนูเพิ่มเติม, ป้ายจำนวนในแผงรายการ =====
+function setShowLeafAssets(v){
+  const t = document.getElementById('leafToggle');
+  if(t.checked === !!v) { refreshLeafControls(); return; }
+  t.checked = !!v;
+  t.dispatchEvent(new Event('change'));
+}
+function refreshLeafControls(){
+  const pill = document.getElementById('leafPill');
+  const f = selectedFeeder && DATA.feeders.find(x=>x.id===selectedFeeder);
+  pill.style.display = (viewMode === 'detail' || mapMode) ? 'flex' : 'none';
+  const nLeaf = f ? f.devices.filter(d=>isLeafAssetType(d.type)).length : null;
+  pill.querySelectorAll('button').forEach(b=>{
+    const on = (b.dataset.leaf === '1') === showLeafAssets;
+    b.classList.toggle('on', on);
+    b.innerHTML = b.dataset.leaf === '1' ? `แสดง${nLeaf!=null?` <span class="lp-n">${nLeaf}</span>`:''}` : 'ซ่อน';
+  });
+  const badge = document.getElementById('panelCount');
+  if(badge && f){
+    badge.classList.add('clickable');
+    badge.title = showLeafAssets ? 'กดเพื่อซ่อนหม้อแปลง/มิเตอร์ ในผัง แผนที่ และรายการ' : 'กดเพื่อแสดงหม้อแปลง/มิเตอร์ ในผัง แผนที่ และรายการ';
+  }
+}
+document.querySelectorAll('#leafPill button').forEach(b=>b.addEventListener('click', e=>{
+  e.stopPropagation();
+  setShowLeafAssets(b.dataset.leaf === '1');
+}));
+['mousedown','pointerdown','wheel','touchstart'].forEach(ev=>document.getElementById('leafPill').addEventListener(ev, e=>e.stopPropagation(), {passive:true}));
+document.getElementById('panelCount').addEventListener('click', ()=>{
+  if(selectedFeeder) setShowLeafAssets(!showLeafAssets);
+});
+
 document.getElementById('leafToggle').addEventListener('change', e=>{
   showLeafAssets = e.target.checked;
+  setTimeout(refreshLeafControls, 0);
   if(viewMode === 'overview') renderOverview();
   if(selectedFeeder){
     const f = DATA.feeders.find(x=>x.id===selectedFeeder);
