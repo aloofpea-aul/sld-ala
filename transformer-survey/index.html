@@ -128,6 +128,8 @@
   .tm-label{display:none;position:absolute;left:50%;top:-4px;transform:translate(-50%,-100%);background:rgba(255,255,255,.95);
     font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3);}
   #mapEl.zoomed-in .tm-label{display:block;}
+  .sw-dot{position:relative;pointer-events:none;}
+  .sw-dot .tm-label{font-weight:600;color:#555;}
   .tm-badge{position:absolute;right:-5px;top:-5px;width:9px;height:9px;border-radius:50%;border:1.5px solid #fff;}
   .pop-body{font-size:13px;line-height:1.55;}
   .pop-body b{color:var(--pea-purple);}
@@ -308,6 +310,12 @@
       <span><i class="lg-dot" style="background:var(--bad)"></i>ไม่ถูกต้อง</span>
       <span><i class="lg-dot" style="background:#fff;border:1px solid #999"></i>ยังไม่ตรวจ</span>
       <span><i class="lg-dot" style="background:#1a73e8"></i>ตำแหน่งฉัน</span>
+      <span><i style="display:inline-block;width:16px;border-top:3px solid #7f77dd"></i>สายหลัก</span>
+      <span><i style="display:inline-block;width:16px;border-top:2px dashed #e07b00"></i>ห่างอุปกรณ์ต้นทาง &gt; 1 กม.</span>
+      <span style="flex-basis:100%;">เส้นหม้อแปลง:
+        <label><input type="radio" name="leafLineMode" value="mst"> แนวสายรวม</label>
+        <label><input type="radio" name="leafLineMode" value="straight"> เส้นตรง (แบบเดิม)</label></span>
+      <span style="flex-basis:100%;color:var(--muted);">เส้นเป็นแนวประมาณ ไม่ใช่แนวสายจริง · ตั้งค่าเดียวกับหน้า SLD</span>
       </div>
     </div>
     <div id="mapFail">โหลดแผนที่ไม่สำเร็จ<br>ต้องเชื่อมต่ออินเทอร์เน็ตเพื่อดูแผนที่<br>
@@ -748,6 +756,46 @@ function initMap(){
     document.getElementById('mapFail').style.display = 'flex';
   }
 }
+const SLD_TRUNK_TYPES = new Set(['WB','WS','WR','MR','SW']);
+const LEAF_FAR_PARENT_M = 1000;
+function isLeafType(t){ return t === 'TRANSFORMER' || t === 'MVMETER'; }
+// ใช้ค่าเดียวกับหน้า SLD (เก็บในเครื่องเดียวกัน โดเมนเดียวกัน) — สลับที่แอปไหน อีกแอปก็เปลี่ยนตาม
+function getLeafLineMode(){ return localStorage.getItem('sld_leaf_line_mode') === 'straight' ? 'straight' : 'mst'; }
+function buildLeafMstEdges(f, leaves){
+  const byId = {};
+  f.devices.forEach(x=>{ byId[x.id] = x; });
+  const zones = new Map();
+  leaves.forEach(d=>{
+    let cur = byId[d.parentId];
+    const seen = new Set([d.id]);
+    while(cur && isLeafType(cur.type) && !seen.has(cur.id)){ seen.add(cur.id); cur = byId[cur.parentId]; }
+    const key = cur ? cur.id : '__none__';
+    if(!zones.has(key)) zones.set(key, { anchor: (cur && hasGps(cur)) ? cur : null, items: [] });
+    zones.get(key).items.push(d);
+  });
+  const edges = [];
+  const cosLat = Math.cos(8.35 * Math.PI / 180);
+  const dist2 = (a,b)=>{ const dx = (a.lon-b.lon)*cosLat, dy = a.lat-b.lat; return dx*dx + dy*dy; };
+  zones.forEach(z=>{
+    const pts = z.anchor ? [z.anchor, ...z.items] : z.items.slice();
+    const n = pts.length;
+    if(n < 2) return;
+    const inTree = new Array(n).fill(false), best = new Array(n).fill(Infinity), from = new Array(n).fill(-1);
+    best[0] = 0;
+    for(let step = 0; step < n; step++){
+      let k = -1;
+      for(let i = 0; i < n; i++) if(!inTree[i] && (k < 0 || best[i] < best[k])) k = i;
+      inTree[k] = true;
+      if(from[k] >= 0) edges.push([pts[from[k]], pts[k]]);
+      for(let i = 0; i < n; i++){
+        if(inTree[i]) continue;
+        const dd = dist2(pts[k], pts[i]);
+        if(dd < best[i]){ best[i] = dd; from[i] = k; }
+      }
+    }
+  });
+  return edges;
+}
 function updateLabelVisibility(){
   if(!lmap) return;
   document.getElementById('mapEl').classList.toggle('zoomed-in', lmap.zoom() >= MAP_LABEL_ZOOM);
@@ -780,17 +828,50 @@ function renderMapMarkers(){
   const { filtered } = getFilteredTransformers();
   const feederIds = new Set(filtered.map(x=>x.f.id));
 
-  // แนวสายแรงสูง (เส้นตรงระหว่างอุปกรณ์) ของวงจรที่มีหม้อแปลงแสดงอยู่ — ช่วยดูว่าหม้อแปลงอยู่แนวสายไหน
+  // ===== เส้นบนแผนที่ — กฎเดียวกับหน้า SLD (เป็นภาพประมาณแนวสาย ไม่มีผลกับข้อมูลหรือการคำนวณ) =====
+  //  - สายหลัก (WB/WS/WR/MR/SW) เส้นหนา · ฟิวส์/คาปาซิเตอร์ เส้นบาง · ไม่ยืดความยาวเส้น
+  //  - หม้อแปลง/มิเตอร์: "แนวสายรวม" ต่อกันตามระยะใกล้สุดในโซนอุปกรณ์ตัดตอนเดียวกัน (หรือเส้นตรงแบบเดิม)
+  //  - หม้อแปลงที่ห่างอุปกรณ์ต้นทางในข้อมูลเกิน 1 กม. = เส้นประสีส้ม
+  const leafMode = getLeafLineMode();
+  const dash = (()=>{ try{ return longdo.LineStyle && longdo.LineStyle.Dashed; }catch(e){ return undefined; } })();
+  const addLine = (a, b, opt)=> lmap.Overlays.add(new longdo.Polyline([{lon:a.lon, lat:a.lat},{lon:b.lon, lat:b.lat}], opt));
   DATA.feeders.forEach(f=>{
     if(!feederIds.has(f.id)) return;
     const byId = {};
     f.devices.forEach(d=>{ byId[d.id] = d; });
+    const leaves = [];
     f.devices.forEach(d=>{
-      if(!TRUNK_TYPES.has(d.type) || !hasGps(d) || !d.parentId) return;
+      if(!hasGps(d) || !d.parentId) return;
       const p = byId[d.parentId];
+      if(isLeafType(d.type)){ leaves.push(d); }
       if(!p || !hasGps(p)) return;
-      lmap.Overlays.add(new longdo.Polyline([{lon:p.lon, lat:p.lat},{lon:d.lon, lat:d.lat}],
-        { lineWidth: 2, lineColor: hexToRgba(f.color, 0.45) }));
+      if(isLeafType(d.type)){
+        const dist = gpsDistanceMeters(p.lat, p.lon, d.lat, d.lon);
+        if(dist > LEAF_FAR_PARENT_M){
+          const opt = { lineWidth: 2, lineColor: 'rgba(224,123,0,0.9)' };
+          if(dash !== undefined) opt.lineStyle = dash;
+          addLine(p, d, opt);
+          return;
+        }
+        if(leafMode === 'straight') addLine(p, d, { lineWidth: 1, lineColor: hexToRgba(f.color, 0.5) });
+        return;
+      }
+      const main = SLD_TRUNK_TYPES.has(d.type);
+      addLine(p, d, { lineWidth: main ? 3 : 1, lineColor: hexToRgba(f.color, main ? 0.6 : 0.5) });
+    });
+    if(leafMode === 'mst'){
+      buildLeafMstEdges(f, leaves.filter(d=>{
+        const p = byId[d.parentId];
+        return !(p && hasGps(p) && gpsDistanceMeters(p.lat, p.lon, d.lat, d.lon) > LEAF_FAR_PARENT_M);
+      })).forEach(([a,b])=> addLine(a, b, { lineWidth: 1.5, lineColor: hexToRgba(f.color, 0.55) }));
+    }
+    // จุดอุปกรณ์ตัดตอนขนาดเล็ก (แตะไม่ได้) — ให้เห็นว่าเส้นต่อจากอุปกรณ์ใด
+    f.devices.forEach(d=>{
+      if(!hasGps(d) || isLeafType(d.type)) return;
+      const main = SLD_TRUNK_TYPES.has(d.type), sz = main ? 10 : 7;
+      lmap.Overlays.add(new longdo.Marker({ lon: d.lon, lat: d.lat }, { icon: {
+        html: `<div class="sw-dot" style="width:${sz}px;height:${sz}px;border-radius:50%;background:${hexToRgba(f.color, 0.85)};border:1.5px solid #fff;box-shadow:0 0 0 1px ${escapeHtml(f.color)};"><span class="tm-label">${escapeHtml(d.id.replace(f.id,''))}</span></div>`,
+        offset: { x: sz/2, y: sz/2 } } }));
     });
   });
 
@@ -876,6 +957,10 @@ document.getElementById('locateBtn').addEventListener('click', async ()=>{
   btn.innerHTML = '📍<span class="mb-text"> ตำแหน่งฉัน</span>';
 });
 document.getElementById('fitBtn').addEventListener('click', fitMapToMarkers);
+document.querySelectorAll('input[name="leafLineMode"]').forEach(r=>{
+  r.checked = r.value === getLeafLineMode();
+  r.addEventListener('change', ()=>{ if(r.checked){ localStorage.setItem('sld_leaf_line_mode', r.value); renderMapMarkers(); } });
+});
 document.getElementById('legendToggle').addEventListener('click', ()=>{
   const lg = document.getElementById('mapLegend');
   const open = lg.classList.toggle('open');
