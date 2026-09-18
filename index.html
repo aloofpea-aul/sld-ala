@@ -713,7 +713,8 @@
           </div>
           <div class="mcp-section">
             <div class="mcp-label">เส้นหม้อแปลง/มิเตอร์:</div>
-            <label><input type="radio" name="leafLineMode" value="mst"> แนวสายรวม (แนะนำ)</label>
+            <label><input type="radio" name="leafLineMode" value="tap"> ก้านสั้นแตะแนวสายจริง (แนะนำ)</label>
+            <label><input type="radio" name="leafLineMode" value="mst"> แนวสายรวมโดยประมาณ</label>
             <label><input type="radio" name="leafLineMode" value="straight"> เส้นตรงถึงอุปกรณ์ต้นทาง (แบบเดิม)</label>
             <div style="font-size:.72rem;color:var(--muted);line-height:1.5;margin-top:4px;">
               เส้นบนแผนที่เป็นแนวประมาณ ไม่ใช่แนวสายจริง — ไม่มีผลกับการคำนวณใดๆ<br>
@@ -2385,7 +2386,12 @@ function feederZoneOutliers(f){
   });
   return out;
 }
-function getLeafLineMode(){ return localStorage.getItem('sld_leaf_line_mode') === 'straight' ? 'straight' : 'mst'; }
+// รูปแบบเส้นหม้อแปลง: tap = ก้านสั้นแตะแนวสายจริง (ค่าเริ่มต้นเมื่อมีแนวสาย GIS) · mst = แนวสายรวมประมาณ · straight = เส้นตรงถึงต้นทาง
+function getLeafLineMode(){
+  const v = localStorage.getItem('sld_leaf_line_mode');
+  if(v === 'straight' || v === 'mst' || v === 'tap') return v;
+  return 'tap';
+}
 document.querySelectorAll('input[name="mvLineSource"]').forEach(r=>{
   r.checked = r.value === gisLineMode();
   r.addEventListener('change', ()=>{ if(r.checked){ localStorage.setItem('sld_mv_line_source', r.value); rebuildMapMarkers(); } });
@@ -2545,7 +2551,8 @@ function rebuildMapMarkers(){
     const addLine = (pts, opt)=>{ const ln = new longdo.Polyline(pts, opt); leafletMap.Overlays.add(ln); mapMarkers.push(ln); return ln; };
     const farDash = (()=>{ try{ return longdo.LineStyle && longdo.LineStyle.Dashed; }catch(e){ return undefined; } })();
     const leavesWithGps = shown.filter(d=> isLeafAssetType(d.type) && d.lat != null && d.lon != null && d.parentId);
-    if(leafMode === 'mst'){
+    const tapMode = leafMode === 'tap' && useGisLines;
+    if(leafMode === 'mst' || (leafMode === 'tap' && !useGisLines)){
       buildLeafMstEdges(f, leavesWithGps).forEach(([a,b])=>{
         addLine([{lon:a.lon, lat:a.lat}, {lon:b.lon, lat:b.lat}], { lineWidth: 1.5, lineColor: hexToRgba(f.color, 0.55) });
       });
@@ -2572,9 +2579,15 @@ function rebuildMapMarkers(){
       const isTrunk = TRUNK_TYPES.has(d.type);
       if(useGisLines && !isLeafAssetType(d.type)) return;   // ใช้แนวสายจริงจาก GIS แทนเส้นตรงระหว่างอุปกรณ์แล้ว
       if(isLeafAssetType(d.type)){
-        // แบบแนวสายรวมวาดไปแล้วด้านบน / ตัวที่พิกัดผิดโซนวาดเป็นเส้นประแล้ว
-        if(leafMode === 'mst') return;
-        if(outlierIds.has(d.id)) return;
+        if(outlierIds.has(d.id)) return;            // วาดเป็นเส้นประเตือนไปแล้ว
+        if(tapMode){
+          // ก้านสั้นจากหม้อแปลงไปแตะแนวสายแรงสูงจริงที่ใกล้ที่สุด
+          const ref = nearestGisLinePoint(f.id, d.lat, d.lon);
+          if(ref) addLine([{lon:ref.lon, lat:ref.lat}, {lon:d.lon, lat:d.lat}],
+            { lineWidth: 1.5, lineColor: hexToRgba(f.color, 0.55) });
+          return;
+        }
+        if(leafMode === 'mst') return;              // วาดแนวสายรวมไปแล้วด้านบน
       }
       // ไม่ยืดความยาวเส้นแล้ว (ทุกประเภท) — เดิมยืดตามอัตราส่วนความยาวสายจริง แต่อุปกรณ์ที่เรียงต่อกันตามแนวถนน
       // พอยืดทุกช่วง เส้นจะเลยจุดปลายไปซ้อนกับช่วงถัดไป เห็นเป็นเส้นขนานหลายเส้น (ไม่มีผลกับการคำนวณใดๆ)
