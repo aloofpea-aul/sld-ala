@@ -751,6 +751,7 @@
           <button id="panelSeqBtn" style="display:none;">🔢 ยืนยันลำดับการเชื่อมต่อ</button>
           <button id="panelAddBtn" class="pda-btn" style="display:none;" title="เพิ่มอุปกรณ์ใหม่ในวงจรนี้">＋ เพิ่ม</button>
           <button id="panelDelBtn" class="pda-btn pda-del" style="display:none;" title="ลบอุปกรณ์ออกจากวงจรนี้">🗑 ลบ</button>
+          <button id="panelRegroupBtn" class="pda-btn" style="display:none;" title="จัดหม้อแปลงที่ต่อพ่วงกัน ให้ต่อตรงเข้าอุปกรณ์ตัดตอนต้นทาง"></button>
         </div>
         <div id="panelTypeWarn" style="display:none;"></div>
         <div id="panelFilterBar" style="display:none;">
@@ -2576,6 +2577,7 @@ function updateSidebar(f){
   addBtnH.style.display = ''; delBtnH.style.display = '';
   addBtnH.onclick = ()=> openAddDeviceModal(f);
   delBtnH.onclick = ()=> openDeleteDevicePicker(f);
+  refreshRegroupBtn(f);
   document.getElementById('panelFilterBar').style.display = '';
   renderDeviceList(f);
 }
@@ -2829,6 +2831,89 @@ function renderTypeRepairBanner(f){
     <button type="button" id="typeRepairBtn">ตรวจและแก้กลับ ›</button>`;
   document.getElementById('typeRepairBtn').onclick = ()=> openTypeRepairModal(f);
 }
+// ===== จัดหม้อแปลงที่ต่อพ่วงกันให้ต่อตรงเข้าอุปกรณ์ตัดตอนต้นทาง =====
+// ข้อมูลตั้งต้นจับคู่หม้อแปลงกับ "จุดที่ใกล้ที่สุด" หม้อแปลงหลายเครื่องจึงต่อพ่วงกับหม้อแปลงอีกเครื่อง
+// ซึ่งไม่ตรงกับความจริงทางไฟฟ้า และทำให้เครื่องที่ต่อพ่วงไม่ถูกวาดในผัง Single Line
+// หมายเหตุ: หม้อแปลงที่อยู่หลังมิเตอร์แรงกลาง (MVMETER) ไม่แตะ เพราะสะท้อนการวัดหน่วยจริง
+const PROTECTIVE_TYPES = new Set(['WF','WS','WR','MR','SW','WB']);
+function sldProtectiveDevice(f, d){
+  const byId = {};
+  f.devices.forEach(x=>{ byId[x.id] = x; });
+  let cur = byId[d.parentId];
+  const seen = new Set([d.id]);
+  while(cur && !seen.has(cur.id)){
+    if(PROTECTIVE_TYPES.has(cur.type)) return cur;
+    if(cur.type === 'MVMETER') return null;   // หลังมิเตอร์แรงกลาง — คงไว้ตามเดิม
+    seen.add(cur.id);
+    cur = byId[cur.parentId];
+  }
+  return null;
+}
+function findChainedTransformers(f){
+  const byId = {};
+  f.devices.forEach(x=>{ byId[x.id] = x; });
+  const out = [];
+  f.devices.forEach(d=>{
+    if(d.type !== 'TRANSFORMER' || !d.parentId) return;
+    const p = byId[d.parentId];
+    if(!p || !isLeafAssetType(p.type)) return;      // ต่อกับสวิตช์/ฟิวส์อยู่แล้ว
+    if(p.type === 'MVMETER') return;
+    const prot = sldProtectiveDevice(f, d);
+    if(!prot || prot.id === d.parentId) return;
+    const dist = (d.lat != null && prot.lat != null) ? gpsDistanceMeters(prot.lat, prot.lon, d.lat, d.lon) : null;
+    out.push({ d, oldParent: p, prot, dist });
+  });
+  return out;
+}
+function refreshRegroupBtn(f){
+  const btn = document.getElementById('panelRegroupBtn');
+  if(!btn) return;
+  const n = findChainedTransformers(f).length;
+  btn.style.display = n ? '' : 'none';
+  btn.textContent = `🔗 จัดต้นทางหม้อแปลง (${n})`;
+  btn.onclick = ()=> openRegroupModal(f);
+}
+function openRegroupModal(f){
+  const list = findChainedTransformers(f);
+  if(!list.length) return;
+  const rows = list.map((x,i)=>`<label class="dm-ack" style="margin-top:6px;"><input type="checkbox" class="rgChk" data-i="${i}" checked>
+      <span><b>${escapeHtml(x.d.id)}</b> ${escapeHtml(x.d.rating||'')} ${escapeHtml(x.d.desc||'')}<br>
+      ต่อจาก ${escapeHtml(x.oldParent.id)} (หม้อแปลง) → <b>${escapeHtml(x.prot.id)}</b> ${escapeHtml(x.prot.rating||'')}${x.dist != null ? ` · ห่าง ${Math.round(x.dist)} ม.` : ''}</span></label>`).join('');
+  document.getElementById('deviceModalTitle').textContent = 'จัดต้นทางหม้อแปลง — วงจร ' + f.id;
+  document.getElementById('deviceBody').innerHTML = `
+    <div class="dm-confirm-box">หม้อแปลง <b>${list.length}</b> เครื่องในวงจรนี้ต่อพ่วงกับหม้อแปลงอีกเครื่อง จะปรับให้ต่อตรงกับอุปกรณ์ตัดตอนต้นทางแทน</div>
+    <div class="dm-confirm-box warn">ผลที่เกิดขึ้น: หม้อแปลงเหล่านี้จะกลับมาแสดงในผัง Single Line · ขนาดฟิวส์แนะนำ<b>ไม่เปลี่ยน</b> เพราะโหลดยังอยู่ใต้อุปกรณ์ตัวเดิม · สถานะต้นทางยังเป็น "ประมาณจากพิกัด" จนกว่าจะยืนยันหน้างาน</div>
+    <div>${rows}</div>
+    <div id="dmMsg" class="dm-msg"></div>
+    <div class="device-modal-actions">
+      <button id="rgCancelBtn">ยกเลิก</button>
+      <button class="btn-primary" id="rgConfirmBtn">✓ ยืนยันจัดต้นทาง</button>
+    </div>`;
+  document.getElementById('deviceOverlay').classList.add('show');
+  document.getElementById('rgCancelBtn').onclick = closeDeviceModal;
+  document.getElementById('rgConfirmBtn').onclick = async ()=>{
+    const picked = [...document.querySelectorAll('#deviceBody .rgChk:checked')].map(c=>list[+c.dataset.i]);
+    if(!picked.length){ modalMsg('เลือกอย่างน้อย 1 รายการ', 'err'); return; }
+    if(dataIsFallback){ modalMsg('บันทึกไม่ได้ — กำลังดูข้อมูลสำรองในไฟล์ กรุณารีเฟรชหน้าเว็บก่อน', 'err'); return; }
+    if(!(await requireAuth())){ modalMsg('ยังไม่ได้ยืนยันตัวตน จึงยังไม่ได้บันทึก', 'err'); return; }
+    setModalBusy(true);
+    let okN = 0; const fails = [];
+    for(const x of picked){
+      modalMsg(`⏳ กำลังบันทึก ${okN + fails.length + 1}/${picked.length}...`, '');
+      const row = Object.assign({}, x.d, { parentId: x.prot.id });
+      const r = await persistDeviceQuiet(f.id, row, `จัดต้นทาง: ต่อตรงกับ ${x.prot.id} (เดิมต่อพ่วงผ่าน ${x.oldParent.id})`);
+      if(r && r.ok){ x.d.parentId = x.prot.id; okN++; } else fails.push(x.d.id);
+    }
+    setModalBusy(false);
+    refreshAfterDeviceChange(f, null);
+    if(mapMode && leafletMap) rebuildMapMarkers();
+    refreshRegroupBtn(f);
+    if(fails.length){ modalMsg(`สำเร็จ ${okN} รายการ · ไม่สำเร็จ: ${escapeHtml(fails.join(', '))}`, 'err'); return; }
+    closeDeviceModal();
+    showToast(`จัดต้นทางหม้อแปลงแล้ว ${okN} เครื่อง`, 'ok');
+  };
+}
+
 function openTypeRepairModal(f){
   const bad = findMistypedLeafDevices(f);
   document.getElementById('deviceModalTitle').textContent = 'แก้ประเภทอุปกรณ์กลับให้ถูกต้อง';
