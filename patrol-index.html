@@ -155,12 +155,13 @@
 <section id="tab-setting" style="display:none;">
   <div class="card">
     <h2>บัญชีผู้ใช้</h2>
+    <p class="hint" style="margin:0 0 8px;">ใช้บัญชีเดียวกับศูนย์รวมงาน — ถ้าเข้าสู่ระบบจากหน้าศูนย์รวมงานแล้ว ตรงนี้จะขึ้นชื่อให้เองโดยไม่ต้องกรอกซ้ำ</p>
     <div id="userBox"></div>
     <label class="f">ชื่อผู้ใช้</label>
     <input type="text" id="cfgName" autocomplete="username">
     <label class="f">รหัสผ่าน</label>
     <input type="password" id="cfgPass" autocomplete="current-password">
-    <button class="primary" id="btnLogin" style="margin-top:12px;">เข้าสู่ระบบ</button>
+    <button class="primary" id="btnLogin" style="margin-top:12px;">เข้าสู่ระบบ / ตรวจสอบบัญชี</button>
   </div>
   <div class="card">
     <h2>การเชื่อมต่อ</h2>
@@ -193,16 +194,18 @@
    ทำงานออฟไลน์ได้ — เก็บงานและรูปไว้ใน IndexedDB แล้วส่งอัตโนมัติเมื่อมีสัญญาณ
    ========================================================================== */
 
+// ใช้บัญชีและ URL ร่วมกับหน้าศูนย์รวมงาน — เข้าสู่ระบบครั้งเดียว ใช้ได้ทุกแอปบนเครื่องนี้
+const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycbzqsOqJJQlF4SS1UX_YM6hmhd3lUXCVocAJiK7l28Tzddms9SQ9Z7p-iYgrrgd2B2meWw/exec";
 const LS = {
-  url:   'patrol_gas_url',
+  url:   'sld_gas_url',                // คีย์เดียวกับ Single Line Diagram
   poles: 'patrol_poles_url',
-  name:  'patrol_user',
-  pass:  'patrol_pass',
+  name:  'pea_aoluek_username',        // บัญชีกลางของแพลตฟอร์ม
+  pass:  'pea_aoluek_password',
   prof:  'patrol_profile',
   types: 'patrol_types'
 };
 const cfg = {
-  url:   localStorage.getItem(LS.url) || '',
+  url:   localStorage.getItem(LS.url) || DEFAULT_GAS_URL,
   poles: localStorage.getItem(LS.poles) || 'poles.json',
   name:  localStorage.getItem(LS.name) || '',
   pass:  localStorage.getItem(LS.pass) || ''
