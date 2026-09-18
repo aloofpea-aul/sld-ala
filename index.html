@@ -778,10 +778,13 @@
             <button class="pf-btn" data-filter-type="other">อื่นๆ</button>
           </div>
           <div class="pf-group">
-            <span class="pf-label" title="แยกหม้อแปลงจำหน่ายของ กฟภ. (ชื่อขึ้นต้น DCC_) ออกจากหม้อแปลงเฉพาะราย">ชนิดหม้อแปลง:</span>
+            <span class="pf-label" title="ชนิดหม้อแปลงจากช่อง TxType ในชีต (ถ้ายังไม่ระบุ ระบบจะเดาให้ชั่วคราว)">ชนิดหม้อแปลง:</span>
             <button class="pf-btn active" data-filter-owner="all">ทั้งหมด</button>
-            <button class="pf-btn" data-filter-owner="dcc">จำหน่าย (DCC_)</button>
-            <button class="pf-btn" data-filter-owner="private">เฉพาะราย</button>
+            <button class="pf-btn" data-filter-owner="PEA">จำหน่าย</button>
+            <button class="pf-btn" data-filter-owner="PRIVATE">เฉพาะราย</button>
+            <button class="pf-btn" data-filter-owner="PUBLIC">สาธารณะ</button>
+            <button class="pf-btn" data-filter-owner="TEMP">ชั่วคราว</button>
+            <button class="pf-btn" data-filter-owner="UNKNOWN">รอจำแนก</button>
           </div>
           <div class="pf-group">
             <span class="pf-label" title="กรองเฉพาะหม้อแปลงที่ยังไม่ได้ยืนยันว่าต่อจากอุปกรณ์ตัดตอนตัวใด">ต้นทางหม้อแปลง:</span>
@@ -834,6 +837,7 @@
       <button class="menuitem" id="reportBtn">📊 รายงานเปรียบเทียบ</button>
       <a class="menuitem" id="viewA0Btn" href="a0-drawing.pdf" target="_blank" rel="noopener">📄 ดูผัง A0 จริง (ต้นฉบับ)</a>
       <button class="menuitem" id="seqReviewBtn">🔢 ยืนยันลำดับการเชื่อมต่อ</button>
+      <button class="menuitem" id="txTypeSeedBtn">🏷 จำแนกชนิดหม้อแปลง (เติมค่าครั้งแรก)</button>
       <label class="menuitem"><input type="checkbox" id="leafToggle"> แสดงหม้อแปลง/มิเตอร์</label>
       <label class="menuitem"><input type="checkbox" id="editToggle"> โหมดแก้ไข</label>
       <label class="menuitem"><input type="checkbox" id="fieldToggle"> 📷 ตรวจสอบภาคสนาม</label>
@@ -1588,14 +1592,37 @@ function visibleDevices(feeder){
 let panelTypeFilter = 'all'; // 'all' | 'WF' | 'WS' | 'other'
 let panelXfmrFilter = 'all'; // 'all' | 'has' | 'none'
 let panelParentFilter = 'all'; // 'all' | 'unconfirmed' — เลือกดูเฉพาะหม้อแปลงที่ต้นทางยังไม่ยืนยัน
-let panelOwnerFilter = 'all';  // 'all' | 'dcc' | 'private' — ชนิดหม้อแปลง
-// แยกหม้อแปลงจำหน่ายของ กฟภ. ออกจากหม้อแปลงเฉพาะราย โดยดูจากชื่อจุดติดตั้งที่ขึ้นต้นด้วย DCC_
-// (เป็นเกณฑ์จากชื่อในฐานข้อมูล GIS ไม่ใช่ทะเบียนทรัพย์สิน จึงใช้คัดกรองเบื้องต้นเท่านั้น)
-function isDistributionTransformer(d){ return /^\s*DCC/i.test(String(d.desc||'')); }
+let panelOwnerFilter = 'all';  // 'all' | PEA | PRIVATE | PUBLIC | TEMP | UNKNOWN
+// ===== ชนิดหม้อแปลง — ค่าเดียวใช้ทุกระบบ เก็บในชีตช่อง TxType (ที่มาเก็บใน TxTypeSource) =====
+const TX_TYPES = {
+  PEA:     { label:'จำหน่าย',            short:'จำหน่าย' },
+  PRIVATE: { label:'เฉพาะราย',           short:'เฉพาะราย' },
+  PUBLIC:  { label:'สาธารณะ/ไฟทางหลวง',  short:'สาธารณะ' },
+  TEMP:    { label:'ชั่วคราว',           short:'ชั่วคราว' },
+  UNKNOWN: { label:'ยังไม่ระบุ',          short:'รอจำแนก' }
+};
+const TX_TYPE_ORDER = ['PEA','PRIVATE','PUBLIC','TEMP','UNKNOWN'];
+const TX_RE_PUBLIC  = /ไฟทางหลวง|ไฟสาธารณะ|ไฟฟ้าสาธารณะ|แสงสว่าง|ไฟกิ่ง/;
+const TX_RE_TEMP    = /ชั่วคราว|ชค\.|temp/i;
+const TX_RE_PRIVATE = /บริษัท|บจก|หจก|จำกัด|โรงงาน|โรงโม่|ฟาร์ม|รีสอร์|โรงแรม|บ่อกุ้ง|บ่อปลา|ปั๊ม|สหกรณ์|โรงเรียน|วัด|อบต|เทศบาล|ประปา|โรงพยาบาล/;
+// เดาชนิดจากข้อมูลที่มี (ใช้เฉพาะตอนยังไม่เคยระบุ — ค่าที่บันทึกไว้แล้วจะไม่ถูกเดาทับ)
+function guessTxType(d){
+  const desc = String(d.desc || '');
+  const rating = parseFloat(String(d.rating||'').replace(/[^0-9.]/g,'')) || 0;
+  if(TX_RE_TEMP.test(desc)) return 'TEMP';
+  if(TX_RE_PUBLIC.test(desc)) return 'PUBLIC';
+  if(/^\s*DCC/i.test(desc)) return 'PEA';
+  if(d.opsa && d.opsa.loadPercent != null) return 'PEA';   // อยู่ในระบบวิเคราะห์แรงต่ำของ กฟภ.
+  if(rating >= 315 || TX_RE_PRIVATE.test(desc)) return 'PRIVATE';
+  return 'UNKNOWN';
+}
+function txTypeOf(d){ return (d.txType && TX_TYPES[d.txType]) ? d.txType : guessTxType(d); }
+function txTypeSaved(d){ return !!(d.txType && TX_TYPES[d.txType]); }
+function isDistributionTransformer(d){ return txTypeOf(d) === 'PEA'; }
 function deviceMatchesOwnerFilter(d){
   if(panelOwnerFilter === 'all') return true;
   if(d.type !== 'TRANSFORMER') return false;   // กรองชนิดหม้อแปลง = แสดงเฉพาะหม้อแปลง
-  return panelOwnerFilter === 'dcc' ? isDistributionTransformer(d) : !isDistributionTransformer(d);
+  return txTypeOf(d) === panelOwnerFilter;
 }
 function deviceMatchesParentFilter(d){
   if(panelParentFilter === 'all') return true;
@@ -3104,6 +3131,54 @@ function openParentChangeModal(f, d){
   };
 }
 
+// ===== เติมค่าชนิดหม้อแปลงครั้งแรก — เดาจากข้อมูลที่มี แล้วให้ตรวจก่อนบันทึกลงชีต =====
+function openTxTypeSeedModal(){
+  const pending = [];
+  DATA.feeders.forEach(f=>f.devices.forEach(d=>{
+    if(d.type === 'TRANSFORMER' && !txTypeSaved(d)) pending.push({ f, d, guess: guessTxType(d) });
+  }));
+  const byType = {};
+  TX_TYPE_ORDER.forEach(t=>{ byType[t] = pending.filter(x=>x.guess === t).length; });
+  document.getElementById('deviceModalTitle').textContent = 'จำแนกชนิดหม้อแปลง';
+  document.getElementById('deviceBody').innerHTML = `
+    <div class="dm-confirm-box">ระบบเดาชนิดให้จากชื่อจุดติดตั้ง ขนาด และการมีข้อมูลโหลด OPSA แล้วบันทึกลงช่อง TxType ในชีต
+      (ที่มา = auto) เพื่อให้ทุกหน้าจอใช้ค่าเดียวกัน — หม้อแปลงที่เคยระบุไว้แล้วจะไม่ถูกเขียนทับ</div>
+    ${pending.length ? `<div>${TX_TYPE_ORDER.map(t=>`<div class="device-view-row"><span class="k">${escapeHtml(TX_TYPES[t].label)}</span><span class="v">${byType[t]} เครื่อง</span></div>`).join('')}</div>
+    <div class="dm-confirm-box warn">เกณฑ์ที่ใช้เดา: ชื่อมี "ไฟทางหลวง/แสงสว่าง" → สาธารณะ · ชื่อมี "ชั่วคราว" → ชั่วคราว ·
+      ชื่อขึ้นต้น DCC_ หรือมีข้อมูลโหลด OPSA → จำหน่าย · ขนาด ≥ 315 kVA หรือชื่อเป็นบริษัท/โรงงาน/ฟาร์ม ฯลฯ → เฉพาะราย · ที่เหลือ → รอจำแนก</div>
+    <label class="dm-ack"><input type="checkbox" id="txSeedRest"><span>จัดกลุ่ม "รอจำแนก" ${byType.UNKNOWN} เครื่องเป็น <b>เฉพาะราย</b> ไปก่อน (แก้รายเครื่องภายหลังได้)</span></label>
+    <div id="dmMsg" class="dm-msg"></div>
+    <div class="device-modal-actions">
+      <button id="txSeedCancel">ยกเลิก</button>
+      <button class="btn-primary" id="txSeedConfirm">✓ บันทึกชนิดหม้อแปลง ${pending.length} เครื่อง</button>
+    </div>` : `<div class="dm-confirm-box add">หม้อแปลงทุกเครื่องมีชนิดบันทึกไว้แล้ว ไม่มีอะไรต้องเติม</div>
+    <div class="device-modal-actions"><button id="txSeedCancel">ปิด</button></div>`}`;
+  document.getElementById('deviceOverlay').classList.add('show');
+  document.getElementById('txSeedCancel').onclick = closeDeviceModal;
+  const confirmBtn = document.getElementById('txSeedConfirm');
+  if(!confirmBtn) return;
+  confirmBtn.onclick = async ()=>{
+    if(dataIsFallback){ modalMsg('บันทึกไม่ได้ — กำลังดูข้อมูลสำรองในไฟล์ กรุณารีเฟรชหน้าเว็บก่อน', 'err'); return; }
+    if(!(await requireAuth())){ modalMsg('ยังไม่ได้ยืนยันตัวตน จึงยังไม่ได้บันทึก', 'err'); return; }
+    const restAsPrivate = document.getElementById('txSeedRest').checked;
+    setModalBusy(true);
+    let okN = 0; const fails = [];
+    for(const x of pending){
+      const t = (x.guess === 'UNKNOWN' && restAsPrivate) ? 'PRIVATE' : x.guess;
+      modalMsg(`⏳ กำลังบันทึก ${okN + fails.length + 1}/${pending.length}...`, '');
+      const row = Object.assign({}, x.d, { txType: t, txTypeSource: 'auto' });
+      const r = await persistDeviceQuiet(x.f.id, row, `จำแนกชนิดหม้อแปลงอัตโนมัติ: ${TX_TYPES[t].label}`);
+      if(r && r.ok){ x.d.txType = t; x.d.txTypeSource = 'auto'; okN++; } else fails.push(x.d.id);
+    }
+    setModalBusy(false);
+    if(selectedFeeder) refreshAfterDeviceChange(DATA.feeders.find(x=>x.id===selectedFeeder), null);
+    if(mapMode && leafletMap) rebuildMapMarkers();
+    if(fails.length){ modalMsg(`สำเร็จ ${okN} เครื่อง · ไม่สำเร็จ: ${escapeHtml(fails.slice(0,10).join(', '))}${fails.length>10?' …':''}`, 'err'); return; }
+    closeDeviceModal();
+    showToast(`บันทึกชนิดหม้อแปลงแล้ว ${okN} เครื่อง`, 'ok');
+  };
+}
+
 function openTypeRepairModal(f){
   const bad = findMistypedLeafDevices(f);
   document.getElementById('deviceModalTitle').textContent = 'แก้ประเภทอุปกรณ์กลับให้ถูกต้อง';
@@ -3904,6 +3979,10 @@ function renderDeviceModalView(f, d){
     ['ต่อจากอุปกรณ์', d.parentId || '(ต่อจากสถานีโดยตรง)'],    ['เฟส', d.phase || '-'],
     ['ผู้ใช้ไฟที่ได้รับผลกระทบ', d.customerImpact!=null ? d.customerImpact+' ราย' : '-'],
   ];
+  if(d.type === 'TRANSFORMER'){
+    const t = txTypeOf(d);
+    rows.push(['ชนิดหม้อแปลง', TX_TYPES[t].label + (txTypeSaved(d) ? (d.txTypeSource === 'field' ? ' (ยืนยันหน้างาน)' : d.txTypeSource === 'office' ? ' (เจ้าหน้าที่ระบุ)' : '') : ' — ระบบเดาให้ ยังไม่ได้บันทึก')]);
+  }
   if(d.parentConfidence === 'estimated'){
     rows.push(['ความเชื่อมั่นจุดต่อ', '⚠ จับคู่จากระยะทางใกล้สุด (ยังไม่ยืนยัน)']);
   }
@@ -4849,10 +4928,14 @@ function buildQualityData(){
       noGps: tx.filter(d=>d.lat == null).length,
       far, farN: far.length,
       phaseBad: tx.filter(opsaPhaseMismatch),
-      nDcc: tx.filter(isDistributionTransformer).length,
-      nPrivate: tx.filter(d=>!isDistributionTransformer(d)).length,
-      noOpsaDcc: tx.filter(d=>isDistributionTransformer(d) && (!d.opsa || d.opsa.loadPercent == null)).length,
-      noOpsaPrivate: tx.filter(d=>!isDistributionTransformer(d) && (!d.opsa || d.opsa.loadPercent == null)).length,
+      nPEA: tx.filter(d=>txTypeOf(d)==='PEA').length,
+      nPRIVATE: tx.filter(d=>txTypeOf(d)==='PRIVATE').length,
+      nPUBLIC: tx.filter(d=>txTypeOf(d)==='PUBLIC').length,
+      nTEMP: tx.filter(d=>txTypeOf(d)==='TEMP').length,
+      nUNKNOWN: tx.filter(d=>txTypeOf(d)==='UNKNOWN').length,
+      unsaved: tx.filter(d=>!txTypeSaved(d)).length,
+      noOpsaDcc: tx.filter(d=>txTypeOf(d)==='PEA' && (!d.opsa || d.opsa.loadPercent == null)).length,
+      noOpsaPrivate: tx.filter(d=>txTypeOf(d)!=='PEA' && (!d.opsa || d.opsa.loadPercent == null)).length,
       noOpsa: tx.filter(d=>!d.opsa || d.opsa.loadPercent == null).length
     };
   });
@@ -4879,19 +4962,22 @@ function renderReportTabQuality(){
   });
   document.getElementById('reportBody').innerHTML = `
     <p class="report-note">ตรวจจากข้อมูลปัจจุบันทุกครั้งที่เปิดรายงาน — แก้ข้อมูลแล้วตัวเลขเปลี่ยนตามทันที<br>
-      "จำหน่าย (DCC_)" = หม้อแปลงที่ชื่อจุดติดตั้งขึ้นต้นด้วย DCC_ ในฐานข้อมูล GIS · ที่เหลือจัดเป็น "เฉพาะราย" —
-      เป็นเกณฑ์จากชื่อ ไม่ใช่ทะเบียนทรัพย์สิน จึงใช้คัดกรองเบื้องต้น</p>
+      ชนิดหม้อแปลงอ่านจากช่อง TxType ในชีต ถ้ายังไม่ได้บันทึกระบบจะเดาให้ชั่วคราว (ดูคอลัมน์ "ยังไม่บันทึกชนิด") —
+      เติมค่าครั้งแรกได้จากเมนู ⋮ → 🏷 จำแนกชนิดหม้อแปลง · คอลัมน์ "ไม่มีข้อมูล OPSA" ที่ต้องตามคือฝั่งจำหน่ายเท่านั้น</p>
     <table class="report-table">
-      <tr><th>วงจร</th><th>หม้อแปลงในผัง</th><th>จำหน่าย (DCC_)</th><th>เฉพาะราย</th><th>ประเภทเพี้ยน</th><th>ต่อพ่วงกับหม้อแปลง</th>
-          <th>ต้นทางยังไม่ยืนยัน</th><th>ไม่มีพิกัด</th><th>ห่างต้นทาง &gt; 1 กม.</th><th>เฟสไม่ตรง OPSA</th>
-          <th>ไม่มีข้อมูล OPSA<br><small>จำหน่าย / เฉพาะราย</small></th></tr>
+      <tr><th>วงจร</th><th>หม้อแปลง<br>ในผัง</th><th>จำหน่าย</th><th>เฉพาะราย</th><th>สาธารณะ</th><th>ชั่วคราว</th><th>รอจำแนก</th>
+          <th>ยังไม่บันทึก<br>ชนิด</th><th>ประเภทเพี้ยน</th><th>ต่อพ่วงกับ<br>หม้อแปลง</th>
+          <th>ต้นทางยัง<br>ไม่ยืนยัน</th><th>ไม่มีพิกัด</th><th>ห่างต้นทาง<br>&gt; 1 กม.</th><th>เฟสไม่ตรง<br>OPSA</th>
+          <th>ไม่มีข้อมูล OPSA<br><small>จำหน่าย / อื่นๆ</small></th></tr>
       ${rows.map(r=>`<tr>
-        <td>${escapeHtml(r.feeder)}</td><td>${r.nTx}</td><td>${r.nDcc}</td><td>${r.nPrivate}</td>
+        <td>${escapeHtml(r.feeder)}</td><td>${r.nTx}</td><td>${r.nPEA}</td><td>${r.nPRIVATE}</td><td>${r.nPUBLIC}</td><td>${r.nTEMP}</td>
+        ${warnCell(r.nUNKNOWN, true)}<td>${r.unsaved}</td>
         ${warnCell(r.mistyped, true)}${warnCell(r.chained, true)}
         <td>${r.unconfirmed}</td>${warnCell(r.noGps, true)}
         ${warnCell(r.farN, true)}${warnCell(r.phaseBad.length, true)}
         <td>${r.noOpsaDcc} / ${r.noOpsaPrivate}</td></tr>`).join('')}
-      <tr class="total-row"><td>รวมทั้งหมด</td><td>${sum('nTx')}</td><td>${sum('nDcc')}</td><td>${sum('nPrivate')}</td><td>${sum('mistyped')}</td><td>${sum('chained')}</td>
+      <tr class="total-row"><td>รวมทั้งหมด</td><td>${sum('nTx')}</td><td>${sum('nPEA')}</td><td>${sum('nPRIVATE')}</td><td>${sum('nPUBLIC')}</td>
+        <td>${sum('nTEMP')}</td><td>${sum('nUNKNOWN')}</td><td>${sum('unsaved')}</td><td>${sum('mistyped')}</td><td>${sum('chained')}</td>
         <td>${sum('unconfirmed')}</td><td>${sum('noGps')}</td><td>${sum('far')}</td><td>${sum('phaseBad')}</td>
         <td>${sum('noOpsaDcc')} / ${sum('noOpsaPrivate')}</td></tr>
     </table>
@@ -4951,6 +5037,10 @@ function renderReportDrilldown(feeder, cat){
   });
 }
 
+document.getElementById('txTypeSeedBtn').addEventListener('click', ()=>{
+  document.getElementById('moreMenuOverlay').classList.remove('show');
+  openTxTypeSeedModal();
+});
 document.getElementById('reportBtn').addEventListener('click', ()=>{
   document.querySelectorAll('.report-tab').forEach(b=>b.classList.remove('active'));
   document.querySelector('.report-tab[data-tab="summary"]').classList.add('active');
