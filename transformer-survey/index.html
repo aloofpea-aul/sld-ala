@@ -62,6 +62,8 @@
   .chip.on{background:var(--pea-purple);color:#fff;border-color:var(--pea-purple);font-weight:700;}
   .chip .n{opacity:.7;margin-left:3px;}
   .chip.near{border-color:#1a73e8;color:#1a73e8;}
+  .chip.tx{border-color:#6a4fb3;color:var(--pea-purple);}
+  .chip.tx.on{background:var(--pea-purple);color:#fff;}
   .chip.near.on{background:#1a73e8;color:#fff;}
 
   /* ---------- รายการ ---------- */
@@ -349,6 +351,12 @@
       <button class="chip" data-filter="mismatch">ไม่ถูกต้อง<span class="n"></span></button>
       <button class="chip" data-filter="nogps">ไม่มีพิกัด<span class="n"></span></button>
       <button class="chip" data-filter="parentest">ต้นทางยังไม่ยืนยัน<span class="n"></span></button>
+      <span style="width:1px;background:var(--line);flex:0 0 auto;margin:2px 2px;"></span>
+      <button class="chip tx" data-tx="PEA">จำหน่าย<span class="n"></span></button>
+      <button class="chip tx" data-tx="PRIVATE">เฉพาะราย<span class="n"></span></button>
+      <button class="chip tx" data-tx="PUBLIC">สาธารณะ<span class="n"></span></button>
+      <button class="chip tx" data-tx="TEMP">ชั่วคราว<span class="n"></span></button>
+      <button class="chip tx" data-tx="UNKNOWN">รอจำแนก<span class="n"></span></button>
     </div>
   </div>
 
@@ -370,6 +378,11 @@
       <span><i class="lg-dot" style="background:var(--bad)"></i>ไม่ถูกต้อง</span>
       <span><i class="lg-dot" style="background:#fff;border:1px solid #999"></i>ยังไม่ตรวจ</span>
       <span><i class="lg-dot" style="background:#1a73e8"></i>ตำแหน่งฉัน</span>
+      <span style="flex-basis:100%;"></span>
+      <span><i class="lg-tri"></i>จำหน่าย</span>
+      <span><i class="lg-tri" style="background:#fff;box-shadow:0 0 0 1px #777;"></i>เฉพาะราย</span>
+      <span><i class="lg-tri" style="opacity:.35"></i>สาธารณะ</span>
+      <span><i class="lg-tri" style="background:#bbb"></i>ชั่วคราว/รอจำแนก</span>
       <span><i style="display:inline-block;width:16px;border-top:3px solid #7f77dd"></i>สายหลัก</span>
       <span><i style="display:inline-block;width:16px;border-top:2px dashed #e07b00"></i>ห่างอุปกรณ์ต้นทาง &gt; 1 กม.</span>
       <span style="flex-basis:100%;">เส้นหม้อแปลง:
@@ -590,6 +603,7 @@ async function requireAuth(){
 let DATA = { feeders: [] };
 let currentFeeder = 'ALL';
 let currentFilter = 'all';
+let txFilter = null;   // null = ทุกชนิด | PEA | PRIVATE | PUBLIC | TEMP | UNKNOWN
 let sortNear = false;
 let myPos = null; // {lat, lon, accuracy, time}
 
@@ -657,6 +671,7 @@ function distanceFromMe(d){
   if(!myPos || !hasGps(d)) return null;
   return gpsDistanceMeters(myPos.lat, myPos.lon, d.lat, d.lon);
 }
+function matchTxFilter(d){ return !txFilter || txTypeOf(d) === txFilter; }
 function matchFilter(d, filter){
   if(filter === 'all') return true;
   if(filter === 'nogps') return !hasGps(d);
@@ -667,7 +682,7 @@ function getFilteredTransformers(){
   const all = allTransformers();
   const q = document.getElementById('searchInput').value.trim().toLowerCase();
   const searched = all.filter(({d})=> !q || d.id.toLowerCase().includes(q) || (d.desc||'').toLowerCase().includes(q));
-  let filtered = searched.filter(({d})=> matchFilter(d, currentFilter));
+  let filtered = searched.filter(({d})=> matchFilter(d, currentFilter) && matchTxFilter(d));
   if(sortNear && myPos){
     filtered = filtered.slice().sort((a,b)=>{
       const da = distanceFromMe(a.d), db = distanceFromMe(b.d);
@@ -689,8 +704,13 @@ function renderStatusBar(all, searched){
   const pct = all.length ? Math.round((ok+bad)/all.length*100) : 0;
   document.getElementById('progressText').textContent = `ตรวจแล้ว ${ok+bad}/${all.length} (${pct}%)`;
   document.querySelectorAll('#filterRow .chip[data-filter]').forEach(c=>{
-    const n = searched.filter(({d})=>matchFilter(d, c.dataset.filter)).length;
+    const n = searched.filter(({d})=>matchFilter(d, c.dataset.filter) && matchTxFilter(d)).length;
     c.querySelector('.n').textContent = n;
+  });
+  document.querySelectorAll('#filterRow .chip[data-tx]').forEach(c=>{
+    const n = searched.filter(({d})=>matchFilter(d, currentFilter) && txTypeOf(d) === c.dataset.tx).length;
+    c.querySelector('.n').textContent = n;
+    c.classList.toggle('on', txFilter === c.dataset.tx);
   });
 }
 function loadTag(d){
@@ -750,6 +770,12 @@ let searchTimer = null;
 document.getElementById('searchInput').addEventListener('input', ()=>{
   clearTimeout(searchTimer);
   searchTimer = setTimeout(refreshView, 220);
+});
+document.querySelectorAll('#filterRow .chip[data-tx]').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    txFilter = (txFilter === chip.dataset.tx) ? null : chip.dataset.tx;  // กดซ้ำ = ยกเลิกตัวกรอง
+    refreshView();
+  });
 });
 document.querySelectorAll('#filterRow .chip[data-filter]').forEach(chip=>{
   chip.addEventListener('click', ()=>{
@@ -840,6 +866,30 @@ function initMap(){
   }
 }
 const SLD_TRUNK_TYPES = new Set(['WB','WS','WR','MR','SW']);
+// ===== ชนิดหม้อแปลง — อ่านจากช่อง TxType ในชีต (ค่าเดียวกับหน้า SLD) ถ้ายังไม่ระบุจะเดาให้ชั่วคราว =====
+const TX_TYPES = {
+  PEA:     { label:'จำหน่าย',           short:'จำหน่าย' },
+  PRIVATE: { label:'เฉพาะราย',          short:'เฉพาะราย' },
+  PUBLIC:  { label:'สาธารณะ/ไฟทางหลวง', short:'สาธารณะ' },
+  TEMP:    { label:'ชั่วคราว',          short:'ชั่วคราว' },
+  UNKNOWN: { label:'ยังไม่ระบุ',         short:'รอจำแนก' }
+};
+const TX_TYPE_ORDER = ['PEA','PRIVATE','PUBLIC','TEMP','UNKNOWN'];
+const TX_RE_PUBLIC  = /ไฟทางหลวง|ไฟสาธารณะ|ไฟฟ้าสาธารณะ|แสงสว่าง|ไฟกิ่ง/;
+const TX_RE_TEMP    = /ชั่วคราว|ชค\.|temp/i;
+const TX_RE_PRIVATE = /บริษัท|บจก|หจก|จำกัด|โรงงาน|โรงโม่|ฟาร์ม|รีสอร์|โรงแรม|บ่อกุ้ง|บ่อปลา|ปั๊ม|สหกรณ์|โรงเรียน|วัด|อบต|เทศบาล|ประปา|โรงพยาบาล/;
+function guessTxType(d){
+  const desc = String(d.desc || '');
+  const rating = parseFloat(String(d.rating||'').replace(/[^0-9.]/g,'')) || 0;
+  if(TX_RE_TEMP.test(desc)) return 'TEMP';
+  if(TX_RE_PUBLIC.test(desc)) return 'PUBLIC';
+  if(/^\s*DCC/i.test(desc)) return 'PEA';
+  if(d.opsa && d.opsa.loadPercent != null) return 'PEA';
+  if(rating >= 315 || TX_RE_PRIVATE.test(desc)) return 'PRIVATE';
+  return 'UNKNOWN';
+}
+function txTypeOf(d){ return (d.txType && TX_TYPES[d.txType]) ? d.txType : guessTxType(d); }
+function txTypeSaved(d){ return !!(d.txType && TX_TYPES[d.txType]); }
 const LEAF_FAR_PARENT_M = 1000;
 function isLeafType(t){ return t === 'TRANSFORMER' || t === 'MVMETER'; }
 // ใช้ค่าเดียวกับหน้า SLD (เก็บในเครื่องเดียวกัน โดเมนเดียวกัน) — สลับที่แอปไหน อีกแอปก็เปลี่ยนตาม
@@ -893,11 +943,17 @@ function transformerMarkerHtml(f, d){
   const warn = lp == null ? null : lp >= 100 ? '#c62828' : lp >= 80 ? '#e0a030' : null;
   const tri = (sz, bg, extra='') =>
     `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-55%);width:${sz}px;height:${sz}px;background:${bg};clip-path:polygon(50% 0%,0% 100%,100% 100%);${extra}"></div>`;
+  // ชนิดหม้อแปลง: จำหน่าย = ทึบ · เฉพาะราย = โปร่ง (ขอบสีวงจร) · สาธารณะ = ทึบจาง · ชั่วคราว/รอจำแนก = เส้นประ
+  const st = txTypeOf(d);
+  const shellCol = st === 'UNKNOWN' ? '#999999' : f.color;
+  const innerFill = st === 'PEA' ? hexToRgba(f.color, d.rating ? 0.95 : 0.5)
+    : st === 'PUBLIC' ? hexToRgba(f.color, 0.35) : '#ffffff';
+  const dashed = (st === 'TEMP' || st === 'UNKNOWN');
   return `<div class="tm-hit" style="width:${size+18}px;height:${size+18}px;">
       <div class="tm-label">${escapeHtml(d.id)}</div>
       <div style="position:relative;width:${size}px;height:${size}px;">
-        ${warn ? tri(size+9, warn) + tri(size+4, '#fff') : tri(size+4, '#fff')}
-        ${tri(size, hexToRgba(f.color, d.rating ? 0.95 : 0.5))}
+        ${warn ? tri(size+9, warn) + tri(size+4, '#fff') : tri(size+4, dashed ? '#fff' : shellCol)}
+        ${tri(dashed ? size - 1 : size - 2, innerFill)}
         <span class="tm-badge" style="background:${statusColor(status)};${status==='unverified'?'box-shadow:0 0 0 1px #999;':''}"></span>
       </div>
     </div>`;
@@ -1181,6 +1237,7 @@ const ISSUES = [
   { key:'rating',   label:'ขนาดไม่ตรง' },
   { key:'desc',     label:'ชื่อ / จุดติดตั้งไม่ตรง' },
   { key:'phase',    label:'เฟสไม่ตรง' },
+  { key:'txType',   label:'ชนิดหม้อแปลงไม่ตรง' },
   { key:'notFound', label:'หาหม้อแปลงไม่พบ / ถูกรื้อถอนแล้ว' },
   { key:'damaged',  label:'สภาพชำรุด / ต้องแจ้งซ่อม' }
 ];
@@ -1190,7 +1247,9 @@ const CHECK_FIELDS = [
     note:'จดไว้ในหมายเหตุ ไม่เปลี่ยนรหัสในระบบ' },
   { key:'rating', label:'ขนาด', current: d=>d.rating || '(ไม่ระบุ)', input:'text', placeholder:'ขนาดที่พบจริง เช่น 50kVA' },
   { key:'desc',   label:'ชื่อ / จุดติดตั้ง', current: d=>d.desc || '(ไม่ระบุ)', input:'text', placeholder:'ชื่อ/จุดติดตั้งที่ถูกต้อง' },
-  { key:'phase',  label:'เฟส', current: d=>d.phase || '(ไม่ระบุ)', input:'select', options:['A','B','C','AB','BC','CA','ABC'] }
+  { key:'phase',  label:'เฟส', current: d=>d.phase || '(ไม่ระบุ)', input:'select', options:['A','B','C','AB','BC','CA','ABC'] },
+  { key:'txType', label:'ชนิดหม้อแปลง', current: d=>TX_TYPES[txTypeOf(d)].label, input:'select',
+    options:['PEA','PRIVATE','PUBLIC','TEMP'], optionLabel: v=>TX_TYPES[v] ? TX_TYPES[v].label : v }
 ];
 const PHASE_LABEL = v => { const L = String(v||'').toUpperCase().replace(/[^ABC]/g,''); return L ? `${L} (${L.length} เฟส)` : String(v||''); };
 let saving = false;
@@ -1205,7 +1264,7 @@ function openDetail(feederId, id){
   form = { f, d, gps: null, status: null, issues: {}, correctedRating:'', correctedDesc:'', peaNo:'',
     note:'', noGps:false, updateCoords:false, photos:{},
     parentCheck:'skip', newParentId:'', savedVerify:false,
-    checks:{}, newPhase:'' };
+    checks:{}, newPhase:'', newTxType:'' };
   document.getElementById('detailOverlay').classList.add('show');
   renderDetailForm();
 }
@@ -1248,7 +1307,12 @@ function opsaPhaseRows(d){
 }
 function opsaCardHtml(d){
   const o = d.opsa;
-  if(!o || o.loadPercent == null) return `<div class="opsa-none">📊 ยังไม่มีข้อมูลโหลดจาก OPSA สำหรับหม้อแปลงเครื่องนี้</div>`;
+  if(!o || o.loadPercent == null){
+    const t = txTypeOf(d);
+    return t === 'PEA'
+      ? `<div class="opsa-none">📊 ยังไม่มีข้อมูลโหลดจาก OPSA สำหรับหม้อแปลงเครื่องนี้</div>`
+      : `<div class="opsa-none">📊 หม้อแปลง${escapeHtml(TX_TYPES[t].label)} — ไม่อยู่ในขอบเขตการวิเคราะห์โหลดของ OPSA</div>`;
+  }
   const lv = loadLevel(o.loadPercent), pv = loadLevel(o.peakLoadPercent);
   const badgeTxt = { ok:'ปกติ', mid:'ใกล้เต็ม', hi:'โหลดเกิน' }[lv];
   const scaleMax = 150, pos = v => Math.min(100, v / scaleMax * 100);
@@ -1304,6 +1368,7 @@ function infoRows(f, d){
     ['ขนาด', escapeHtml(d.rating || 'ไม่ทราบ')],
     ['จุดติดตั้ง', escapeHtml(d.desc || 'ไม่ทราบ')],
     ['เฟส', escapeHtml(d.phase || '-')],
+    ['ชนิดหม้อแปลง', `${escapeHtml(TX_TYPES[txTypeOf(d)].label)}${txTypeSaved(d) ? (d.txTypeSource === 'field' ? ' <span class="pc-badge ok">ยืนยันหน้างาน</span>' : '') : ' <span class="pc-badge est">ระบบเดาให้</span>'}`],
     ['ต่อจากอุปกรณ์', `${escapeHtml(d.parentId || '-')}${d.parentConfidence==='confirmed' ? '<span class="pc-badge ok">ยืนยันแล้ว</span>' : '<span class="pc-badge est">ประมาณจากพิกัด</span>'}`]
   ];
   if(d.meterCount != null || d.customerImpact != null) rows.push(['ผู้ใช้ไฟ', `${d.meterCount ?? d.customerImpact} ราย`]);
@@ -1346,7 +1411,7 @@ function renderDetailForm(){
           </div>
           <div class="chk-edit">
             ${cf.input === 'select'
-              ? `<select class="txt chk-val">${cf.options.map(o=>`<option value="${o}">${PHASE_LABEL(o)}</option>`).join('')}</select>`
+              ? `<select class="txt chk-val">${cf.options.map(o=>`<option value="${o}">${escapeHtml(cf.optionLabel ? cf.optionLabel(o) : PHASE_LABEL(o))}</option>`).join('')}</select>`
               : `<input class="txt chk-val" placeholder="${cf.placeholder}">`}
             ${cf.note ? `<div style="font-size:.7rem;color:var(--muted);margin-top:3px;">${cf.note}</div>` : ''}
           </div>
@@ -1475,6 +1540,7 @@ function bindDetailForm(){
     const cur = form.checks[key] || {};
     form.checks[key] = { state: act, value: cur.value != null ? cur.value : '' };
     if(act === 'edit' && key === 'phase' && !form.checks[key].value) form.checks[key].value = form.d.phase ? String(form.d.phase).toUpperCase().replace(/[^ABC]/g,'') : 'ABC';
+    if(act === 'edit' && key === 'txType' && !form.checks[key].value) form.checks[key].value = txTypeOf(form.d) === 'UNKNOWN' ? 'PEA' : txTypeOf(form.d);
     syncChecksUi();
     if(act === 'edit'){ const inp = row.querySelector('.chk-val'); if(inp && inp.tagName === 'INPUT') setTimeout(()=>inp.focus(), 50); }
   }));
@@ -1598,6 +1664,8 @@ function deriveFromChecks(){
   form.issues.rating = changed('rating', d.rating);
   form.issues.desc = changed('desc', d.desc);
   form.issues.phase = changed('phase', String(d.phase||'').toUpperCase().replace(/[^ABC]/g,''));
+  form.issues.txType = chk('txType').state === 'edit' && !!String(chk('txType').value||'').trim() && String(chk('txType').value) !== txTypeOf(d);
+  form.newTxType = form.issues.txType ? String(chk('txType').value) : '';
   form.peaNo = form.issues.peaNo ? String(chk('peaNo').value).trim() : '';
   form.correctedRating = form.issues.rating ? String(chk('rating').value).trim() : '';
   form.correctedDesc = form.issues.desc ? String(chk('desc').value).trim() : '';
@@ -1764,6 +1832,7 @@ function buildPayload(){
   if(form.status === 'mismatch') tags.push('ปัญหา: ' + ISSUES.filter(it=>form.issues[it.key]).map(it=>it.label).join(', '));
   if(form.issues.peaNo && form.peaNo.trim()) tags.push('เลขที่ตัวถัง: ' + form.peaNo.trim());
   if(form.issues.phase && form.newPhase) tags.push(`เฟส: ${d.phase||'-'} → ${form.newPhase}`);
+  if(form.issues.txType && form.newTxType) tags.push(`ชนิดหม้อแปลง: ${TX_TYPES[txTypeOf(d)].label} → ${TX_TYPES[form.newTxType].label}`);
   if(form.updateCoords && hasGps(d)) tags.push(`ย้ายพิกัดจาก ${d.lat.toFixed(6)},${d.lon.toFixed(6)}`);
   if(!gps && form.noGps) tags.push('จับ GPS ไม่ได้');
   if(gps) tags.push(`GPS ±${Math.round(gps.accuracy)}ม.`);
@@ -1811,6 +1880,7 @@ function renderConfirm(){
   if(vf.correctedRating) rows.push(['แก้ขนาด', `${escapeHtml(d.rating||'-')} → <b>${escapeHtml(vf.correctedRating)}</b>`]);
   if(vf.correctedDesc) rows.push(['แก้ชื่อ/จุดติดตั้ง', `${escapeHtml(d.desc||'-')} → <b>${escapeHtml(vf.correctedDesc)}</b>`]);
   if(form.issues.phase) rows.push(['แก้เฟส', `${escapeHtml(d.phase||'-')} → <b>${escapeHtml(form.newPhase)}</b>`]);
+  if(form.issues.txType) rows.push(['แก้ชนิดหม้อแปลง', `${escapeHtml(TX_TYPES[txTypeOf(d)].label)} → <b>${escapeHtml(TX_TYPES[form.newTxType].label)}</b>`]);
   if(form.issues.peaNo) rows.push(['เลขที่ตัวถัง', `<b>${escapeHtml(form.peaNo)}</b> (จดในหมายเหตุ รหัสในระบบคงเดิม)`]);
   if(form.gps) rows.push(['พิกัดที่จับได้', `${form.gps.lat.toFixed(6)}, ${form.gps.lon.toFixed(6)} (±${Math.round(form.gps.accuracy)} ม.)`]);
   else rows.push(['พิกัด', 'จับไม่ได้']);
@@ -1936,13 +2006,17 @@ async function saveParentStep(pcPlan){
   const { f, d } = form;
   let errMsg = '';
   const newPhase = form.issues.phase ? form.newPhase : '';
-  if(pcPlan || newPhase){
+  const newTxType = form.issues.txType ? form.newTxType : '';
+  if(pcPlan || newPhase || newTxType){
     const overrides = {};
     if(pcPlan){ overrides.parentId = pcPlan.newParent.id; overrides.parentConfidence = 'confirmed'; }
     if(newPhase) overrides.phase = newPhase;
+    if(newTxType){ overrides.txType = newTxType; overrides.txTypeSource = 'field'; }
     const newRow = fullDeviceRow(d, overrides);
     const targetFeeder = pcPlan ? pcPlan.newFeeder : f;
-    const reasonTxt = [pcPlan ? `ต้นทาง ${pcPlan.kind==='confirm'?'ยืนยัน':'เปลี่ยนเป็น'} ${pcPlan.newParent.id}` : '', newPhase ? `เฟส ${d.phase||'-'} → ${newPhase}` : ''].filter(Boolean).join(' · ');
+    const reasonTxt = [pcPlan ? `ต้นทาง ${pcPlan.kind==='confirm'?'ยืนยัน':'เปลี่ยนเป็น'} ${pcPlan.newParent.id}` : '',
+      newPhase ? `เฟส ${d.phase||'-'} → ${newPhase}` : '',
+      newTxType ? `ชนิด ${TX_TYPES[newTxType].label}` : ''].filter(Boolean).join(' · ');
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timer = ctrl ? setTimeout(()=>ctrl.abort(), SAVE_TIMEOUT_MS) : null;
     try{
@@ -1959,11 +2033,12 @@ async function saveParentStep(pcPlan){
     }finally{ if(timer) clearTimeout(timer); }
     if(errMsg){
       saving = false;
-      showSaveLock('error', 'บันทึกผลสำรวจแล้ว แต่บันทึก' + (pcPlan && newPhase ? 'ต้นทางและเฟส' : pcPlan ? 'ต้นทาง' : 'เฟส') + 'ไม่สำเร็จ: ' + errMsg);
+      showSaveLock('error', 'บันทึกผลสำรวจแล้ว แต่บันทึกข้อมูลอุปกรณ์ (ต้นทาง/เฟส/ชนิด) ไม่สำเร็จ: ' + errMsg);
       document.getElementById('saveText').textContent = 'ผลสำรวจ รูป และพิกัด บันทึกเรียบร้อยแล้ว เหลือเฉพาะส่วนที่ค้าง — กด "ลองบันทึกอีกครั้ง" ระบบจะส่งเฉพาะส่วนนี้ ไม่บันทึกผลสำรวจซ้ำ';
       return;
     }
     if(newPhase) d.phase = newPhase;
+    if(newTxType){ d.txType = newTxType; d.txTypeSource = 'field'; }
     if(pcPlan){ d.parentId = pcPlan.newParent.id; d.parentConfidence = 'confirmed'; }
     if(pcPlan && pcPlan.newFeeder.id !== f.id){
       f.devices = f.devices.filter(x=>x !== d);
