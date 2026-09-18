@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#4b2e83">
 <title>Patrol ระบบจำหน่าย — กฟส.อ่าวลึก</title>
+<link rel="manifest" href="patrol-manifest.json">
+<link rel="icon" type="image/png" href="patrol-icon-192.png">
+<link rel="apple-touch-icon" href="patrol-icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Patrol">
+<meta name="mobile-web-app-capable" content="yes">
 <script src="https://api.longdo.com/map/?key=f61a87ff70c39e610385809783d5a1b3"></script>
 <style>
   :root{
@@ -68,6 +75,8 @@
 <body>
 
 <header>
+  <a href="../index.html" id="btnHub" title="กลับหน้าศูนย์รวมงาน"
+     style="color:#fff;text-decoration:none;font-size:20px;padding:2px 6px;line-height:1;">🏢</a>
   <h1>Patrol ระบบจำหน่าย<br><span style="font-weight:400;font-size:11.5px;opacity:.85;">งานป้องกันไฟดับ · กฟส.อ่าวลึก</span></h1>
   <span class="badge" id="netBadge">—</span>
   <span class="badge queue" id="queueBadge" style="display:none;">รอส่ง 0</span>
@@ -203,6 +212,18 @@
     <div class="hint" id="cacheInfo" style="margin-top:9px;"></div>
     <div class="hint" style="margin-top:6px;">ระบบโหลดข้อมูลเสาและอุปกรณ์ให้เองอัตโนมัติตั้งแต่เปิดแอป แล้วเก็บไว้ในเครื่องเพื่อใช้ตอนไม่มีสัญญาณ — ปุ่มนี้ใช้เมื่อต้องการดึงข้อมูลล่าสุดเท่านั้น</div>
   </div>
+  <div class="card" id="installCard">
+    <h2>ติดตั้งลงหน้าจอมือถือ</h2>
+    <div class="row" style="align-items:center;gap:12px;">
+      <img src="patrol-icon-192.png" alt="" style="width:56px;height:56px;border-radius:12px;flex:0 0 auto;">
+      <div style="flex:1;">
+        <div style="font-weight:700;">Patrol</div>
+        <div class="hint">เปิดเต็มจอเหมือนแอป ไม่มีแถบเบราว์เซอร์ · เปิดใช้ตอนไม่มีสัญญาณได้</div>
+      </div>
+    </div>
+    <div id="installBox" style="margin-top:11px;"></div>
+  </div>
+
   <div class="card">
     <h2>คิวรอส่ง</h2>
     <div id="queueBox"></div>
@@ -923,6 +944,52 @@ async function autoLoadData(force){
   renderHome();
 }
 
+/* ---------- ติดตั้งลงหน้าจอมือถือ (PWA) ---------- */
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', e=>{
+  e.preventDefault(); deferredPrompt = e; renderInstall();
+});
+window.addEventListener('appinstalled', ()=>{ deferredPrompt = null; renderInstall(); });
+function isStandalone(){
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+function renderInstall(){
+  const box = $('installBox');
+  if(!box) return;
+  if(isStandalone()){
+    box.innerHTML = '<div class="hint" style="color:var(--sev3);font-weight:700;">✓ ติดตั้งแล้ว — กำลังเปิดจากไอคอนบนหน้าจอ</div>';
+    return;
+  }
+  const ua = navigator.userAgent;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if(deferredPrompt){
+    box.innerHTML = '<button class="primary" id="btnInstall">เพิ่มลงหน้าจอโฮม</button>';
+    $('btnInstall').onclick = async ()=>{
+      deferredPrompt.prompt();
+      const res = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      if(res && res.outcome === 'accepted') toast('เพิ่มลงหน้าจอแล้ว', 'ok');
+      renderInstall();
+    };
+    return;
+  }
+  if(isIOS){
+    box.innerHTML = `<div class="hint" style="line-height:1.9;">
+      <b>iPhone / iPad — ทำใน Safari เท่านั้น</b><br>
+      1. แตะปุ่มแชร์ <b>􀈂</b> ที่แถบล่างของ Safari<br>
+      2. เลื่อนหาแล้วแตะ <b>เพิ่มไปยังหน้าจอโฮม</b><br>
+      3. แตะ <b>เพิ่ม</b> มุมขวาบน<br>
+      <span style="color:var(--sev2);">ถ้าเปิดจาก LINE หรือ Chrome จะไม่มีเมนูนี้ — ให้กดเปิดใน Safari ก่อน</span></div>`;
+    return;
+  }
+  box.innerHTML = `<div class="hint" style="line-height:1.9;">
+    <b>Android — ทำใน Chrome</b><br>
+    1. แตะปุ่ม <b>⋮</b> มุมขวาบน<br>
+    2. แตะ <b>เพิ่มลงในหน้าจอหลัก</b> หรือ <b>ติดตั้งแอป</b><br>
+    3. แตะ <b>ติดตั้ง</b><br>
+    <span style="color:var(--muted);">ถ้าเปิดจาก LINE ให้แตะ ⋮ แล้วเลือก "เปิดในเบราว์เซอร์" ก่อน</span></div>`;
+}
+
 /* ---------- เริ่มทำงาน ---------- */
 (async function start(){
   setNet();
@@ -941,6 +1008,7 @@ async function autoLoadData(force){
   await refreshQueueBadge();
 
   renderHome();
+  renderInstall();
 
   if(navigator.onLine && cfg.url && cfg.name){
     syncQueue(true);
