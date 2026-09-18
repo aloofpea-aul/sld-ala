@@ -1075,38 +1075,65 @@ function isStandalone(){
 function renderInstall(){
   const box = $('installBox');
   if(!box) return;
-  if(isStandalone()){
-    box.innerHTML = '<div class="hint" style="color:var(--sev3);font-weight:700;">✓ ติดตั้งแล้ว — กำลังเปิดจากไอคอนบนหน้าจอ</div>';
-    return;
-  }
   const ua = navigator.userAgent;
   const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  if(deferredPrompt){
-    box.innerHTML = '<button class="primary" id="btnInstall">เพิ่มลงหน้าจอโฮม</button>';
-    $('btnInstall').onclick = async ()=>{
-      deferredPrompt.prompt();
-      const res = await deferredPrompt.userChoice;
-      deferredPrompt = null;
-      if(res && res.outcome === 'accepted') toast('เพิ่มลงหน้าจอแล้ว', 'ok');
-      renderInstall();
-    };
-    return;
+  const inApp = /Line\/|FBAN|FBAV|Instagram/i.test(ua);
+  const url = location.href.split('#')[0];
+  let html = '';
+
+  // เปิดอยู่ในโหมดแอปเต็มจอ — อาจเป็นแอป "ศูนย์รวมงาน" ที่ติดตั้งไว้แล้ว ไม่ใช่ไอคอน Patrol
+  if(isStandalone()){
+    html += `<div class="hint" style="background:#fdf3e6;border:1px solid #f0d9b5;border-radius:8px;padding:9px;margin-bottom:10px;line-height:1.7;">
+      <b style="color:var(--sev2);">กำลังเปิดในโหมดแอปเต็มจออยู่แล้ว</b><br>
+      ถ้าคุณเปิดมาจากไอคอน <b>ศูนย์รวมงาน</b> จะยังไม่มีไอคอน Patrol แยกบนหน้าจอ<br>
+      ถ้าต้องการไอคอน Patrol ของตัวเอง ให้เปิดลิงก์นี้ใน${isIOS ? ' Safari' : ' Chrome'}ก่อน แล้วทำตามขั้นตอนด้านล่าง</div>`;
   }
-  if(isIOS){
-    box.innerHTML = `<div class="hint" style="line-height:1.9;">
-      <b>iPhone / iPad — ทำใน Safari เท่านั้น</b><br>
-      1. แตะปุ่มแชร์ <b>􀈂</b> ที่แถบล่างของ Safari<br>
-      2. เลื่อนหาแล้วแตะ <b>เพิ่มไปยังหน้าจอโฮม</b><br>
-      3. แตะ <b>เพิ่ม</b> มุมขวาบน<br>
-      <span style="color:var(--sev2);">ถ้าเปิดจาก LINE หรือ Chrome จะไม่มีเมนูนี้ — ให้กดเปิดใน Safari ก่อน</span></div>`;
-    return;
+  if(inApp){
+    html += `<div class="hint" style="background:#fdecea;border:1px solid #f3c9c4;border-radius:8px;padding:9px;margin-bottom:10px;line-height:1.7;">
+      <b style="color:var(--sev1);">กำลังเปิดในเบราว์เซอร์ของแอปอื่น (เช่น LINE)</b><br>
+      ต้องเปิดใน${isIOS ? ' Safari' : ' Chrome'} จึงจะติดตั้งได้</div>`;
   }
-  box.innerHTML = `<div class="hint" style="line-height:1.9;">
-    <b>Android — ทำใน Chrome</b><br>
-    1. แตะปุ่ม <b>⋮</b> มุมขวาบน<br>
-    2. แตะ <b>เพิ่มลงในหน้าจอหลัก</b> หรือ <b>ติดตั้งแอป</b><br>
-    3. แตะ <b>ติดตั้ง</b><br>
-    <span style="color:var(--muted);">ถ้าเปิดจาก LINE ให้แตะ ⋮ แล้วเลือก "เปิดในเบราว์เซอร์" ก่อน</span></div>`;
+
+  html += `<div class="hint" style="margin-bottom:8px;">ลิงก์สำหรับติดตั้ง</div>
+    <input type="text" id="installUrl" value="${esc(url)}" readonly style="font-size:12.5px;">
+    <button class="ghost small" id="btnCopyUrl" style="width:100%;margin-top:7px;">คัดลอกลิงก์</button>`;
+
+  if(deferredPrompt && !isStandalone()){
+    html += '<button class="primary" id="btnInstall" style="margin-top:10px;">เพิ่มลงหน้าจอโฮมทันที</button>';
+  }
+
+  html += isIOS
+    ? `<div class="hint" style="line-height:1.9;margin-top:11px;">
+        <b>iPhone / iPad — ต้องใช้ Safari เท่านั้น</b><br>
+        1. เปิดลิงก์ด้านบนใน <b>Safari</b><br>
+        2. แตะปุ่ม <b>แชร์</b> (สี่เหลี่ยมมีลูกศรขึ้น) ที่แถบล่าง<br>
+        3. เลื่อนลงแตะ <b>เพิ่มไปยังหน้าจอโฮม</b><br>
+        4. แตะ <b>เพิ่ม</b> มุมขวาบน<br>
+        <span style="color:var(--muted);">Chrome บน iPhone ไม่มีเมนูนี้ — ใช้ Safari เท่านั้น</span></div>`
+    : `<div class="hint" style="line-height:1.9;margin-top:11px;">
+        <b>Android — ใช้ Chrome</b><br>
+        1. เปิดลิงก์ด้านบนใน <b>Chrome</b><br>
+        2. แตะปุ่ม <b>⋮</b> มุมขวาบน<br>
+        3. แตะ <b>ติดตั้งแอป</b> หรือ <b>เพิ่มลงในหน้าจอหลัก</b><br>
+        4. แตะ <b>ติดตั้ง</b></div>`;
+
+  box.innerHTML = html;
+
+  const copyBtn = $('btnCopyUrl');
+  if(copyBtn) copyBtn.onclick = ()=>{
+    const inp = $('installUrl');
+    inp.select(); inp.setSelectionRange(0, 99999);
+    try{ navigator.clipboard.writeText(inp.value); }catch(e){ document.execCommand('copy'); }
+    toast('คัดลอกลิงก์แล้ว — ไปวางใน' + (isIOS ? ' Safari' : ' Chrome'), 'ok');
+  };
+  const inst = $('btnInstall');
+  if(inst) inst.onclick = async ()=>{
+    deferredPrompt.prompt();
+    const res = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    if(res && res.outcome === 'accepted') toast('เพิ่มลงหน้าจอแล้ว', 'ok');
+    renderInstall();
+  };
 }
 
 /* ---------- เริ่มทำงาน ---------- */
