@@ -738,7 +738,13 @@
             <label><input type="checkbox" id="osrmToggle"> 🛣 เส้นทางตามถนนจริง (ทดลอง — วงจรใหญ่อาจโหลดช้า)</label>
           </div>
           <div class="mcp-section">
-            <label><input type="checkbox" id="poleToggle"> 📍 แสดงเสาไฟฟ้าแรงสูง (ซูมใกล้ระดับ 16 ขึ้นไป)</label>
+            <label><input type="checkbox" id="poleToggle"> 📍 แสดงเสาไฟฟ้า (ซูมใกล้ระดับ 16 ขึ้นไป)</label>
+            <div id="poleKinds" style="margin-left:18px;">
+              <label><input type="checkbox" class="poleKindChk" value="0" checked> <span style="display:inline-block;width:9px;height:9px;background:#d32f2f;border:1px solid #fff;outline:1px solid #999;vertical-align:-1px;"></span> เสาแรงสูง</label>
+              <label><input type="checkbox" class="poleKindChk" value="1" checked> <span style="display:inline-block;width:9px;height:9px;background:#2e7d32;border:1px solid #fff;outline:1px solid #999;vertical-align:-1px;"></span> เสาแรงต่ำ</label>
+              <label><input type="checkbox" class="poleKindChk" value="2"> <span style="display:inline-block;width:9px;height:9px;background:#6a1b9a;border:1px solid #fff;outline:1px solid #999;vertical-align:-1px;"></span> เสาสายส่ง</label>
+              <label><input type="checkbox" class="poleKindChk" value="4"> <span style="display:inline-block;width:9px;height:9px;background:#9e9e9e;border:1px solid #fff;outline:1px solid #999;vertical-align:-1px;"></span> ไม่ทราบระดับแรงดัน</label>
+            </div>
             <div id="poleStatus" style="font-size:.72rem;color:var(--muted);line-height:1.5;margin-top:3px;"></div>
           </div>
           <div class="mcp-section">
@@ -2821,11 +2827,24 @@ function mapHoverTipHtml(f, d){
   rows.push(`<div style="color:#999;font-size:11px;margin-top:3px;">คลิกเพื่อดูรายละเอียด / แก้ไข</div>`);
   return rows.map(r => r.startsWith('<div') ? r : `<div>${r}</div>`).join('');
 }
-// ===== ชั้นข้อมูลเสาไฟฟ้าแรงสูง (โหลดจากไฟล์ poles.json เมื่อผู้ใช้เปิดใช้งาน) =====
-// ข้อมูล 21,081 ต้น มาจากฐานข้อมูล GIS ชั้นเสาไฟ กรองเฉพาะต้นที่อยู่ในรัศมี 25 ม. จากแนวสายแรงสูงของวงจร ALA
+// ===== ชั้นข้อมูลเสาไฟฟ้า (โหลดจากไฟล์ poles.json เมื่อผู้ใช้เปิดใช้งาน) =====
+// เสา 71,349 ต้นจากฐานข้อมูล GIS ชั้นเสาไฟ — แยกระดับแรงดันด้วยสีสัญลักษณ์สี่เหลี่ยม
+// โครงสร้างข้อมูลแต่ละต้น: [lat, lon, ระดับแรงดัน, รหัสนำหน้าเลขเสา, เลขเสา, ชุดหัวเสา, ความสูง]
 let POLE_DATA = null, poleLoading = false, poleOverlays = [], drawnPoles = [], poleViewKey = '';
 const POLE_ZOOM_MIN = 16, POLE_MAX_DRAW = 1200;
+const POLE_STYLE = {
+  0: { color:'#d32f2f', label:'เสาแรงสูง (MV)' },
+  1: { color:'#2e7d32', label:'เสาแรงต่ำ (LV)' },
+  2: { color:'#6a1b9a', label:'เสาสายส่ง (HV)' },
+  3: { color:'#e07b00', label:'เสาแรงสูง (อนุมานจากระยะถึงแนวสาย)' },
+  4: { color:'#9e9e9e', label:'ไม่ทราบระดับแรงดัน' }
+};
 function polesEnabled(){ const c = document.getElementById('poleToggle'); return !!(c && c.checked); }
+function poleKindsWanted(){
+  const set = new Set(Array.from(document.querySelectorAll('.poleKindChk:checked')).map(c=>Number(c.value)));
+  if(set.has(0)) set.add(3);   // เลือกแรงสูง = รวมต้นที่อนุมานว่าแรงสูงด้วย
+  return set;
+}
 function setPoleStatus(msg){ const el = document.getElementById('poleStatus'); if(el) el.innerHTML = msg || ''; }
 async function loadPoleData(){
   if(POLE_DATA || poleLoading) return POLE_DATA;
@@ -2852,14 +2871,15 @@ function poleTagText(p){
   return p[4] ? pre + String(p[4]).padStart(9, '0') : '(ไม่มีเลขในระบบ)';
 }
 function poleTipHtml(p){
+  const st = POLE_STYLE[p[2]] || POLE_STYLE[4];
   const asm = POLE_DATA.assembly[p[5]] || '';
   const rows = [];
   rows.push(`<div style="font-weight:700;color:#4b2e83;font-family:Consolas,monospace;font-size:12.5px;">${escapeHtml(poleTagText(p))}</div>`);
-  rows.push(`<div style="color:#777;">เสาไฟฟ้าแรงสูง · ${escapeHtml(POLE_DATA.feeders[p[2]] || '')}</div>`);
+  rows.push(`<div style="color:${st.color};font-weight:700;">${escapeHtml(st.label)}</div>`);
   if(p[6]) rows.push(`ความสูง: <b>${escapeHtml(String(p[6]))}</b> ม.`);
-  rows.push(`ชุดหัวเสา: <b>${asm ? escapeHtml(asm) : 'ไม่ระบุ'}</b>`);
-  if(!p[7]) rows.push('<span style="color:#e07b00;font-weight:700;">⚠ ต้นนี้มีแค่พิกัด ข้อมูลอื่นขาดจากไฟล์ต้นทาง</span>');
-  return rows.map(r => r.startsWith('<div') || r.startsWith('<span') ? `<div>${r}</div>` : `<div>${r}</div>`).join('');
+  if(p[2] === 0 || p[2] === 3) rows.push(`ชุดหัวเสา: <b>${asm ? escapeHtml(asm) : 'ไม่ระบุ'}</b>`);
+  if(p[2] === 3 || p[2] === 4) rows.push('<span style="color:#e07b00;font-weight:700;">⚠ ต้นนี้มีแค่พิกัด ข้อมูลอื่นขาดจากไฟล์ต้นทาง</span>');
+  return rows.map(r => `<div>${r}</div>`).join('');
 }
 function redrawPoles(){
   if(!leafletMap || !mapMode) return;
@@ -2871,37 +2891,44 @@ function redrawPoles(){
     setPoleStatus('ซูมเข้าอีกเพื่อดูเสาไฟ (ตอนนี้ระดับ ' + z + ')');
     return;
   }
-  const key = [z, b.minLat.toFixed(4), b.maxLat.toFixed(4), b.minLon.toFixed(4), b.maxLon.toFixed(4)].join('|');
+  const kinds = poleKindsWanted();
+  const key = [z, b.minLat.toFixed(4), b.maxLat.toFixed(4), b.minLon.toFixed(4), b.maxLon.toFixed(4),
+               Array.from(kinds).sort().join('')].join('|');
   if(key === poleViewKey) return;
   clearPoleOverlays();
   poleViewKey = key;
+  let scanned = 0, capped = false;
   const inView = [];
   for(const p of POLE_DATA.poles){
     if(p[0] < b.minLat || p[0] > b.maxLat || p[1] < b.minLon || p[1] > b.maxLon) continue;
+    scanned++;
+    if(!kinds.has(p[2])) continue;
+    if(inView.length >= POLE_MAX_DRAW){ capped = true; break; }
     inView.push(p);
-    if(inView.length > POLE_MAX_DRAW) break;
   }
   inView.forEach(p=>{
-    const col = p[7] ? '#5b6b7a' : '#c08a3e';   // สีจางกว่าปกติ = ต้นที่ไม่มีข้อมูลรายละเอียด
+    const col = (POLE_STYLE[p[2]] || POLE_STYLE[4]).color;
     const m = new longdo.Marker({ lon: p[1], lat: p[0] }, {
-      icon: { html: `<div style="width:7px;height:7px;border-radius:50%;background:${col};border:1.5px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.4);"></div>`,
-              offset: { x: 5, y: 5 } },
+      icon: { html: `<div style="width:8px;height:8px;background:${col};border:1.4px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.45);"></div>`,
+              offset: { x: 5.4, y: 5.4 } },
       weight: longdo.OverlayWeight.Bottom, clickable: false
     });
     try{ leafletMap.Overlays.add(m); poleOverlays.push(m); drawnPoles.push(p); }catch(e){}
   });
   setPoleStatus('แสดง ' + drawnPoles.length.toLocaleString() + ' ต้นในหน้าจอ' +
-    (inView.length > POLE_MAX_DRAW ? ' (ถึงขีดจำกัด ซูมเข้าอีกเพื่อดูครบ)' : ''));
+    (capped ? ' (ถึงขีดจำกัด ซูมเข้าอีกเพื่อดูครบ)' : ''));
 }
 (function bindPoleToggle(){
   const chk = document.getElementById('poleToggle');
   if(!chk) return;
-  chk.addEventListener('change', async ()=>{
+  const refresh = async ()=>{
     if(!chk.checked){ clearPoleOverlays(); setPoleStatus(''); return; }
     await loadPoleData();
     poleViewKey = '';
     redrawPoles();
-  });
+  };
+  chk.addEventListener('change', refresh);
+  document.querySelectorAll('.poleKindChk').forEach(c=> c.addEventListener('change', refresh));
   setInterval(()=>{ if(mapMode && polesEnabled()) redrawPoles(); }, 700);
 })();
 // ===== ข้อมูลช่วงสายจาก GIS (ขนาดสาย / เฟส / สายเมน-สายแยก) =====
