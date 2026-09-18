@@ -812,6 +812,7 @@
       <button class="report-tab" data-tab="a0gis">A0 vs GIS</button>
       <button class="report-tab" data-tab="fuseba">ก่อน-หลังฟิวส์</button>
       <button class="report-tab" data-tab="zonerank">จัดอันดับโซนฟิวส์</button>
+      <button class="report-tab" data-tab="quality">🧪 คุณภาพข้อมูล</button>
       <button class="report-tab" data-tab="changelog">🔒 ประวัติการเปลี่ยนแปลง</button>
     </div>
     <div id="reportBody"></div>
@@ -4780,7 +4781,7 @@ async function renderReportTabChangeLog(){
   }
 }
 const REPORT_TAB_RENDERERS = {
-  summary: renderReport, a0gis: renderReportTabA0Gis,
+  summary: renderReport, a0gis: renderReportTabA0Gis, quality: renderReportTabQuality,
   fuseba: renderReportTabFuseBA, zonerank: renderReportTabZoneRank,
   changelog: renderReportTabChangeLog
 };
@@ -4796,6 +4797,89 @@ const REPORT_CAT_LABEL = {
   sw: 'อุปกรณ์สวิตช์ทั้งหมด', gis: 'ยืนยันจากฐานข้อมูล GIS',
   manual: 'ยังไม่พบใน GIS (ต้องตรวจสอบ)', tr: 'หม้อแปลงที่เชื่อมเข้าผัง', mv: 'มิเตอร์แรงกลางที่เชื่อมเข้าผัง'
 };
+
+// ===== รายงานคุณภาพข้อมูล — คำนวณสดจากข้อมูลปัจจุบัน ไม่ใช่ snapshot =====
+// รวมจุดที่ควรตามแก้ไว้ที่เดียว: ประเภทเพี้ยน, ต่อพ่วงกัน, ต้นทางยังไม่ยืนยัน, ไม่มีพิกัด,
+// ห่างต้นทางเกิน 1 กม., เฟสไม่ตรงกับข้อมูลโหลด OPSA, ไม่มีข้อมูล OPSA
+function opsaPhaseMismatch(d){
+  if(!d.opsa) return false;
+  const cols = ['ia','ib','ic'].filter(k=>d.opsa[k] != null).length;
+  const letters = String(d.phase||'').toUpperCase().replace(/[^ABC]/g,'').length;
+  return cols > 0 && letters > 0 && cols !== letters;
+}
+function buildQualityData(){
+  return DATA.feeders.map(f=>{
+    const tx = f.devices.filter(d=>d.type === 'TRANSFORMER');
+    const chained = findChainedTransformers(f);
+    const far = [];
+    tx.forEach(d=>{
+      const p = f.devices.find(x=>x.id === d.parentId);
+      if(d.lat != null && p && p.lat != null && gpsDistanceMeters(p.lat, p.lon, d.lat, d.lon) > LEAF_FAR_PARENT_M){
+        far.push({ d, p, dist: gpsDistanceMeters(p.lat, p.lon, d.lat, d.lon) });
+      }
+    });
+    return {
+      feeder: f.id, f, nTx: tx.length,
+      mistyped: findMistypedLeafDevices(f).length,
+      chained: chained.length,
+      unconfirmed: tx.filter(d=>d.parentConfidence !== 'confirmed').length,
+      noGps: tx.filter(d=>d.lat == null).length,
+      far, farN: far.length,
+      phaseBad: tx.filter(opsaPhaseMismatch),
+      noOpsa: tx.filter(d=>!d.opsa || d.opsa.loadPercent == null).length
+    };
+  });
+}
+function renderReportTabQuality(){
+  const rows = buildQualityData();
+  const sum = k => rows.reduce((s,r)=> s + (Array.isArray(r[k]) ? r[k].length : r[k]), 0);
+  const warnCell = (v, bad)=> `<td${v && bad ? ' style="color:var(--bad);font-weight:700;"' : ''}>${v}</td>`;
+  const detailRows = (items, label)=> items.length
+    ? items.map(x=>`<tr class="q-detail" data-feeder="${escapeHtml(x.f)}" data-id="${escapeHtml(x.id)}">
+        <td>${escapeHtml(x.f)}</td><td class="mono">${escapeHtml(x.id)}</td><td>${escapeHtml(x.rating||'')}</td>
+        <td>${escapeHtml(x.desc||'')}</td><td>${escapeHtml(x.note)}</td></tr>`).join('')
+    : `<tr><td colspan="5" style="color:var(--muted);">ไม่พบรายการ (${escapeHtml(label)})</td></tr>`;
+  const farItems = [];
+  const phaseItems = [];
+  rows.forEach(r=>{
+    r.far.forEach(x=>farItems.push({ f:r.feeder, id:x.d.id, rating:x.d.rating, desc:x.d.desc,
+      note: `ต่อจาก ${x.p.id} · ห่าง ${(x.dist/1000).toFixed(1)} กม.` }));
+    r.phaseBad.forEach(d=>{
+      const cols = ['ia','ib','ic'].filter(k=>d.opsa[k] != null).length;
+      phaseItems.push({ f:r.feeder, id:d.id, rating:d.rating, desc:d.desc,
+        note: `ในระบบ ${d.phase||'-'} · OPSA มีกระแส ${cols} เฟส` });
+    });
+  });
+  document.getElementById('reportBody').innerHTML = `
+    <p class="report-note">ตรวจจากข้อมูลปัจจุบันทุกครั้งที่เปิดรายงาน — แก้ข้อมูลแล้วตัวเลขเปลี่ยนตามทันที</p>
+    <table class="report-table">
+      <tr><th>วงจร</th><th>หม้อแปลงในผัง</th><th>ประเภทเพี้ยน</th><th>ต่อพ่วงกับหม้อแปลง</th>
+          <th>ต้นทางยังไม่ยืนยัน</th><th>ไม่มีพิกัด</th><th>ห่างต้นทาง &gt; 1 กม.</th><th>เฟสไม่ตรง OPSA</th><th>ไม่มีข้อมูล OPSA</th></tr>
+      ${rows.map(r=>`<tr>
+        <td>${escapeHtml(r.feeder)}</td><td>${r.nTx}</td>
+        ${warnCell(r.mistyped, true)}${warnCell(r.chained, true)}
+        <td>${r.unconfirmed}</td>${warnCell(r.noGps, true)}
+        ${warnCell(r.farN, true)}${warnCell(r.phaseBad.length, true)}<td>${r.noOpsa}</td></tr>`).join('')}
+      <tr class="total-row"><td>รวมทั้งหมด</td><td>${sum('nTx')}</td><td>${sum('mistyped')}</td><td>${sum('chained')}</td>
+        <td>${sum('unconfirmed')}</td><td>${sum('noGps')}</td><td>${sum('far')}</td><td>${sum('phaseBad')}</td><td>${sum('noOpsa')}</td></tr>
+    </table>
+    <h3 style="margin:18px 0 6px;font-size:.95rem;">หม้อแปลงที่ห่างอุปกรณ์ต้นทางเกิน 1 กม. (ควรตรวจต้นทาง)</h3>
+    <table class="report-table"><tr><th>วงจร</th><th>เลขหม้อแปลง</th><th>ขนาด</th><th>จุดติดตั้ง</th><th>รายละเอียด</th></tr>
+      ${detailRows(farItems, 'ห่างต้นทางเกิน 1 กม.')}</table>
+    <h3 style="margin:18px 0 6px;font-size:.95rem;">เฟสในระบบไม่ตรงกับจำนวนเฟสที่มีกระแสใน OPSA</h3>
+    <table class="report-table"><tr><th>วงจร</th><th>เลขหม้อแปลง</th><th>ขนาด</th><th>จุดติดตั้ง</th><th>รายละเอียด</th></tr>
+      ${detailRows(phaseItems, 'เฟสไม่ตรง')}</table>
+    <p class="report-note">คลิกแถวในตารางด้านล่างเพื่อเปิดอุปกรณ์นั้นในผัง</p>`;
+  document.getElementById('reportBody').querySelectorAll('.q-detail').forEach(tr=>{
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', ()=>{
+      document.getElementById('reportOverlay').classList.remove('show');
+      setShowLeafAssets(true);
+      showFeederDetail(tr.dataset.feeder);
+      setTimeout(()=>{ highlightAndScrollTo(tr.dataset.id); openDeviceModal(tr.dataset.id); }, 200);
+    });
+  });
+}
 
 function renderReportDrilldown(feeder, cat){
   const feeders = feeder === 'ALL' ? DATA.feeders : DATA.feeders.filter(f=>f.id===feeder);
