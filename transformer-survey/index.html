@@ -247,7 +247,7 @@
   .hist-photo img{width:100%;height:100%;object-fit:cover;display:block;}
   .hist-older{margin-top:8px;font-size:.78rem;}
   .hist-older summary{cursor:pointer;color:var(--pea-purple);font-weight:600;}
-  .hist-older .ho-row{border-top:1px dashed var(--line);padding:6px 0;}
+  .hist-older .ho-row{border-top:1px dashed var(--line);padding:8px 0 10px;}
   .photo-slot-title{font-size:.84rem;font-weight:700;margin-bottom:2px;}
   .photo-slot-hint{font-size:.74rem;color:var(--muted);margin-bottom:8px;}
   .photo-slot.has .photo-pick label{border-style:solid;border-color:var(--good);color:var(--good);}
@@ -1578,11 +1578,12 @@ async function renderHistoryBox(deviceId){
     ${r0.correctedRating || r0.correctedDesc ? `<div class="hist-note">แก้ไข: ${escapeHtml([r0.correctedRating, r0.correctedDesc].filter(Boolean).join(' · '))}</div>` : ''}
     ${r0.note ? `<div class="hist-note">${escapeHtml(r0.note)}</div>` : ''}
     <div class="hist-photos">${histPhotoHtml(r0.photoPoleUrl, 'ต้นหม้อแปลง', r0, 'pole')}${histPhotoHtml(r0.photoTankUrl, 'ตัวถัง/เลข PEA', r0, 'tank')}</div>
-    ${recs.length > 1 ? `<details class="hist-older"><summary>ดูครั้งก่อนหน้าอีก ${recs.length - 1} ครั้ง</summary>
-      ${recs.slice(1).map(r=>`<div class="ho-row"><div class="hist-meta">${escapeHtml(r.time)} · ${escapeHtml(r.inspector||'-')} · <b>${stTxt(r)}</b></div>
+    ${recs.length > 1 ? `<details class="hist-older"><summary>ดูครั้งก่อนหน้าอีก ${recs.length - 1} ครั้ง (แก้/ลบรูปได้เช่นกัน)</summary>
+      ${recs.slice(1).map(r=>`<div class="ho-row"><div class="hist-meta">${escapeHtml(r.time)} · ${escapeHtml(r.inspector||'-')} · <b>${stTxt(r)}</b>
+          ${r.gpsDistanceMeters != null && r.gpsDistanceMeters !== '' ? ` · ห่าง ${escapeHtml(r.gpsDistanceMeters)} ม.` : ''}</div>
+        ${r.correctedRating || r.correctedDesc ? `<div class="hist-note">แก้ไข: ${escapeHtml([r.correctedRating, r.correctedDesc].filter(Boolean).join(' · '))}</div>` : ''}
         ${r.note ? `<div class="hist-note">${escapeHtml(r.note)}</div>` : ''}
-        <div class="hist-meta">${r.photoPoleUrl && !r.photoPoleUrl.startsWith('UPLOAD_FAILED') ? `<a href="${escapeHtml(r.photoPoleUrl)}" target="_blank" rel="noopener">รูปต้นหม้อแปลง ↗</a>` : ''}
-          ${r.photoTankUrl && !r.photoTankUrl.startsWith('UPLOAD_FAILED') ? ` · <a href="${escapeHtml(r.photoTankUrl)}" target="_blank" rel="noopener">รูปตัวถัง ↗</a>` : ''}</div></div>`).join('')}
+        <div class="hist-photos">${histPhotoHtml(r.photoPoleUrl, 'ต้นหม้อแปลง', r, 'pole')}${histPhotoHtml(r.photoTankUrl, 'ตัวถัง/เลข PEA', r, 'tank')}</div></div>`).join('')}
     </details>` : ''}`;
   bindHistPhotoTools(deviceId);
 }
