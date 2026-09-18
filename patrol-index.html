@@ -56,6 +56,7 @@
   .item .top{display:flex;gap:8px;align-items:flex-start;}
   .pill{font-size:11px;padding:2px 8px;border-radius:10px;color:#fff;white-space:nowrap;}
   .mono{font-family:Consolas,monospace;font-size:12px;color:var(--muted);}
+  #pickMap{height:240px;border-radius:9px;overflow:hidden;border:1px solid var(--line);}
   #mapBox{height:64vh;border-radius:10px;overflow:hidden;border:1px solid var(--line);}
   .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px;}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:13px;text-align:center;}
@@ -130,6 +131,17 @@
       <button data-a="POINT">หมุดอิสระ</button>
     </div>
     <div id="anchorState" class="hint" style="margin-top:8px;"></div>
+
+    <div id="pickMapWrap" style="margin-top:9px;display:none;">
+      <div id="pickMap"></div>
+      <div class="row" style="margin-top:7px;">
+        <button class="ghost small" id="btnPickMe">📍 ไปตำแหน่งฉัน</button>
+        <button class="ghost small" id="btnPickZoomOut">− ซูมออก</button>
+        <button class="ghost small" id="btnPickZoomIn">＋ ซูมเข้า</button>
+      </div>
+      <div class="hint" style="margin-top:5px;">แตะที่สัญลักษณ์บนแผนที่เพื่อเลือก · สลับ แผนที่/ดาวเทียม ได้ที่มุมขวาบนของแผนที่</div>
+    </div>
+
     <div id="anchorPick" style="margin-top:9px;"></div>
   </div>
 
@@ -381,6 +393,7 @@ document.querySelectorAll('nav button').forEach(b=>{
     ['home','new','list','map','setting'].forEach(t=>{ $('tab-'+t).style.display = (t === b.dataset.tab) ? '' : 'none'; });
     if(b.dataset.tab === 'map') initMap();
     if(b.dataset.tab === 'home') renderHome();
+    if(b.dataset.tab === 'new') setTimeout(()=>{ initPickMap(); drawPickMap(); }, 80);
   });
 });
 
@@ -472,6 +485,13 @@ function anchorSummary(){
 function renderAnchorPick(){
   const box = $('anchorPick');
   anchorSummary();
+  // แผนที่ประกอบ — แสดงเมื่อจับพิกัดแล้วและไม่ได้เลือกหมุดอิสระ
+  const wrap = $('pickMapWrap');
+  if(wrap){
+    const show = !!GPS && ANCHOR.type !== 'POINT';
+    wrap.style.display = show ? '' : 'none';
+    if(show){ initPickMap(); setTimeout(drawPickMap, 60); }
+  }
   if(ANCHOR.type === 'POINT'){
     box.innerHTML = '<div class="hint">ใช้พิกัด GPS ที่จับไว้เป็นตำแหน่งของจุดที่พบ ไม่ต้องผูกกับอะไร</div>';
     return;
@@ -549,6 +569,104 @@ function renderAnchorPick(){
       `<div class="hint" style="color:var(--pea-purple);font-weight:700;margin-bottom:6px;">เลือกแล้ว: ${esc(ANCHOR.ref)}</div>`);
   }
 }
+
+/* ---------- แผนที่ช่วยเลือกในข้อ 1 ---------- */
+let pickMap = null, pickReady = false, pickItems = [];
+const POLE_MAP_COLOR = { 0:'#d32f2f', 1:'#2e7d32', 2:'#6a1b9a', 3:'#d32f2f', 4:'#9e9e9e' };
+function initPickMap(){
+  if(pickReady || typeof longdo === 'undefined') return;
+  const el = $('pickMap');
+  if(!el || !el.offsetWidth) return;          // แท็บยังไม่ถูกแสดง — ค่อยสร้างตอนเปิดแท็บ
+  try{
+    pickMap = new longdo.Map({ placeholder: el, zoom: 18, lastView: false,
+      location: GPS ? { lon:GPS.lon, lat:GPS.lat } : { lon:98.76, lat:8.38 } });
+    pickMap.Ui.DPad.visible(false);
+    pickMap.Ui.Zoombar.visible(false);        // ใช้ปุ่มของเราเอง จอมือถือจะได้ไม่แน่น
+    pickReady = true;
+    bindPickTap();
+  }catch(e){}
+}
+function drawPickMap(){
+  if(!pickReady || !GPS) return;
+  pickMap.Overlays.clear();
+  pickItems = [];
+
+  // ตำแหน่งปัจจุบัน — วงกลมความแม่นยำ + จุดน้ำเงิน
+  try{
+    pickMap.Overlays.add(new longdo.Circle({ lon:GPS.lon, lat:GPS.lat }, Math.max(GPS.acc, 5) / 111320,
+      { lineWidth:1, lineColor:'rgba(21,101,192,.8)', fillColor:'rgba(21,101,192,.15)' }));
+  }catch(e){}
+  pickMap.Overlays.add(new longdo.Marker({ lon:GPS.lon, lat:GPS.lat }, {
+    icon:{ html:'<div style="width:15px;height:15px;border-radius:50%;background:#1565c0;border:3px solid #fff;box-shadow:0 0 5px rgba(0,0,0,.5);"></div>',
+           offset:{ x:10, y:10 } } }));
+
+  const picked = ANCHOR.ref ? ANCHOR.ref.split('~') : [];
+
+  if(ANCHOR.type === 'DEVICE'){
+    if(!DEVICES) return;
+    DEVICES.filter(d=> d.lat != null && metres(GPS.lat, GPS.lon, d.lat, d.lon) < 400)
+      .slice(0, 60).forEach(d=>{
+        const on = picked.indexOf(d.id) >= 0;
+        pickItems.push({ lat:d.lat, lon:d.lon, key:d.id, feeder:d.feeder });
+        pickMap.Overlays.add(new longdo.Marker({ lon:d.lon, lat:d.lat }, {
+          icon:{ html:`<div style="width:${on?16:11}px;height:${on?16:11}px;border-radius:50%;
+            background:${on?'#4b2e83':'#e07b00'};border:2px solid #fff;box-shadow:0 0 3px rgba(0,0,0,.5);"></div>`,
+            offset:{ x:on?9:7, y:on?9:7 } } }));
+      });
+    return;
+  }
+
+  if(!POLES) return;
+  nearestPoles(GPS.lat, GPS.lon, 60).forEach(x=>{
+    const tag = poleTag(x.p);
+    const on = picked.indexOf(tag) >= 0;
+    const col = on ? '#4b2e83' : (POLE_MAP_COLOR[x.p[2]] || '#9e9e9e');
+    const sz = on ? 17 : 11;
+    pickItems.push({ lat:x.p[0], lon:x.p[1], key:tag });
+    pickMap.Overlays.add(new longdo.Marker({ lon:x.p[1], lat:x.p[0] }, {
+      icon:{ html:`<div style="width:${sz}px;height:${sz}px;background:${col};border:2px solid #fff;
+        box-shadow:0 0 3px rgba(0,0,0,.5);"></div>`, offset:{ x:sz/2+1, y:sz/2+1 } } }));
+  });
+}
+/* แตะบนแผนที่ = เลือกสัญลักษณ์ที่ใกล้ที่สุด (คำนวณเอง เพราะ Longdo ส่งเหตุการณ์คลิกของหมุดมาไม่แน่นอน) */
+function bindPickTap(){
+  const el = $('pickMap');
+  let down = null;
+  const mercY = lat => Math.log(Math.tan(Math.PI/4 + lat*Math.PI/360));
+  el.addEventListener('pointerdown', e=>{ down = { x:e.clientX, y:e.clientY }; }, true);
+  el.addEventListener('pointerup', e=>{
+    if(!down) return;
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6;
+    down = null;
+    if(moved || !pickItems.length) return;
+    let b;
+    try{ b = pickMap.bound(); }catch(err){ return; }
+    const rect = el.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const yTop = mercY(b.maxLat), yBot = mercY(b.minLat);
+    let best = null, bestD = 22;
+    pickItems.forEach(it=>{
+      const x = (it.lon - b.minLon) / (b.maxLon - b.minLon) * rect.width;
+      const y = (yTop - mercY(it.lat)) / (yTop - yBot) * rect.height;
+      const d = Math.hypot(x - mx, y - my);
+      if(d < bestD){ bestD = d; best = it; }
+    });
+    if(!best) return;
+    if(ANCHOR.type === 'SPAN'){
+      let arr = ANCHOR.ref ? ANCHOR.ref.split('~') : [];
+      const i = arr.indexOf(best.key);
+      if(i >= 0) arr.splice(i, 1); else arr.push(best.key);
+      ANCHOR.ref = arr.slice(-2).join('~');
+    } else {
+      ANCHOR.ref = best.key;
+      if(best.feeder) ANCHOR.feeder = best.feeder;
+    }
+    renderAnchorPick();
+  }, true);
+}
+$('btnPickMe').onclick = ()=>{ if(pickReady && GPS) pickMap.location({ lon:GPS.lon, lat:GPS.lat }, true); };
+$('btnPickZoomIn').onclick = ()=>{ if(pickReady) pickMap.zoom(pickMap.zoom()+1, true); };
+$('btnPickZoomOut').onclick = ()=>{ if(pickReady) pickMap.zoom(pickMap.zoom()-1, true); };
 
 /* ---------- ความรุนแรง ---------- */
 let SEVERITY = 2;
@@ -868,6 +986,7 @@ function switchTab(name){
   ['home','new','list','map','setting'].forEach(t=>{ $('tab-'+t).style.display = (t === name) ? '' : 'none'; });
   if(name === 'map') initMap();
   if(name === 'home') renderHome();
+  if(name === 'new') setTimeout(()=>{ initPickMap(); drawPickMap(); }, 80);
   window.scrollTo(0, 0);
 }
 function renderHome(){
