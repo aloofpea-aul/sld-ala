@@ -207,8 +207,18 @@
 
 <!-- ========== แผนที่ ========== -->
 <section id="tab-map" style="display:none;">
-  <div class="card" style="padding:9px;">
-    <div class="hint" id="mapHint">หมุดสีตามความรุนแรง · แตะหมุดเพื่อดูรายละเอียด</div>
+  <div class="card" style="padding:10px;">
+    <div class="row">
+      <select id="mapFltStatus">
+        <option value="open">เฉพาะที่ยังไม่ปิด</option>
+        <option value="">ทุกสถานะ</option>
+        <option>ใหม่</option><option>รับเรื่องแล้ว</option><option>เข้าแผนแล้ว</option>
+        <option>แก้ไขเสร็จ</option><option>ปิด</option>
+      </select>
+      <button class="ghost small" id="btnMapReload">โหลดใหม่</button>
+      <button class="ghost small" id="btnMapMe">📍 ตำแหน่งฉัน</button>
+    </div>
+    <div class="hint" id="mapHint" style="margin-top:7px;">แตะหมุดบนแผนที่เพื่อดูรายละเอียดและจัดการได้ทันที</div>
   </div>
   <div id="mapBox"></div>
 </section>
@@ -993,7 +1003,7 @@ async function openDetail(id){
       const st = $('newStatus').value, reason = $('closeReason').value.trim();
       if(!st){ toast('ยังไม่ได้เลือกสถานะใหม่', 'err'); return; }
       const rr = await api({ action:'patrolUpdate', findingId:id, status:st, closeReason:reason });
-      if(rr && rr.ok){ toast('บันทึกแล้ว', 'ok'); ov.classList.remove('show'); loadList(); }
+      if(rr && rr.ok){ beep('ok'); toast('บันทึกแล้ว', 'ok'); ov.classList.remove('show'); await loadList(); drawMapPins(); }
       else toast((rr && rr.error) || 'บันทึกไม่สำเร็จ', 'err');
     };
     $('btnCloseSheet').onclick = ()=> ov.classList.remove('show');
@@ -1002,38 +1012,95 @@ async function openDetail(id){
 $('detailOverlay').onclick = e=>{ if(e.target.id === 'detailOverlay') e.currentTarget.classList.remove('show'); };
 
 /* ---------- แผนที่ ---------- */
-let map = null, mapReady = false;
+let map = null, mapReady = false, mapPins = [];
 function initMap(){
   if(mapReady) { drawMapPins(); return; }
   if(typeof longdo === 'undefined'){ $('mapHint').textContent = 'โหลดแผนที่ไม่ได้ (ต้องมีสัญญาณ)'; return; }
+  const el = $('mapBox');
+  if(!el || !el.offsetWidth) return;
   try{
-    map = new longdo.Map({ placeholder: $('mapBox'), location:{ lon:98.76, lat:8.38 }, zoom:13, lastView:false });
+    map = new longdo.Map({ placeholder: el, location:{ lon:98.76, lat:8.38 }, zoom:13, lastView:false });
     map.Ui.DPad.visible(false);
     mapReady = true;
+    bindMapTap();
     if(GPS) map.location({ lon:GPS.lon, lat:GPS.lat }, true);
-    drawMapPins();
+    if(!FINDINGS.length && navigator.onLine) loadList(); else drawMapPins();
   }catch(e){ $('mapHint').textContent = 'โหลดแผนที่ไม่ได้ (ต้องมีสัญญาณ)'; }
+}
+function mapVisibleFindings(){
+  const f = $('mapFltStatus') ? $('mapFltStatus').value : 'open';
+  if(f === 'open') return FINDINGS.filter(x=> x.Status !== 'ปิด');
+  if(!f) return FINDINGS;
+  return FINDINGS.filter(x=> x.Status === f);
 }
 function drawMapPins(){
   if(!mapReady) return;
   map.Overlays.clear();
-  if(!FINDINGS.length){ $('mapHint').textContent = 'ยังไม่มีข้อมูล — ไปแท็บรายการแล้วกดโหลดก่อน'; return; }
+  mapPins = [];
+
+  if(GPS){
+    map.Overlays.add(new longdo.Marker({ lon:GPS.lon, lat:GPS.lat }, {
+      icon:{ html:'<div style="width:15px;height:15px;border-radius:50%;background:#1565c0;border:3px solid #fff;box-shadow:0 0 5px rgba(0,0,0,.5);"></div>',
+             offset:{ x:10, y:10 } } }));
+  }
+
+  const list = mapVisibleFindings();
+  if(!list.length){
+    $('mapHint').textContent = FINDINGS.length ? 'ไม่มีจุดที่ตรงกับตัวกรองนี้' : 'ยังไม่มีข้อมูล — กดโหลดใหม่';
+    return;
+  }
   const colors = { 1:'#c62828', 2:'#e07b00', 3:'#2e7d32' };
-  FINDINGS.forEach(f=>{
+  list.forEach(f=>{
     const lat = parseFloat(f.Lat), lon = parseFloat(f.Lon);
     if(isNaN(lat) || isNaN(lon)) return;
     const col = colors[f.Severity] || '#888';
     const done = f.Status === 'ปิด' || f.Status === 'แก้ไขเสร็จ';
-    const m = new longdo.Marker({ lon, lat }, {
-      title: typeName(f.ProblemType),
-      detail: (f.Detail || '') + '<br>' + f.Status,
-      icon:{ html:`<div style="width:16px;height:16px;border-radius:50%;background:${col};border:2.5px solid #fff;
-        box-shadow:0 0 4px rgba(0,0,0,.5);${done ? 'opacity:.45;' : ''}"></div>`, offset:{ x:9, y:9 } }
-    });
-    map.Overlays.add(m);
+    mapPins.push({ lat, lon, id: f.FindingID });
+    map.Overlays.add(new longdo.Marker({ lon, lat }, {
+      icon:{ html:`<div style="width:19px;height:19px;border-radius:50%;background:${col};border:3px solid #fff;
+        box-shadow:0 0 5px rgba(0,0,0,.55);${done ? 'opacity:.45;' : ''}"></div>`, offset:{ x:12, y:12 } } }));
   });
-  $('mapHint').textContent = 'แสดง ' + FINDINGS.length + ' จุด · แดง=ระดับ1 ส้ม=ระดับ2 เขียว=ระดับ3 · จางลง=ปิดแล้ว';
+  $('mapHint').innerHTML = 'แสดง <b>' + mapPins.length + '</b> จุด · ' +
+    '<span style="color:#c62828;">●</span> ระดับ1 <span style="color:#e07b00;">●</span> ระดับ2 ' +
+    '<span style="color:#2e7d32;">●</span> ระดับ3 · จางลง=ปิดแล้ว · แตะหมุดเพื่อจัดการ';
 }
+/* แตะหมุดบนแผนที่ = เปิดรายละเอียดของจุดนั้นทันที */
+function bindMapTap(){
+  const el = $('mapBox');
+  let down = null;
+  const mercY = lat => Math.log(Math.tan(Math.PI/4 + lat*Math.PI/360));
+  el.addEventListener('pointerdown', e=>{ down = { x:e.clientX, y:e.clientY }; }, true);
+  el.addEventListener('pointerup', e=>{
+    if(!down) return;
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6;
+    down = null;
+    if(moved || !mapPins.length) return;
+    let b;
+    try{ b = map.bound(); }catch(err){ return; }
+    const rect = el.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const yTop = mercY(b.maxLat), yBot = mercY(b.minLat);
+    let best = null, bestD = 26;
+    mapPins.forEach(p=>{
+      const x = (p.lon - b.minLon) / (b.maxLon - b.minLon) * rect.width;
+      const y = (yTop - mercY(p.lat)) / (yTop - yBot) * rect.height;
+      const d = Math.hypot(x - mx, y - my);
+      if(d < bestD){ bestD = d; best = p; }
+    });
+    if(best) openDetail(best.id);
+  }, true);
+}
+(function bindMapTools(){
+  const sel = $('mapFltStatus');
+  if(sel) sel.onchange = drawMapPins;
+  const rl = $('btnMapReload');
+  if(rl) rl.onclick = async ()=>{ await loadList(); drawMapPins(); };
+  const me = $('btnMapMe');
+  if(me) me.onclick = async ()=>{
+    if(!GPS){ try{ GPS = await getPos(); showGps(); }catch(e){ toast('จับพิกัดไม่ได้', 'err'); return; } }
+    if(mapReady){ map.location({ lon:GPS.lon, lat:GPS.lat }, true); map.zoom(17, true); drawMapPins(); }
+  };
+})();
 
 /* ---------- ตั้งค่า ---------- */
 function renderUser(){
