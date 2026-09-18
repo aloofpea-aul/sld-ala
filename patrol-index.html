@@ -63,6 +63,20 @@
   .stat .n{font-size:26px;font-weight:700;line-height:1.1;}
   .stat .t{font-size:12px;color:var(--muted);margin-top:3px;}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:1px;}
+  #savingOverlay{position:fixed;inset:0;background:rgba(246,245,242,.96);z-index:300;
+    display:none;align-items:center;justify-content:center;padding:24px;}
+  #savingOverlay.show{display:flex;}
+  .saving-box{text-align:center;max-width:340px;}
+  .saving-art{margin-bottom:14px;}
+  .ring-go{transform-origin:60px 60px;animation:spin 1.05s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .bolt{animation:flash 1.1s ease-in-out infinite;}
+  @keyframes flash{0%,100%{opacity:.25;}50%{opacity:1;}}
+  .saving-title{font-size:19px;font-weight:700;color:var(--pea-purple);}
+  .saving-sub{font-size:13.5px;color:var(--muted);margin-top:5px;}
+  .saving-tip{margin-top:18px;background:#fff;border:1px solid var(--line);border-radius:10px;
+    padding:13px;font-size:13.5px;line-height:1.7;color:#333;min-height:74px;display:flex;align-items:center;justify-content:center;}
+  .saving-ok .ring-go{animation:none;stroke:#2e7d32;stroke-dasharray:314;}
   #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#333;color:#fff;
     padding:11px 17px;border-radius:9px;font-size:14px;z-index:200;display:none;max-width:88%;text-align:center;}
   #toast.show{display:block;} #toast.err{background:var(--sev1);} #toast.ok{background:#2e7d32;}
@@ -224,6 +238,13 @@
     <div class="hint" id="cacheInfo" style="margin-top:9px;"></div>
     <div class="hint" style="margin-top:6px;">ระบบโหลดข้อมูลเสาและอุปกรณ์ให้เองอัตโนมัติตั้งแต่เปิดแอป แล้วเก็บไว้ในเครื่องเพื่อใช้ตอนไม่มีสัญญาณ — ปุ่มนี้ใช้เมื่อต้องการดึงข้อมูลล่าสุดเท่านั้น</div>
   </div>
+  <div class="card">
+    <h2>การแจ้งเตือน</h2>
+    <label style="display:flex;align-items:center;gap:9px;font-size:14.5px;">
+      <input type="checkbox" id="soundToggle" style="width:20px;height:20px;"> เปิดเสียงประกอบเวลาบันทึกสำเร็จ / ผิดพลาด
+    </label>
+  </div>
+
   <div class="card" id="installCard">
     <h2>ติดตั้งลงหน้าจอมือถือ</h2>
     <div class="row" style="align-items:center;gap:12px;">
@@ -245,6 +266,27 @@
 
 </main>
 
+<div id="savingOverlay">
+  <div class="saving-box">
+    <div class="saving-art">
+      <svg viewBox="0 0 120 120" width="112" height="112">
+        <circle class="ring" cx="60" cy="60" r="50" fill="none" stroke="#e3e0da" stroke-width="7"/>
+        <circle class="ring-go" cx="60" cy="60" r="50" fill="none" stroke="#4b2e83" stroke-width="7"
+                stroke-linecap="round" stroke-dasharray="70 244"/>
+        <g fill="#4b2e83">
+          <rect x="56" y="34" width="8" height="58"/>
+          <rect x="34" y="40" width="52" height="6"/>
+          <rect x="41" y="56" width="38" height="5"/>
+          <circle cx="36" cy="37" r="4"/><circle cx="60" cy="37" r="4"/><circle cx="84" cy="37" r="4"/>
+        </g>
+        <polygon class="bolt" points="74,62 92,62 81,79 95,79 70,105 77,86 65,86" fill="#ffc400"/>
+      </svg>
+    </div>
+    <div class="saving-title" id="savingTitle">กำลังบันทึก ...</div>
+    <div class="saving-sub" id="savingSub">กำลังอัปโหลดรูปขึ้นระบบ</div>
+    <div class="saving-tip" id="savingTip"></div>
+  </div>
+</div>
 <div id="toast"></div>
 <div class="overlay" id="detailOverlay"><div class="sheet" id="detailSheet"></div></div>
 
@@ -379,6 +421,7 @@ async function syncQueue(silent){
   }
   syncing = false;
   await refreshQueueBadge();
+  if(ok){ beep('ok'); if(navigator.onLine) loadList(); }
   if(ok && !silent) toast('ส่งขึ้นระบบแล้ว ' + ok + ' รายการ', 'ok');
   if(fail && !silent) toast('ส่งไม่สำเร็จ ' + fail + ' รายการ ยังเก็บไว้ในเครื่อง', 'err');
 }
@@ -719,6 +762,62 @@ function renderThumbs(){
   });
 }
 
+/* ---------- เสียงแจ้งเตือน (สร้างเสียงเอง ไม่ต้องโหลดไฟล์) ---------- */
+let audioCtx = null;
+function soundOn(){ return localStorage.getItem('patrol_sound') !== 'off'; }
+function beep(kind){
+  if(!soundOn()) return;
+  try{
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    const notes = kind === 'ok'  ? [[880, 0, .12], [1318, .12, .2]]
+                : kind === 'err' ? [[220, 0, .18], [165, .18, .28]]
+                : [[660, 0, .08]];
+    notes.forEach(([f, t, dur])=>{
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = kind === 'err' ? 'square' : 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, audioCtx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.25, audioCtx.currentTime + t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + t + dur);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(audioCtx.currentTime + t); o.stop(audioCtx.currentTime + t + dur + .02);
+    });
+  }catch(e){}
+}
+function vibrate(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+
+/* ---------- หน้าจอรอบันทึก + ทริกการใช้งาน ---------- */
+const PATROL_TIPS = [
+  '📷 ถ่ายรูปให้เห็นทั้งต้นเสาและจุดที่เป็นปัญหาในรูปเดียว จะได้รู้ว่าอยู่ตรงไหนของเสา',
+  '🔴 ระดับ 1 คือเสี่ยงไฟดับได้ทุกเมื่อ ต้องแก้ภายใน 24 ชั่วโมง เลือกเฉพาะที่ด่วนจริง',
+  '🗺 แตะที่สี่เหลี่ยมบนแผนที่เลือกเสาได้เลย สลับเป็นภาพดาวเทียมจะหาเสาง่ายขึ้น',
+  '📡 ไม่มีสัญญาณก็บันทึกได้ ระบบเก็บไว้ในเครื่องแล้วส่งให้เองเมื่อกลับเข้าสัญญาณ',
+  '🎯 ปุ่มจับแบบละเอียดเฉลี่ยพิกัด 5 ครั้ง ใช้เมื่อต้องการความแม่นยำสูง',
+  '📌 ถ้าปัญหาอยู่ระหว่างเสา 2 ต้น เช่น สายหย่อน ให้เลือกโหมด "ช่วงสาย" แล้วแตะเสาหัวท้าย',
+  '➕ เพิ่มรูปได้ไม่จำกัด เปิดรายการที่บันทึกไว้แล้วกดเพิ่มรูประหว่างทำหรือหลังปรับปรุงได้ทุกเมื่อ',
+  '✅ จะปิดงานได้ต้องมีรูปหลังปรับปรุงอย่างน้อย 1 รูป เป็นหลักฐานว่าแก้จริง',
+  '🔍 ประเภทปัญหาเพิ่มเองได้ ถ้าเจอแบบที่ยังไม่มีในรายการ บอกผู้ดูแลระบบให้เพิ่มให้'
+];
+let tipTimer = null;
+function showSaving(on, sub){
+  const ov = $('savingOverlay');
+  if(!on){ ov.classList.remove('show', 'saving-ok'); clearInterval(tipTimer); return; }
+  $('savingTitle').textContent = 'กำลังบันทึก ...';
+  $('savingSub').textContent = sub || 'กำลังอัปโหลดรูปขึ้นระบบ';
+  let i = Math.floor(Math.random() * PATROL_TIPS.length);
+  $('savingTip').textContent = PATROL_TIPS[i];
+  clearInterval(tipTimer);
+  tipTimer = setInterval(()=>{ i = (i + 1) % PATROL_TIPS.length; $('savingTip').textContent = PATROL_TIPS[i]; }, 2600);
+  ov.classList.add('show');
+}
+function savingDone(title, sub){
+  $('savingTitle').textContent = title;
+  $('savingSub').textContent = sub || '';
+  $('savingOverlay').classList.add('saving-ok');
+  setTimeout(()=> showSaving(false), 1100);
+}
+
 /* ---------- บันทึก ---------- */
 $('btnSave').onclick = async ()=>{
   if(!cfg.name || !cfg.pass){ toast('ยังไม่ได้เข้าสู่ระบบ — ไปที่แท็บตั้งค่า', 'err'); return; }
@@ -748,22 +847,43 @@ $('btnSave').onclick = async ()=>{
   const item = { id: finding.findingId, finding, photos: PHOTOS.slice(), tries: 0 };
 
   $('btnSave').disabled = true;
+  showSaving(true, 'กำลังอัปโหลดรูป ' + PHOTOS.length + ' รูป');
+  let saved = false, savedOnline = false, errMsg = '';
   try{
     if(navigator.onLine && cfg.url){
       const r = await api({ action:'patrolCreate', finding, photos: item.photos });
-      if(r && r.ok){ toast('บันทึกขึ้นระบบแล้ว ' + finding.findingId, 'ok'); resetForm(); }
-      else { await qPut(item); toast('ส่งไม่สำเร็จ เก็บไว้ในเครื่องแล้ว: ' + ((r && r.error) || ''), 'err'); resetForm(); }
+      if(r && r.ok){ saved = true; savedOnline = true; }
+      else { errMsg = (r && r.error) || ''; await qPut(item); saved = true; }
     } else {
-      await qPut(item);
-      toast('ไม่มีสัญญาณ — เก็บไว้ในเครื่องแล้ว จะส่งให้อัตโนมัติ', 'ok');
-      resetForm();
+      await qPut(item); saved = true;
     }
   }catch(e){
-    await qPut(item);
-    toast('เก็บไว้ในเครื่องแล้ว จะส่งให้เมื่อมีสัญญาณ', 'ok');
-    resetForm();
+    await qPut(item); saved = true;
   }
   $('btnSave').disabled = false;
+
+  if(savedOnline){
+    beep('ok'); vibrate(60);
+    savingDone('บันทึกสำเร็จ', finding.findingId);
+    resetForm();
+    await loadList();                 // ดึงรายการใหม่ทันที หน้าหลัก/รายการ/แผนที่ อัปเดตพร้อมกัน
+    setTimeout(()=> switchTab('list'), 700);
+  } else {
+    beep(errMsg ? 'err' : 'ok'); vibrate(errMsg ? [80,60,80] : 60);
+    savingDone(errMsg ? 'ส่งไม่สำเร็จ — เก็บไว้ในเครื่องแล้ว' : 'เก็บไว้ในเครื่องแล้ว',
+               errMsg || 'จะส่งขึ้นระบบให้เองเมื่อมีสัญญาณ');
+    // แสดงในรายการทันทีแม้ยังไม่ได้ส่งขึ้นระบบ
+    FINDINGS.unshift({
+      FindingID: finding.findingId, CreatedAt: new Date().toLocaleString('th-TH'),
+      CreatedBy: (PROFILE && PROFILE.name) || cfg.name, CreatorOrg: (PROFILE && PROFILE.org) || '',
+      AnchorType: finding.anchorType, AnchorRef: finding.anchorRef, FeederID: finding.feederId,
+      ProblemType: finding.problemType, Severity: finding.severity, Detail: finding.detail,
+      Status: 'รอส่ง (ในเครื่อง)', Lat: finding.lat, Lon: finding.lon
+    });
+    resetForm();
+    renderList(); renderHome();
+    setTimeout(()=> switchTab('list'), 900);
+  }
   refreshQueueBadge();
 };
 function resetForm(){
@@ -979,6 +1099,15 @@ function showCacheInfo(){
     'อุปกรณ์: <b>' + (DEVICES ? DEVICES.length.toLocaleString() : 0) + '</b> รายการ';
 }
 $('btnSync').onclick = ()=> syncQueue(false);
+(function bindSound(){
+  const chk = $('soundToggle');
+  if(!chk) return;
+  chk.checked = soundOn();
+  chk.onchange = ()=>{
+    localStorage.setItem('patrol_sound', chk.checked ? 'on' : 'off');
+    if(chk.checked) beep('ok');
+  };
+})();
 
 /* ---------- หน้าหลัก ---------- */
 function switchTab(name){
