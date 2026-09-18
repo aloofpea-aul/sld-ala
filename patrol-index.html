@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#4b2e83">
+<title>Patrol ระบบจำหน่าย — กฟส.อ่าวลึก</title>
+<script src="https://api.longdo.com/map/?key=f61a87ff70c39e610385809783d5a1b3"></script>
+<style>
+  :root{
+    --pea-purple:#4b2e83; --pea-purple-dark:#3a2266; --bg:#f6f5f2; --card:#fff;
+    --line:#e3e0da; --muted:#6b6b6b; --sev1:#c62828; --sev2:#e07b00; --sev3:#2e7d32;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:"Sarabun","Noto Sans Thai",system-ui,sans-serif;background:var(--bg);color:#222;font-size:15px;}
+  header{background:var(--pea-purple);color:#fff;padding:9px 12px;display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:50;}
+  header h1{font-size:15px;margin:0;font-weight:700;flex:1;line-height:1.3;}
+  .badge{font-size:11px;padding:3px 8px;border-radius:11px;background:rgba(255,255,255,.2);white-space:nowrap;}
+  .badge.off{background:#c62828;}
+  .badge.queue{background:#e07b00;}
+  nav{display:flex;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:44px;z-index:49;}
+  nav button{flex:1;padding:11px 4px;border:0;background:none;font:inherit;font-size:13.5px;color:var(--muted);border-bottom:3px solid transparent;cursor:pointer;}
+  nav button.active{color:var(--pea-purple);font-weight:700;border-bottom-color:var(--pea-purple);}
+  main{padding:12px;max-width:760px;margin:0 auto;padding-bottom:70px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:13px;margin-bottom:12px;}
+  .card h2{font-size:14px;margin:0 0 10px;color:var(--pea-purple);}
+  label.f{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px;font-weight:600;}
+  input[type=text],input[type=password],input[type=number],select,textarea{
+    width:100%;padding:10px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:15px;background:#fff;}
+  textarea{min-height:70px;resize:vertical;}
+  button.primary{background:var(--pea-purple);color:#fff;border:0;padding:12px;border-radius:8px;font:inherit;font-weight:700;font-size:15px;width:100%;cursor:pointer;}
+  button.primary:disabled{background:#bbb;}
+  button.ghost{background:#fff;color:var(--pea-purple);border:1.5px solid var(--pea-purple);padding:9px 12px;border-radius:8px;font:inherit;font-size:14px;cursor:pointer;}
+  button.small{padding:6px 10px;font-size:13px;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;}
+  .row>*{flex:1;}
+  .seg{display:flex;gap:6px;flex-wrap:wrap;}
+  .seg button{flex:1;min-width:76px;padding:9px 6px;border:1.5px solid var(--line);background:#fff;border-radius:8px;font:inherit;font-size:13.5px;cursor:pointer;}
+  .seg button.on{border-color:var(--pea-purple);background:#efeaf7;color:var(--pea-purple);font-weight:700;}
+  .sev1{border-color:var(--sev1)!important;} .sev1.on{background:#fdecea;color:var(--sev1);}
+  .sev2{border-color:var(--sev2)!important;} .sev2.on{background:#fdf3e6;color:var(--sev2);}
+  .sev3{border-color:var(--sev3)!important;} .sev3.on{background:#eaf4eb;color:var(--sev3);}
+  .thumbs{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;}
+  .thumb{position:relative;width:78px;height:78px;border-radius:7px;overflow:hidden;border:1px solid var(--line);}
+  .thumb img{width:100%;height:100%;object-fit:cover;}
+  .thumb button{position:absolute;top:2px;right:2px;width:21px;height:21px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:13px;line-height:1;cursor:pointer;}
+  .hint{font-size:12.5px;color:var(--muted);line-height:1.6;}
+  .item{border:1px solid var(--line);border-radius:9px;padding:11px;margin-bottom:9px;background:#fff;cursor:pointer;}
+  .item .top{display:flex;gap:8px;align-items:flex-start;}
+  .pill{font-size:11px;padding:2px 8px;border-radius:10px;color:#fff;white-space:nowrap;}
+  .mono{font-family:Consolas,monospace;font-size:12px;color:var(--muted);}
+  #mapBox{height:64vh;border-radius:10px;overflow:hidden;border:1px solid var(--line);}
+  #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#333;color:#fff;
+    padding:11px 17px;border-radius:9px;font-size:14px;z-index:200;display:none;max-width:88%;text-align:center;}
+  #toast.show{display:block;} #toast.err{background:var(--sev1);} #toast.ok{background:#2e7d32;}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;z-index:150;}
+  .overlay.show{display:flex;}
+  .sheet{background:#fff;width:100%;max-height:86vh;overflow:auto;border-radius:14px 14px 0 0;padding:16px;}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:14px;}
+  .kv span:first-child{color:var(--muted);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Patrol ระบบจำหน่าย<br><span style="font-weight:400;font-size:11.5px;opacity:.85;">งานป้องกันไฟดับ · กฟส.อ่าวลึก</span></h1>
+  <span class="badge" id="netBadge">—</span>
+  <span class="badge queue" id="queueBadge" style="display:none;">รอส่ง 0</span>
+</header>
+
+<nav>
+  <button data-tab="new" class="active">บันทึกใหม่</button>
+  <button data-tab="list">รายการ</button>
+  <button data-tab="map">แผนที่</button>
+  <button data-tab="setting">ตั้งค่า</button>
+</nav>
+
+<main>
+
+<!-- ========== บันทึกใหม่ ========== -->
+<section id="tab-new">
+  <div class="card">
+    <h2>1. ตำแหน่งที่พบ</h2>
+    <div class="row">
+      <button class="ghost" id="btnGps">📍 จับพิกัด GPS</button>
+      <button class="ghost" id="btnGpsAvg">🎯 จับแบบละเอียด (5 ครั้ง)</button>
+    </div>
+    <div class="hint" id="gpsInfo" style="margin-top:8px;">ยังไม่ได้จับพิกัด</div>
+
+    <label class="f">ผูกจุดที่พบกับ</label>
+    <div class="seg" id="anchorSeg">
+      <button data-a="POLE" class="on">เสาไฟ</button>
+      <button data-a="SPAN">ช่วงสาย</button>
+      <button data-a="DEVICE">อุปกรณ์</button>
+      <button data-a="POINT">หมุดอิสระ</button>
+    </div>
+    <div id="anchorPick" style="margin-top:9px;"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. ปัญหาที่พบ</h2>
+    <label class="f">ประเภทปัญหา</label>
+    <select id="problemType"><option value="">— เลือก —</option></select>
+
+    <label class="f">ความรุนแรง</label>
+    <div class="seg" id="sevSeg">
+      <button data-s="1" class="sev1">1 · ไฟดับได้ทุกเมื่อ</button>
+      <button data-s="2" class="sev2 on">2 · เสี่ยงในไม่ช้า</button>
+      <button data-s="3" class="sev3">3 · เฝ้าระวัง</button>
+    </div>
+
+    <label class="f">รายละเอียดเพิ่มเติม</label>
+    <textarea id="detail" placeholder="เช่น กิ่งไม้พาดสายเฟส B ยาวประมาณ 3 เมตร"></textarea>
+  </div>
+
+  <div class="card">
+    <h2>3. รูปก่อนปรับปรุง <span style="color:var(--sev1);">*จำเป็น</span></h2>
+    <input type="file" accept="image/*" capture="environment" id="photoInput" multiple style="display:none;">
+    <button class="ghost" id="btnPhoto" style="width:100%;">📷 ถ่ายรูป / เลือกรูป (เพิ่มได้ไม่จำกัด)</button>
+    <div class="thumbs" id="thumbs"></div>
+  </div>
+
+  <button class="primary" id="btnSave">บันทึกจุดที่พบ</button>
+  <p class="hint" style="text-align:center;margin-top:9px;">ไม่มีสัญญาณก็บันทึกได้ ระบบจะเก็บไว้ในเครื่องแล้วส่งให้อัตโนมัติเมื่อมีสัญญาณ</p>
+</section>
+
+<!-- ========== รายการ ========== -->
+<section id="tab-list" style="display:none;">
+  <div class="card">
+    <div class="row">
+      <select id="fltStatus">
+        <option value="">ทุกสถานะ</option>
+        <option>ใหม่</option><option>รับเรื่องแล้ว</option><option>เข้าแผนแล้ว</option>
+        <option>แก้ไขเสร็จ</option><option>ปิด</option>
+      </select>
+      <select id="fltSeverity">
+        <option value="">ทุกความรุนแรง</option>
+        <option value="1">ระดับ 1</option><option value="2">ระดับ 2</option><option value="3">ระดับ 3</option>
+      </select>
+    </div>
+    <button class="ghost small" id="btnReload" style="margin-top:9px;width:100%;">โหลดรายการจากระบบ</button>
+  </div>
+  <div id="listBox"></div>
+</section>
+
+<!-- ========== แผนที่ ========== -->
+<section id="tab-map" style="display:none;">
+  <div class="card" style="padding:9px;">
+    <div class="hint" id="mapHint">หมุดสีตามความรุนแรง · แตะหมุดเพื่อดูรายละเอียด</div>
+  </div>
+  <div id="mapBox"></div>
+</section>
+
+<!-- ========== ตั้งค่า ========== -->
+<section id="tab-setting" style="display:none;">
+  <div class="card">
+    <h2>บัญชีผู้ใช้</h2>
+    <div id="userBox"></div>
+    <label class="f">ชื่อผู้ใช้</label>
+    <input type="text" id="cfgName" autocomplete="username">
+    <label class="f">รหัสผ่าน</label>
+    <input type="password" id="cfgPass" autocomplete="current-password">
+    <button class="primary" id="btnLogin" style="margin-top:12px;">เข้าสู่ระบบ</button>
+  </div>
+  <div class="card">
+    <h2>การเชื่อมต่อ</h2>
+    <label class="f">URL ของ Google Apps Script</label>
+    <input type="text" id="cfgUrl" placeholder="https://script.google.com/macros/s/.../exec">
+    <label class="f">ไฟล์ข้อมูลเสา</label>
+    <input type="text" id="cfgPoles" value="poles.json">
+    <div class="row" style="margin-top:12px;">
+      <button class="ghost" id="btnSaveCfg">บันทึกการตั้งค่า</button>
+      <button class="ghost" id="btnCache">ดาวน์โหลดข้อมูลไว้ใช้ออฟไลน์</button>
+    </div>
+    <div class="hint" id="cacheInfo" style="margin-top:9px;"></div>
+  </div>
+  <div class="card">
+    <h2>คิวรอส่ง</h2>
+    <div id="queueBox"></div>
+    <button class="ghost" id="btnSync" style="width:100%;margin-top:9px;">ส่งข้อมูลที่ค้างอยู่ตอนนี้</button>
+  </div>
+</section>
+
+</main>
+
+<div id="toast"></div>
+<div class="overlay" id="detailOverlay"><div class="sheet" id="detailSheet"></div></div>
+
+<script>
+/* ==========================================================================
+   Patrol ระบบจำหน่าย — เฟส 1
+   ใช้ล็อกอินร่วมกับระบบ SLD (ชีต Admins/Members เดียวกัน)
+   ทำงานออฟไลน์ได้ — เก็บงานและรูปไว้ใน IndexedDB แล้วส่งอัตโนมัติเมื่อมีสัญญาณ
+   ========================================================================== */
+
+const LS = {
+  url:   'patrol_gas_url',
+  poles: 'patrol_poles_url',
+  name:  'patrol_user',
+  pass:  'patrol_pass',
+  prof:  'patrol_profile',
+  types: 'patrol_types'
+};
+const cfg = {
+  url:   localStorage.getItem(LS.url) || '',
+  poles: localStorage.getItem(LS.poles) || 'poles.json',
+  name:  localStorage.getItem(LS.name) || '',
+  pass:  localStorage.getItem(LS.pass) || ''
+};
+let PROFILE = JSON.parse(localStorage.getItem(LS.prof) || 'null');
+let TYPES   = JSON.parse(localStorage.getItem(LS.types) || '[]');
+
+/* ---------- IndexedDB (คิวรอส่ง + แคชข้อมูลก้อนใหญ่) ---------- */
+let db = null;
+function openDb(){
+  return new Promise((res, rej)=>{
+    const rq = indexedDB.open('patrolDB', 1);
+    rq.onupgradeneeded = e=>{
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains('queue')) d.createObjectStore('queue', { keyPath:'id' });
+      if(!d.objectStoreNames.contains('cache')) d.createObjectStore('cache', { keyPath:'key' });
+    };
+    rq.onsuccess = e=>{ db = e.target.result; res(db); };
+    rq.onerror = ()=> rej(rq.error);
+  });
+}
+function idb(store, mode, fn){
+  return new Promise((res, rej)=>{
+    const tx = db.transaction(store, mode);
+    const rq = fn(tx.objectStore(store));
+    rq.onsuccess = ()=> res(rq.result);
+    rq.onerror = ()=> rej(rq.error);
+  });
+}
+const qPut   = v => idb('queue','readwrite', s=> s.put(v));
+const qAll   = () => idb('queue','readonly',  s=> s.getAll());
+const qDel   = id => idb('queue','readwrite', s=> s.delete(id));
+const cPut   = (key,value) => idb('cache','readwrite', s=> s.put({ key, value, at: Date.now() }));
+const cGet   = key => idb('cache','readonly', s=> s.get(key));
+
+/* ---------- เครื่องมือทั่วไป ---------- */
+const $ = id => document.getElementById(id);
+function toast(msg, kind){
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = 'show ' + (kind || '');
+  clearTimeout(t._tm);
+  t._tm = setTimeout(()=>{ t.className = ''; }, 3400);
+}
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function newId(prefix){
+  const d = new Date(), p = n=> String(n).padStart(2,'0');
+  return prefix + '-' + String(d.getFullYear()).slice(2) + p(d.getMonth()+1) + p(d.getDate())
+       + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds())
+       + '-' + String(Math.floor(Math.random()*1000)).padStart(3,'0');
+}
+function metres(la1, lo1, la2, lo2){
+  const k = Math.cos(la1 * Math.PI/180);
+  return Math.hypot((lo2-lo1)*k, la2-la1) * 111320;
+}
+function bearing(la1, lo1, la2, lo2){
+  const dirs = ['เหนือ','ต.อ.เฉียงเหนือ','ตะวันออก','ต.อ.เฉียงใต้','ใต้','ต.ต.เฉียงใต้','ตะวันตก','ต.ต.เฉียงเหนือ'];
+  const ang = (Math.atan2((lo2-lo1)*Math.cos(la1*Math.PI/180), la2-la1) * 180/Math.PI + 360) % 360;
+  return dirs[Math.round(ang/45) % 8];
+}
+
+/* ---------- เรียก API ---------- */
+async function api(payload){
+  if(!cfg.url) throw new Error('ยังไม่ได้ตั้งค่า URL ของ Apps Script');
+  const res = await fetch(cfg.url, {
+    method:'POST',
+    headers:{ 'Content-Type':'text/plain;charset=utf-8' },   // เลี่ยง CORS preflight เหมือนระบบ SLD
+    body: JSON.stringify(Object.assign({ changedBy: cfg.name, changedByPassword: cfg.pass }, payload))
+  });
+  return res.json();
+}
+
+/* ---------- สถานะออนไลน์ / คิว ---------- */
+function setNet(){
+  const b = $('netBadge');
+  if(navigator.onLine){ b.textContent = 'ออนไลน์'; b.className = 'badge'; }
+  else { b.textContent = 'ออฟไลน์'; b.className = 'badge off'; }
+}
+async function refreshQueueBadge(){
+  const items = await qAll();
+  const b = $('queueBadge');
+  if(items.length){ b.style.display = ''; b.textContent = 'รอส่ง ' + items.length; }
+  else b.style.display = 'none';
+  renderQueue(items);
+  return items.length;
+}
+function renderQueue(items){
+  const box = $('queueBox');
+  if(!box) return;
+  if(!items.length){ box.innerHTML = '<div class="hint">ไม่มีรายการค้าง ส่งขึ้นระบบครบแล้ว</div>'; return; }
+  box.innerHTML = items.map(it=>`
+    <div class="kv"><span>${esc(it.id)}</span>
+    <span>${esc(it.finding.problemType)} · รูป ${it.photos.length} · ${it.tries ? 'ลองส่งแล้ว ' + it.tries + ' ครั้ง' : 'ยังไม่ได้ส่ง'}</span></div>`).join('');
+}
+
+/* ส่งคิวขึ้นระบบทีละรายการ — ถ้ารายการไหนพลาด ข้ามไปทำรายการถัดไป ไม่หยุดทั้งคิว */
+let syncing = false;
+async function syncQueue(silent){
+  if(syncing) return;
+  if(!navigator.onLine || !cfg.url || !cfg.name){ if(!silent) toast('ยังส่งไม่ได้ — ตรวจสัญญาณและการตั้งค่า', 'err'); return; }
+  syncing = true;
+  const items = await qAll();
+  let ok = 0, fail = 0;
+  for(const it of items){
+    try{
+      const r = await api({ action:'patrolCreate', finding: it.finding, photos: it.photos });
+      if(r && r.ok){ await qDel(it.id); ok++; }
+      else { it.tries = (it.tries || 0) + 1; it.lastError = (r && r.error) || 'ไม่ทราบสาเหตุ'; await qPut(it); fail++; }
+    }catch(e){ it.tries = (it.tries || 0) + 1; it.lastError = String(e); await qPut(it); fail++; }
+  }
+  syncing = false;
+  await refreshQueueBadge();
+  if(ok && !silent) toast('ส่งขึ้นระบบแล้ว ' + ok + ' รายการ', 'ok');
+  if(fail && !silent) toast('ส่งไม่สำเร็จ ' + fail + ' รายการ ยังเก็บไว้ในเครื่อง', 'err');
+}
+window.addEventListener('online', ()=>{ setNet(); syncQueue(true); });
+window.addEventListener('offline', setNet);
+
+/* ---------- แท็บ ---------- */
+document.querySelectorAll('nav button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    document.querySelectorAll('nav button').forEach(x=> x.classList.remove('active'));
+    b.classList.add('active');
+    ['new','list','map','setting'].forEach(t=>{ $('tab-'+t).style.display = (t === b.dataset.tab) ? '' : 'none'; });
+    if(b.dataset.tab === 'map') initMap();
+  });
+});
+
+/* ---------- GPS ---------- */
+let GPS = null;
+function showGps(){
+  $('gpsInfo').innerHTML = GPS
+    ? `พิกัด <b>${GPS.lat.toFixed(6)}, ${GPS.lon.toFixed(6)}</b> · ความแม่นยำ ±${Math.round(GPS.acc)} ม.`
+    : 'ยังไม่ได้จับพิกัด';
+  if(GPS) renderAnchorPick();
+}
+function getPos(){
+  return new Promise((res, rej)=> navigator.geolocation.getCurrentPosition(
+    p=> res({ lat:p.coords.latitude, lon:p.coords.longitude, acc:p.coords.accuracy }),
+    e=> rej(e), { enableHighAccuracy:true, timeout:15000, maximumAge:0 }));
+}
+$('btnGps').onclick = async ()=>{
+  try{ GPS = await getPos(); showGps(); toast('จับพิกัดแล้ว', 'ok'); }
+  catch(e){ toast('จับพิกัดไม่ได้ — เปิดสิทธิ์ตำแหน่งให้เบราว์เซอร์', 'err'); }
+};
+/* เฉลี่ยพิกัดหลายครั้งให้แม่นขึ้น — วิธีเดียวกับแอปสำรวจหม้อแปลง */
+$('btnGpsAvg').onclick = async ()=>{
+  const btn = $('btnGpsAvg'); btn.disabled = true;
+  const samples = [];
+  for(let i = 0; i < 5; i++){
+    btn.textContent = '🎯 กำลังจับ ' + (i+1) + '/5';
+    try{ samples.push(await getPos()); }catch(e){}
+    await new Promise(r=> setTimeout(r, 900));
+  }
+  btn.disabled = false; btn.textContent = '🎯 จับแบบละเอียด (5 ครั้ง)';
+  if(!samples.length){ toast('จับพิกัดไม่ได้', 'err'); return; }
+  samples.sort((a,b)=> a.acc - b.acc);
+  const best = samples.slice(0, Math.max(1, Math.ceil(samples.length/2)));
+  GPS = {
+    lat: best.reduce((s,p)=> s+p.lat, 0)/best.length,
+    lon: best.reduce((s,p)=> s+p.lon, 0)/best.length,
+    acc: best.reduce((s,p)=> s+p.acc, 0)/best.length
+  };
+  showGps(); toast('เฉลี่ยพิกัดจาก ' + best.length + ' ครั้งแล้ว', 'ok');
+};
+
+/* ---------- การผูกจุดที่พบ ---------- */
+let ANCHOR = { type:'POLE', ref:'', feeder:'' };
+let POLES = null, DEVICES = null;
+
+document.querySelectorAll('#anchorSeg button').forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll('#anchorSeg button').forEach(x=> x.classList.remove('on'));
+    b.classList.add('on');
+    ANCHOR = { type:b.dataset.a, ref:'', feeder:'' };
+    renderAnchorPick();
+  };
+});
+
+function nearestPoles(lat, lon, n){
+  if(!POLES || !POLES.poles) return [];
+  return POLES.poles
+    .map(p=>({ p, d: metres(lat, lon, p[0], p[1]) }))
+    .filter(x=> x.d < 500).sort((a,b)=> a.d - b.d).slice(0, n);
+}
+function poleTag(p){
+  const pre = (POLES.prefix && POLES.prefix[p[3]]) || '';
+  return p[4] ? pre + String(p[4]).padStart(9,'0') : '(ไม่มีเลขในระบบ)';
+}
+function renderAnchorPick(){
+  const box = $('anchorPick');
+  if(ANCHOR.type === 'POINT'){
+    box.innerHTML = '<div class="hint">ใช้พิกัด GPS ที่จับไว้เป็นตำแหน่งของจุดที่พบ ไม่ต้องผูกกับอะไร</div>';
+    return;
+  }
+  if(!GPS && ANCHOR.type !== 'DEVICE'){
+    box.innerHTML = '<div class="hint">จับพิกัด GPS ก่อน แล้วระบบจะแสดงรายการที่อยู่ใกล้ตัวให้เลือก</div>';
+    return;
+  }
+  if(ANCHOR.type === 'POLE' || ANCHOR.type === 'SPAN'){
+    if(!POLES){ box.innerHTML = '<div class="hint">ยังไม่มีข้อมูลเสาในเครื่อง — ไปที่แท็บตั้งค่า แล้วกด "ดาวน์โหลดข้อมูลไว้ใช้ออฟไลน์"</div>'; return; }
+    const near = nearestPoles(GPS.lat, GPS.lon, 10);
+    if(!near.length){ box.innerHTML = '<div class="hint">ไม่พบเสาในรัศมี 500 ม. จากตำแหน่งนี้</div>'; return; }
+    const label = ANCHOR.type === 'SPAN' ? 'เลือกเสา 2 ต้นหัวท้ายของช่วงสาย' : 'เลือกเสาที่พบปัญหา';
+    const picked = ANCHOR.ref ? ANCHOR.ref.split('~') : [];
+    box.innerHTML = '<div class="hint" style="margin-bottom:6px;">' + label + '</div>' +
+      near.map((x, i)=>{
+        const tag = poleTag(x.p);
+        const on = picked.indexOf(tag) >= 0;
+        return `<button class="ghost small" data-tag="${esc(tag)}" style="width:100%;text-align:left;margin-bottom:5px;
+          ${on ? 'border-width:2px;background:#efeaf7;font-weight:700;' : ''}">
+          ${on ? '✓ ' : ''}${esc(tag)} · ห่าง ${Math.round(x.d)} ม. ทาง${bearing(GPS.lat, GPS.lon, x.p[0], x.p[1])}</button>`;
+      }).join('');
+    box.querySelectorAll('button').forEach(b=>{
+      b.onclick = ()=>{
+        const tag = b.dataset.tag;
+        if(ANCHOR.type === 'POLE'){ ANCHOR.ref = tag; }
+        else {
+          let arr = ANCHOR.ref ? ANCHOR.ref.split('~') : [];
+          const i = arr.indexOf(tag);
+          if(i >= 0) arr.splice(i, 1); else arr.push(tag);
+          ANCHOR.ref = arr.slice(-2).join('~');
+        }
+        renderAnchorPick();
+      };
+    });
+    return;
+  }
+  if(ANCHOR.type === 'DEVICE'){
+    if(!DEVICES){ box.innerHTML = '<div class="hint">ยังไม่มีข้อมูลอุปกรณ์ในเครื่อง — ไปที่แท็บตั้งค่า แล้วกด "ดาวน์โหลดข้อมูลไว้ใช้ออฟไลน์"</div>'; return; }
+    const list = GPS
+      ? DEVICES.filter(d=> d.lat != null).map(d=>({ d, m: metres(GPS.lat, GPS.lon, d.lat, d.lon) }))
+          .filter(x=> x.m < 1000).sort((a,b)=> a.m - b.m).slice(0, 12)
+      : [];
+    box.innerHTML = `<input type="text" id="devSearch" placeholder="ค้นหารหัสอุปกรณ์ เช่น ALA02WF-104" style="margin-bottom:7px;">
+      <div id="devList">` + (list.length
+        ? list.map(x=> `<button class="ghost small" data-id="${esc(x.d.id)}" data-f="${esc(x.d.feeder)}" style="width:100%;text-align:left;margin-bottom:5px;">
+            ${esc(x.d.id)} · ${esc(x.d.desc || x.d.type)} · ห่าง ${Math.round(x.m)} ม.</button>`).join('')
+        : '<div class="hint">จับพิกัดก่อน หรือพิมพ์ค้นหารหัสอุปกรณ์</div>') + '</div>';
+    const bind = ()=> box.querySelectorAll('#devList button').forEach(b=>{
+      b.onclick = ()=>{ ANCHOR.ref = b.dataset.id; ANCHOR.feeder = b.dataset.f; renderAnchorPick(); };
+    });
+    bind();
+    $('devSearch').oninput = e=>{
+      const q = e.target.value.trim().toUpperCase();
+      if(q.length < 2){ bind(); return; }
+      const hit = DEVICES.filter(d=> d.id.toUpperCase().indexOf(q) >= 0).slice(0, 15);
+      $('devList').innerHTML = hit.length
+        ? hit.map(d=> `<button class="ghost small" data-id="${esc(d.id)}" data-f="${esc(d.feeder)}" style="width:100%;text-align:left;margin-bottom:5px;">
+            ${esc(d.id)} · ${esc(d.desc || d.type)}</button>`).join('')
+        : '<div class="hint">ไม่พบรหัสนี้</div>';
+      bind();
+    };
+    if(ANCHOR.ref) box.insertAdjacentHTML('afterbegin',
+      `<div class="hint" style="color:var(--pea-purple);font-weight:700;margin-bottom:6px;">เลือกแล้ว: ${esc(ANCHOR.ref)}</div>`);
+  }
+}
+
+/* ---------- ความรุนแรง ---------- */
+let SEVERITY = 2;
+document.querySelectorAll('#sevSeg button').forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll('#sevSeg button').forEach(x=> x.classList.remove('on'));
+    b.classList.add('on'); SEVERITY = parseInt(b.dataset.s, 10);
+  };
+});
+
+/* ---------- รูปถ่าย ---------- */
+let PHOTOS = [];   // [{kind, base64, mimeType, takenAt, lat, lon}]
+$('btnPhoto').onclick = ()=> $('photoInput').click();
+$('photoInput').onchange = async e=>{
+  const files = Array.from(e.target.files || []);
+  for(const f of files){
+    try{
+      const b64 = await compress(f, 1280, 0.72);
+      PHOTOS.push({ kind:'before', base64:b64, mimeType:'image/jpeg',
+        takenAt:new Date().toISOString(), lat:GPS ? GPS.lat : null, lon:GPS ? GPS.lon : null });
+    }catch(err){ toast('อ่านรูปไม่ได้ 1 ไฟล์', 'err'); }
+  }
+  e.target.value = '';
+  renderThumbs();
+};
+/* บีบอัดรูปในเครื่องก่อนส่ง — ประหยัดเน็ตและพื้นที่คิวตอนออฟไลน์ */
+function compress(file, maxSide, quality){
+  return new Promise((res, rej)=>{
+    const img = new Image(), fr = new FileReader();
+    fr.onload = ()=> { img.src = fr.result; };
+    fr.onerror = rej;
+    img.onload = ()=>{
+      let { width:w, height:h } = img;
+      const scale = Math.min(1, maxSide / Math.max(w, h));
+      w = Math.round(w * scale); h = Math.round(h * scale);
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      res(cv.toDataURL('image/jpeg', quality).split(',')[1]);
+    };
+    img.onerror = rej;
+    fr.readAsDataURL(file);
+  });
+}
+function renderThumbs(){
+  $('thumbs').innerHTML = PHOTOS.map((p, i)=>
+    `<div class="thumb"><img src="data:image/jpeg;base64,${p.base64}"><button data-i="${i}">✕</button></div>`).join('');
+  $('thumbs').querySelectorAll('button').forEach(b=>{
+    b.onclick = ()=>{ PHOTOS.splice(parseInt(b.dataset.i, 10), 1); renderThumbs(); };
+  });
+}
+
+/* ---------- บันทึก ---------- */
+$('btnSave').onclick = async ()=>{
+  if(!cfg.name || !cfg.pass){ toast('ยังไม่ได้เข้าสู่ระบบ — ไปที่แท็บตั้งค่า', 'err'); return; }
+  if(!GPS){ toast('ยังไม่ได้จับพิกัด GPS', 'err'); return; }
+  const problemType = $('problemType').value;
+  if(!problemType){ toast('ยังไม่ได้เลือกประเภทปัญหา', 'err'); return; }
+  if(!PHOTOS.length){ toast('ต้องมีรูปก่อนปรับปรุงอย่างน้อย 1 รูป', 'err'); return; }
+  if(ANCHOR.type !== 'POINT' && !ANCHOR.ref){ toast('ยังไม่ได้เลือกสิ่งที่จะผูกจุดที่พบ', 'err'); return; }
+
+  const finding = {
+    findingId: newId('F'),
+    createdAt: new Date().toISOString(),
+    anchorType: ANCHOR.type,
+    anchorRef: ANCHOR.ref,
+    lat: GPS.lat, lon: GPS.lon, gpsAccuracy: Math.round(GPS.acc),
+    feederId: ANCHOR.feeder || '',
+    problemType: problemType,
+    severity: SEVERITY,
+    detail: $('detail').value.trim(),
+    source: 'field'
+  };
+  const item = { id: finding.findingId, finding, photos: PHOTOS.slice(), tries: 0 };
+
+  $('btnSave').disabled = true;
+  try{
+    if(navigator.onLine && cfg.url){
+      const r = await api({ action:'patrolCreate', finding, photos: item.photos });
+      if(r && r.ok){ toast('บันทึกขึ้นระบบแล้ว ' + finding.findingId, 'ok'); resetForm(); }
+      else { await qPut(item); toast('ส่งไม่สำเร็จ เก็บไว้ในเครื่องแล้ว: ' + ((r && r.error) || ''), 'err'); resetForm(); }
+    } else {
+      await qPut(item);
+      toast('ไม่มีสัญญาณ — เก็บไว้ในเครื่องแล้ว จะส่งให้อัตโนมัติ', 'ok');
+      resetForm();
+    }
+  }catch(e){
+    await qPut(item);
+    toast('เก็บไว้ในเครื่องแล้ว จะส่งให้เมื่อมีสัญญาณ', 'ok');
+    resetForm();
+  }
+  $('btnSave').disabled = false;
+  refreshQueueBadge();
+};
+function resetForm(){
+  PHOTOS = []; renderThumbs();
+  $('detail').value = '';
+  ANCHOR.ref = ''; renderAnchorPick();
+}
+
+/* ---------- รายการ ---------- */
+$('btnReload').onclick = loadList;
+async function loadList(){
+  if(!navigator.onLine){ toast('ต้องมีสัญญาณจึงจะโหลดรายการได้', 'err'); return; }
+  $('listBox').innerHTML = '<div class="hint">กำลังโหลด ...</div>';
+  try{
+    const r = await api({ action:'patrolList', status:$('fltStatus').value, severity:$('fltSeverity').value, limit:200 });
+    if(!r.ok){ $('listBox').innerHTML = '<div class="hint">' + esc(r.error || 'โหลดไม่สำเร็จ') + '</div>'; return; }
+    FINDINGS = r.findings || [];
+    renderList();
+  }catch(e){ $('listBox').innerHTML = '<div class="hint">โหลดไม่สำเร็จ</div>'; }
+}
+let FINDINGS = [];
+const SEV_COLOR = { 1:'var(--sev1)', 2:'var(--sev2)', 3:'var(--sev3)' };
+function typeName(code){
+  const t = TYPES.find(x=> x.code === code);
+  return t ? t.name : code;
+}
+function renderList(){
+  if(!FINDINGS.length){ $('listBox').innerHTML = '<div class="hint">ยังไม่มีรายการ</div>'; return; }
+  $('listBox').innerHTML = FINDINGS.map(f=>`
+    <div class="item" data-id="${esc(f.FindingID)}">
+      <div class="top">
+        <span class="pill" style="background:${SEV_COLOR[f.Severity] || '#888'}">ระดับ ${esc(f.Severity)}</span>
+        <b style="flex:1;">${esc(typeName(f.ProblemType))}</b>
+        <span class="mono">${esc(f.Status)}</span>
+      </div>
+      <div class="hint" style="margin-top:5px;">
+        ${esc(f.AnchorType)}${f.AnchorRef ? ' · ' + esc(f.AnchorRef) : ''}
+        ${f.FeederID ? ' · ' + esc(f.FeederID) : ''}<br>
+        ${esc(f.Detail || '')}<br>
+        <span class="mono">${esc(f.CreatedAt)} · ${esc(f.CreatedBy)}${f.CreatorOrg ? ' · ' + esc(f.CreatorOrg) : ''}</span>
+      </div>
+    </div>`).join('');
+  $('listBox').querySelectorAll('.item').forEach(el=>{
+    el.onclick = ()=> openDetail(el.dataset.id);
+  });
+}
+
+async function openDetail(id){
+  const ov = $('detailOverlay'), sh = $('detailSheet');
+  sh.innerHTML = '<div class="hint">กำลังโหลด ...</div>';
+  ov.classList.add('show');
+  try{
+    const r = await api({ action:'patrolDetail', findingId:id });
+    if(!r.ok){ sh.innerHTML = '<div class="hint">' + esc(r.error) + '</div>'; return; }
+    const f = r.finding, photos = r.photos || [];
+    const kinds = { before:'ก่อนปรับปรุง', during:'ระหว่างทำ', after:'หลังปรับปรุง' };
+    sh.innerHTML = `
+      <h2 style="margin:0 0 4px;color:var(--pea-purple);font-size:16px;">${esc(typeName(f.ProblemType))}</h2>
+      <div class="mono" style="margin-bottom:10px;">${esc(f.FindingID)}</div>
+      <div class="kv"><span>ความรุนแรง</span><span style="color:${SEV_COLOR[f.Severity]};font-weight:700;">ระดับ ${esc(f.Severity)}</span></div>
+      <div class="kv"><span>สถานะ</span><span>${esc(f.Status)}</span></div>
+      <div class="kv"><span>ผูกกับ</span><span>${esc(f.AnchorType)} ${esc(f.AnchorRef || '')}</span></div>
+      <div class="kv"><span>พิกัด</span><span>${esc(f.Lat)}, ${esc(f.Lon)}</span></div>
+      <div class="kv"><span>ผู้บันทึก</span><span>${esc(f.CreatedBy)}<br><span class="hint">${esc(f.CreatorRole || '')} ${esc(f.CreatorOrg || '')}</span></span></div>
+      <div class="kv"><span>เมื่อ</span><span>${esc(f.CreatedAt)}</span></div>
+      ${f.Detail ? `<p style="margin:10px 0;">${esc(f.Detail)}</p>` : ''}
+      <h2 style="margin:14px 0 6px;">รูป (${photos.length})</h2>
+      <div class="thumbs">${photos.map(p=>
+        `<a class="thumb" href="${esc(p.DriveUrl)}" target="_blank" style="display:block;">
+           <img src="https://drive.google.com/thumbnail?id=${esc(p.DriveFileId)}&sz=w200" alt="">
+           <span style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);color:#fff;font-size:10px;text-align:center;">${esc(kinds[p.PhotoKind] || p.PhotoKind)}</span>
+         </a>`).join('') || '<div class="hint">ยังไม่มีรูป</div>'}</div>
+      <input type="file" accept="image/*" capture="environment" id="addPhotoInput" multiple style="display:none;">
+      <div class="row" style="margin-top:12px;">
+        <button class="ghost" id="btnAddAfter">📷 เพิ่มรูปหลังปรับปรุง</button>
+        <button class="ghost" id="btnAddDuring">📷 เพิ่มรูประหว่างทำ</button>
+      </div>
+      <label class="f">เปลี่ยนสถานะ</label>
+      <select id="newStatus">
+        <option value="">— ไม่เปลี่ยน —</option>
+        <option>รับเรื่องแล้ว</option><option>เข้าแผนแล้ว</option><option>แก้ไขเสร็จ</option><option>ปิด</option>
+      </select>
+      <label class="f">เหตุผล / ผลที่ทำ (จำเป็นเมื่อปิด)</label>
+      <input type="text" id="closeReason" placeholder="เช่น ตัดกิ่งไม้เรียบร้อย">
+      <button class="primary" id="btnUpdate" style="margin-top:12px;">บันทึกการเปลี่ยนแปลง</button>
+      <button class="ghost" id="btnCloseSheet" style="width:100%;margin-top:8px;">ปิดหน้าต่าง</button>`;
+
+    let addKind = 'after';
+    $('btnAddAfter').onclick  = ()=>{ addKind = 'after';  $('addPhotoInput').click(); };
+    $('btnAddDuring').onclick = ()=>{ addKind = 'during'; $('addPhotoInput').click(); };
+    $('addPhotoInput').onchange = async e=>{
+      const files = Array.from(e.target.files || []);
+      if(!files.length) return;
+      const arr = [];
+      for(const file of files){
+        arr.push({ kind:addKind, base64: await compress(file, 1280, 0.72), mimeType:'image/jpeg',
+                   takenAt:new Date().toISOString(), lat:GPS ? GPS.lat : null, lon:GPS ? GPS.lon : null });
+      }
+      e.target.value = '';
+      toast('กำลังอัปโหลด ' + arr.length + ' รูป ...');
+      const rr = await api({ action:'patrolAddPhoto', parentType:'FINDING', parentId:id, photos:arr });
+      if(rr && rr.ok){ toast('เพิ่มรูปแล้ว', 'ok'); openDetail(id); }
+      else toast('อัปโหลดไม่สำเร็จ', 'err');
+    };
+    $('btnUpdate').onclick = async ()=>{
+      const st = $('newStatus').value, reason = $('closeReason').value.trim();
+      if(!st){ toast('ยังไม่ได้เลือกสถานะใหม่', 'err'); return; }
+      const rr = await api({ action:'patrolUpdate', findingId:id, status:st, closeReason:reason });
+      if(rr && rr.ok){ toast('บันทึกแล้ว', 'ok'); ov.classList.remove('show'); loadList(); }
+      else toast((rr && rr.error) || 'บันทึกไม่สำเร็จ', 'err');
+    };
+    $('btnCloseSheet').onclick = ()=> ov.classList.remove('show');
+  }catch(e){ sh.innerHTML = '<div class="hint">โหลดไม่สำเร็จ</div>'; }
+}
+$('detailOverlay').onclick = e=>{ if(e.target.id === 'detailOverlay') e.currentTarget.classList.remove('show'); };
+
+/* ---------- แผนที่ ---------- */
+let map = null, mapReady = false;
+function initMap(){
+  if(mapReady) { drawMapPins(); return; }
+  if(typeof longdo === 'undefined'){ $('mapHint').textContent = 'โหลดแผนที่ไม่ได้ (ต้องมีสัญญาณ)'; return; }
+  try{
+    map = new longdo.Map({ placeholder: $('mapBox'), location:{ lon:98.76, lat:8.38 }, zoom:13, lastView:false });
+    map.Ui.DPad.visible(false);
+    mapReady = true;
+    if(GPS) map.location({ lon:GPS.lon, lat:GPS.lat }, true);
+    drawMapPins();
+  }catch(e){ $('mapHint').textContent = 'โหลดแผนที่ไม่ได้ (ต้องมีสัญญาณ)'; }
+}
+function drawMapPins(){
+  if(!mapReady) return;
+  map.Overlays.clear();
+  if(!FINDINGS.length){ $('mapHint').textContent = 'ยังไม่มีข้อมูล — ไปแท็บรายการแล้วกดโหลดก่อน'; return; }
+  const colors = { 1:'#c62828', 2:'#e07b00', 3:'#2e7d32' };
+  FINDINGS.forEach(f=>{
+    const lat = parseFloat(f.Lat), lon = parseFloat(f.Lon);
+    if(isNaN(lat) || isNaN(lon)) return;
+    const col = colors[f.Severity] || '#888';
+    const done = f.Status === 'ปิด' || f.Status === 'แก้ไขเสร็จ';
+    const m = new longdo.Marker({ lon, lat }, {
+      title: typeName(f.ProblemType),
+      detail: (f.Detail || '') + '<br>' + f.Status,
+      icon:{ html:`<div style="width:16px;height:16px;border-radius:50%;background:${col};border:2.5px solid #fff;
+        box-shadow:0 0 4px rgba(0,0,0,.5);${done ? 'opacity:.45;' : ''}"></div>`, offset:{ x:9, y:9 } }
+    });
+    map.Overlays.add(m);
+  });
+  $('mapHint').textContent = 'แสดง ' + FINDINGS.length + ' จุด · แดง=ระดับ1 ส้ม=ระดับ2 เขียว=ระดับ3 · จางลง=ปิดแล้ว';
+}
+
+/* ---------- ตั้งค่า ---------- */
+function renderUser(){
+  $('userBox').innerHTML = PROFILE && PROFILE.name
+    ? `<div class="kv"><span>ชื่อ</span><span><b>${esc(PROFILE.name)}</b></span></div>
+       <div class="kv"><span>ตำแหน่ง</span><span>${esc(PROFILE.position || '— ยังไม่ได้กรอกในชีต —')}</span></div>
+       <div class="kv"><span>สังกัด</span><span>${esc(PROFILE.org || '— ยังไม่ได้กรอกในชีต —')}</span></div>`
+    : '<div class="hint">ยังไม่ได้เข้าสู่ระบบ</div>';
+}
+$('btnSaveCfg').onclick = ()=>{
+  cfg.url = $('cfgUrl').value.trim();
+  cfg.poles = $('cfgPoles').value.trim() || 'poles.json';
+  localStorage.setItem(LS.url, cfg.url);
+  localStorage.setItem(LS.poles, cfg.poles);
+  toast('บันทึกการตั้งค่าแล้ว', 'ok');
+};
+$('btnLogin').onclick = async ()=>{
+  cfg.name = $('cfgName').value.trim();
+  cfg.pass = $('cfgPass').value;
+  cfg.url = $('cfgUrl').value.trim() || cfg.url;
+  localStorage.setItem(LS.url, cfg.url);
+  if(!cfg.url){ toast('กรอก URL ของ Apps Script ก่อน', 'err'); return; }
+  try{
+    const r = await api({ action:'patrolBootstrap' });
+    if(!r.ok){ toast(r.error || r.message || 'เข้าสู่ระบบไม่สำเร็จ', 'err'); return; }
+    localStorage.setItem(LS.name, cfg.name);
+    localStorage.setItem(LS.pass, cfg.pass);
+    PROFILE = r.profile; TYPES = r.types || [];
+    localStorage.setItem(LS.prof, JSON.stringify(PROFILE));
+    localStorage.setItem(LS.types, JSON.stringify(TYPES));
+    fillTypes(); renderUser();
+    toast('เข้าสู่ระบบแล้ว', 'ok');
+  }catch(e){ toast('เชื่อมต่อไม่ได้ — ตรวจ URL และสัญญาณ', 'err'); }
+};
+function fillTypes(){
+  const sel = $('problemType');
+  sel.innerHTML = '<option value="">— เลือก —</option>' +
+    ['หน้างาน','ระบบคำนวณ'].map(cat=>{
+      const g = TYPES.filter(t=> t.category === cat);
+      return g.length ? `<optgroup label="${cat}">` +
+        g.map(t=> `<option value="${esc(t.code)}" data-sev="${t.defaultSeverity}">${esc(t.name)}</option>`).join('') + '</optgroup>' : '';
+    }).join('');
+  sel.onchange = ()=>{
+    const o = sel.selectedOptions[0];
+    if(o && o.dataset.sev){
+      const s = o.dataset.sev;
+      document.querySelectorAll('#sevSeg button').forEach(b=> b.classList.toggle('on', b.dataset.s === s));
+      SEVERITY = parseInt(s, 10);
+    }
+  };
+}
+
+/* ดาวน์โหลดข้อมูลเสาและอุปกรณ์เก็บไว้ในเครื่อง เพื่อใช้ตอนไม่มีสัญญาณ */
+$('btnCache').onclick = async ()=>{
+  $('cacheInfo').textContent = 'กำลังดาวน์โหลด ...';
+  try{
+    const pr = await fetch(cfg.poles);
+    POLES = await pr.json();
+    await cPut('poles', POLES);
+  }catch(e){ $('cacheInfo').textContent = 'ดาวน์โหลดข้อมูลเสาไม่สำเร็จ — ตรวจว่ามีไฟล์ poles.json อยู่โฟลเดอร์เดียวกัน'; return; }
+  try{
+    const dr = await fetch(cfg.url);
+    const data = await dr.json();
+    DEVICES = [];
+    (data.feeders || []).forEach(f=> (f.devices || []).forEach(d=>{
+      DEVICES.push({ id:d.id, type:d.type, desc:d.desc, lat:d.lat, lon:d.lon, feeder:f.id });
+    }));
+    await cPut('devices', DEVICES);
+  }catch(e){ /* ไม่มีอุปกรณ์ก็ยังใช้เสาได้ */ }
+  showCacheInfo();
+  toast('เก็บข้อมูลไว้ในเครื่องแล้ว ใช้งานออฟไลน์ได้', 'ok');
+};
+function showCacheInfo(){
+  $('cacheInfo').innerHTML =
+    'เสาในเครื่อง: <b>' + (POLES && POLES.poles ? POLES.poles.length.toLocaleString() : 0) + '</b> ต้น · ' +
+    'อุปกรณ์: <b>' + (DEVICES ? DEVICES.length.toLocaleString() : 0) + '</b> รายการ';
+}
+$('btnSync').onclick = ()=> syncQueue(false);
+
+/* ---------- เริ่มทำงาน ---------- */
+(async function start(){
+  setNet();
+  await openDb();
+  $('cfgUrl').value = cfg.url;
+  $('cfgPoles').value = cfg.poles;
+  $('cfgName').value = cfg.name;
+  $('cfgPass').value = cfg.pass;
+  renderUser();
+  if(TYPES.length) fillTypes();
+
+  const cp = await cGet('poles');  if(cp) POLES = cp.value;
+  const cd = await cGet('devices'); if(cd) DEVICES = cd.value;
+  showCacheInfo();
+  renderAnchorPick();
+  await refreshQueueBadge();
+
+  if(navigator.onLine && cfg.url && cfg.name){
+    syncQueue(true);
+    try{
+      const r = await api({ action:'patrolBootstrap' });
+      if(r && r.ok){
+        PROFILE = r.profile; TYPES = r.types || [];
+        localStorage.setItem(LS.prof, JSON.stringify(PROFILE));
+        localStorage.setItem(LS.types, JSON.stringify(TYPES));
+        fillTypes(); renderUser();
+      }
+    }catch(e){}
+  }
+})();
+</script>
+</body>
+</html>
