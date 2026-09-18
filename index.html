@@ -2234,7 +2234,43 @@ document.querySelectorAll('.typeFilterChk').forEach(chk=>{
 });
 document.getElementById('osrmToggle').addEventListener('change', ()=>{ rebuildMapMarkers(); });
 // รูปแบบเส้นหม้อแปลงบนแผนที่ (เปลี่ยนเฉพาะภาพ ไม่มีผลกับข้อมูลหรือการคำนวณ) — จำค่าไว้ในเครื่อง
-const LEAF_FAR_PARENT_M = 1000;
+const LEAF_FAR_PARENT_M = 1000;      // ระยะเตือน: ไกลจากเพื่อนบ้านในโซนฟิวส์เดียวกันเกินเท่านี้
+const LEAF_FAR_ALONE_M = 3000;       // โซนที่มีหม้อแปลงเครื่องเดียว วัดจากอุปกรณ์ตัดตอนต้นทางแทน
+// ===== ตรวจหม้อแปลงที่พิกัดน่าจะผิดโซน =====
+// เดิมวัดระยะถึงอุปกรณ์ต้นทางตรงๆ ซึ่งเตือนเกินจริงในสายที่ยาว (ฟิวส์ตัวเดียวคุมหลายกิโลเมตร)
+// เปลี่ยนเป็นวัดจาก "หม้อแปลงเครื่องที่ใกล้ที่สุดในโซนฟิวส์เดียวกัน" — ถ้าไกลจากทุกเครื่องในโซน แสดงว่าน่าจะจับโซนผิด
+function feederZoneOutliers(f){
+  const byId = {};
+  f.devices.forEach(x=>{ byId[x.id] = x; });
+  const zones = new Map();
+  f.devices.forEach(d=>{
+    if(d.type !== 'TRANSFORMER' || d.lat == null || d.lon == null) return;
+    let cur = byId[d.parentId];
+    const seen = new Set([d.id]);
+    while(cur && !PROTECTIVE_TYPES.has(cur.type) && !seen.has(cur.id)){ seen.add(cur.id); cur = byId[cur.parentId]; }
+    const key = cur ? cur.id : '__none__';
+    if(!zones.has(key)) zones.set(key, { prot: cur || null, items: [] });
+    zones.get(key).items.push(d);
+  });
+  const out = [];
+  zones.forEach(z=>{
+    z.items.forEach(d=>{
+      let nearest = Infinity, nearestOf = null;
+      z.items.forEach(o=>{
+        if(o === d) return;
+        const dist = gpsDistanceMeters(d.lat, d.lon, o.lat, o.lon);
+        if(dist < nearest){ nearest = dist; nearestOf = o; }
+      });
+      if(nearestOf){
+        if(nearest > LEAF_FAR_PARENT_M) out.push({ d, dist: nearest, ref: nearestOf, mode:'neighbor', prot: z.prot });
+      } else if(z.prot && z.prot.lat != null){
+        const dist = gpsDistanceMeters(d.lat, d.lon, z.prot.lat, z.prot.lon);
+        if(dist > LEAF_FAR_ALONE_M) out.push({ d, dist, ref: z.prot, mode:'alone', prot: z.prot });
+      }
+    });
+  });
+  return out;
+}
 function getLeafLineMode(){ return localStorage.getItem('sld_leaf_line_mode') === 'straight' ? 'straight' : 'mst'; }
 document.querySelectorAll('input[name="leafLineMode"]').forEach(r=>{
   r.checked = r.value === getLeafLineMode();
@@ -2395,14 +2431,13 @@ function rebuildMapMarkers(){
         addLine([{lon:a.lon, lat:a.lat}, {lon:b.lon, lat:b.lat}], { lineWidth: 1.5, lineColor: hexToRgba(f.color, 0.55) });
       });
     }
-    // หม้อแปลงที่ห่างอุปกรณ์ต้นทางในข้อมูลเกิน 1 กม. — เส้นประสีส้มชี้ไปยังต้นทาง (ทั้ง 2 โหมด)
-    leavesWithGps.forEach(d=>{
-      const dist = leafParentDistance(f, d);
-      if(dist == null || dist <= LEAF_FAR_PARENT_M) return;
-      const p = byId[d.parentId];
+    // หม้อแปลงที่พิกัดน่าจะผิดโซน — เส้นประสีส้มชี้ไปยังจุดอ้างอิงที่ใกล้ที่สุดในโซน
+    const outlierIds = new Set();
+    feederZoneOutliers(f).forEach(x=>{
+      outlierIds.add(x.d.id);
       const opt = { lineWidth: 2, lineColor: 'rgba(224,123,0,0.9)' };
       if(farDash !== undefined) opt.lineStyle = farDash;
-      addLine([{lon:p.lon, lat:p.lat}, {lon:d.lon, lat:d.lat}], opt);
+      addLine([{lon:x.ref.lon, lat:x.ref.lat}, {lon:x.d.lon, lat:x.d.lat}], opt);
     });
     shown.forEach(d=>{
       if(d.lat == null || d.lon == null || !d.parentId) return;
@@ -2410,10 +2445,9 @@ function rebuildMapMarkers(){
       if(!parent || parent.lat == null || parent.lon == null) return;
       const isTrunk = TRUNK_TYPES.has(d.type);
       if(isLeafAssetType(d.type)){
-        // แบบแนวสายรวมวาดไปแล้วด้านบน / ตัวที่ห่างเกิน 1 กม. วาดเป็นเส้นประแล้ว
+        // แบบแนวสายรวมวาดไปแล้วด้านบน / ตัวที่พิกัดผิดโซนวาดเป็นเส้นประแล้ว
         if(leafMode === 'mst') return;
-        const dist = leafParentDistance(f, d);
-        if(dist != null && dist > LEAF_FAR_PARENT_M) return;
+        if(outlierIds.has(d.id)) return;
       }
       // ไม่ยืดความยาวเส้นแล้ว (ทุกประเภท) — เดิมยืดตามอัตราส่วนความยาวสายจริง แต่อุปกรณ์ที่เรียงต่อกันตามแนวถนน
       // พอยืดทุกช่วง เส้นจะเลยจุดปลายไปซ้อนกับช่วงถัดไป เห็นเป็นเส้นขนานหลายเส้น (ไม่มีผลกับการคำนวณใดๆ)
@@ -2524,8 +2558,10 @@ function mapHoverTipHtml(f, d){
   if(d.rating) rows.push(`ขนาด: <b>${escapeHtml(d.rating)}</b>${d.ratingConfidence==='estimated'?' <span style="color:#b5651d">(ประมาณ)</span>':''}`);
   if(d.desc) rows.push(escapeHtml(d.desc));
   if(d.parentId) rows.push(`ต่อจาก: <b>${escapeHtml(d.parentId)}</b>${d.parentConfidence==='estimated'?' <span style="color:#b5651d">(ประมาณจากพิกัด)</span>':''}`);
-  const farDist = leafParentDistance(f, d);
-  if(farDist != null && farDist > LEAF_FAR_PARENT_M) rows.push(`<span style="color:#e07b00;font-weight:700;">⚠ ห่างอุปกรณ์ต้นทาง ${(farDist/1000).toFixed(1)} กม. — ควรตรวจสอบต้นทาง</span>`);
+  if(d.type === 'TRANSFORMER'){
+    const out = feederZoneOutliers(f).find(x=>x.d.id === d.id);
+    if(out) rows.push(`<span style="color:#e07b00;font-weight:700;">⚠ พิกัดน่าจะผิดโซน — ไกลจาก ${escapeHtml(out.ref.id)} ในโซนเดียวกัน ${(out.dist/1000).toFixed(1)} กม.</span>`);
+  }
   if(d.phase) rows.push(`เฟส: ${escapeHtml(d.phase)}`);
   if(d.meterCount != null) rows.push(`ผู้ใช้ไฟ: ${d.meterCount} ราย`);
   else if(d.customerImpact != null) rows.push(`ผู้ใช้ไฟที่ได้รับผลกระทบ: ${d.customerImpact} ราย`);
@@ -4658,7 +4694,7 @@ function gpsDistanceMeters(lat1, lon1, lat2, lon2){
   const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
-const GPS_TOLERANCE_M = 10;
+const GPS_TOLERANCE_M = 20;   // ระยะที่ถือว่าตำแหน่งตรงกัน (ตรงกับแอปสำรวจหม้อแปลง)
 function wireFieldFormGps(formEl, d){
   const btn = formEl.querySelector('.fv-gps-btn');
   const resultEl = formEl.querySelector('.fv-gps-result');
@@ -5090,13 +5126,7 @@ function buildQualityData(){
   return DATA.feeders.map(f=>{
     const tx = f.devices.filter(d=>d.type === 'TRANSFORMER');
     const chained = findChainedTransformers(f);
-    const far = [];
-    tx.forEach(d=>{
-      const p = f.devices.find(x=>x.id === d.parentId);
-      if(d.lat != null && p && p.lat != null && gpsDistanceMeters(p.lat, p.lon, d.lat, d.lon) > LEAF_FAR_PARENT_M){
-        far.push({ d, p, dist: gpsDistanceMeters(p.lat, p.lon, d.lat, d.lon) });
-      }
-    });
+    const far = feederZoneOutliers(f);
     return {
       feeder: f.id, f, nTx: tx.length,
       mistyped: findMistypedLeafDevices(f).length,
@@ -5130,7 +5160,9 @@ function renderReportTabQuality(){
   const phaseItems = [];
   rows.forEach(r=>{
     r.far.forEach(x=>farItems.push({ f:r.feeder, id:x.d.id, rating:x.d.rating, desc:x.d.desc,
-      note: `ต่อจาก ${x.p.id} · ห่าง ${(x.dist/1000).toFixed(1)} กม.` }));
+      note: x.mode === 'neighbor'
+        ? `ไกลจากหม้อแปลงเครื่องใกล้สุดในโซน ${escapeHtml(x.ref.id)} ${(x.dist/1000).toFixed(1)} กม.${x.prot ? ` (โซน ${escapeHtml(x.prot.id)})` : ''}`
+        : `อยู่เครื่องเดียวในโซน ${escapeHtml(x.ref.id)} · ห่าง ${(x.dist/1000).toFixed(1)} กม.` }));
     r.phaseBad.forEach(d=>{
       const cols = ['ia','ib','ic'].filter(k=>d.opsa[k] != null).length;
       phaseItems.push({ f:r.feeder, id:d.id, rating:d.rating, desc:d.desc,
@@ -5144,7 +5176,7 @@ function renderReportTabQuality(){
     <table class="report-table">
       <tr><th>วงจร</th><th>หม้อแปลง<br>ในผัง</th><th>จำหน่าย</th><th>เฉพาะราย</th><th>สาธารณะ</th><th>ชั่วคราว</th><th>รอจำแนก</th>
           <th>ยังไม่บันทึก<br>ชนิด</th><th>ประเภทเพี้ยน</th><th>ต่อพ่วงกับ<br>หม้อแปลง</th>
-          <th>ต้นทางยัง<br>ไม่ยืนยัน</th><th>ไม่มีพิกัด</th><th>ห่างต้นทาง<br>&gt; 1 กม.</th><th>เฟสไม่ตรง<br>OPSA</th>
+          <th>ต้นทางยัง<br>ไม่ยืนยัน</th><th>ไม่มีพิกัด</th><th>พิกัดผิดโซน<br><small>(น่าสงสัย)</small></th><th>เฟสไม่ตรง<br>OPSA</th>
           <th>ไม่มีข้อมูล OPSA<br><small>จำหน่าย / อื่นๆ</small></th></tr>
       ${rows.map(r=>`<tr>
         <td>${escapeHtml(r.feeder)}</td><td>${r.nTx}</td><td>${r.nPEA}</td><td>${r.nPRIVATE}</td><td>${r.nPUBLIC}</td><td>${r.nTEMP}</td>
@@ -5158,9 +5190,9 @@ function renderReportTabQuality(){
         <td>${sum('unconfirmed')}</td><td>${sum('noGps')}</td><td>${sum('far')}</td><td>${sum('phaseBad')}</td>
         <td>${sum('noOpsaDcc')} / ${sum('noOpsaPrivate')}</td></tr>
     </table>
-    <h3 style="margin:18px 0 6px;font-size:.95rem;">หม้อแปลงที่ห่างอุปกรณ์ต้นทางเกิน 1 กม. (ควรตรวจต้นทาง)</h3>
+    <h3 style="margin:18px 0 6px;font-size:.95rem;">หม้อแปลงที่พิกัดน่าจะผิดโซน (ไกลจากเพื่อนบ้านในโซนฟิวส์เดียวกันเกิน 1 กม.)</h3>
     <table class="report-table"><tr><th>วงจร</th><th>เลขหม้อแปลง</th><th>ขนาด</th><th>จุดติดตั้ง</th><th>รายละเอียด</th></tr>
-      ${detailRows(farItems, 'ห่างต้นทางเกิน 1 กม.')}</table>
+      ${detailRows(farItems, 'พิกัดผิดโซน')}</table>
     <h3 style="margin:18px 0 6px;font-size:.95rem;">เฟสในระบบไม่ตรงกับจำนวนเฟสที่มีกระแสใน OPSA</h3>
     <table class="report-table"><tr><th>วงจร</th><th>เลขหม้อแปลง</th><th>ขนาด</th><th>จุดติดตั้ง</th><th>รายละเอียด</th></tr>
       ${detailRows(phaseItems, 'เฟสไม่ตรง')}</table>
