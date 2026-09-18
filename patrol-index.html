@@ -50,6 +50,11 @@
   .pill{font-size:11px;padding:2px 8px;border-radius:10px;color:#fff;white-space:nowrap;}
   .mono{font-family:Consolas,monospace;font-size:12px;color:var(--muted);}
   #mapBox{height:64vh;border-radius:10px;overflow:hidden;border:1px solid var(--line);}
+  .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px;}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:13px;text-align:center;}
+  .stat .n{font-size:26px;font-weight:700;line-height:1.1;}
+  .stat .t{font-size:12px;color:var(--muted);margin-top:3px;}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:1px;}
   #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#333;color:#fff;
     padding:11px 17px;border-radius:9px;font-size:14px;z-index:200;display:none;max-width:88%;text-align:center;}
   #toast.show{display:block;} #toast.err{background:var(--sev1);} #toast.ok{background:#2e7d32;}
@@ -69,7 +74,8 @@
 </header>
 
 <nav>
-  <button data-tab="new" class="active">บันทึกใหม่</button>
+  <button data-tab="home" class="active">หน้าหลัก</button>
+  <button data-tab="new">บันทึกใหม่</button>
   <button data-tab="list">รายการ</button>
   <button data-tab="map">แผนที่</button>
   <button data-tab="setting">ตั้งค่า</button>
@@ -77,8 +83,28 @@
 
 <main>
 
+<!-- ========== หน้าหลัก ========== -->
+<section id="tab-home">
+  <div class="card" id="homeUser"></div>
+
+  <div class="stat-grid" id="homeStats"></div>
+
+  <button class="primary" id="btnGoNew" style="margin:4px 0 14px;">＋ บันทึกจุดที่พบใหม่</button>
+
+  <div class="card">
+    <h2>จุดที่พบล่าสุด</h2>
+    <div id="homeRecent"><div class="hint">กำลังโหลด ...</div></div>
+    <button class="ghost small" id="btnGoList" style="width:100%;margin-top:9px;">ดูทั้งหมด</button>
+  </div>
+
+  <div class="card">
+    <h2>ความพร้อมของข้อมูล</h2>
+    <div id="homeData"><div class="hint">กำลังตรวจสอบ ...</div></div>
+  </div>
+</section>
+
 <!-- ========== บันทึกใหม่ ========== -->
-<section id="tab-new">
+<section id="tab-new" style="display:none;">
   <div class="card">
     <h2>1. ตำแหน่งที่พบ</h2>
     <div class="row">
@@ -172,9 +198,10 @@
     <input type="text" id="cfgPoles" value="poles.json">
     <div class="row" style="margin-top:12px;">
       <button class="ghost" id="btnSaveCfg">บันทึกการตั้งค่า</button>
-      <button class="ghost" id="btnCache">ดาวน์โหลดข้อมูลไว้ใช้ออฟไลน์</button>
+      <button class="ghost" id="btnCache">โหลดข้อมูลใหม่จากระบบ</button>
     </div>
     <div class="hint" id="cacheInfo" style="margin-top:9px;"></div>
+    <div class="hint" style="margin-top:6px;">ระบบโหลดข้อมูลเสาและอุปกรณ์ให้เองอัตโนมัติตั้งแต่เปิดแอป แล้วเก็บไว้ในเครื่องเพื่อใช้ตอนไม่มีสัญญาณ — ปุ่มนี้ใช้เมื่อต้องการดึงข้อมูลล่าสุดเท่านั้น</div>
   </div>
   <div class="card">
     <h2>คิวรอส่ง</h2>
@@ -330,8 +357,9 @@ document.querySelectorAll('nav button').forEach(b=>{
   b.addEventListener('click', ()=>{
     document.querySelectorAll('nav button').forEach(x=> x.classList.remove('active'));
     b.classList.add('active');
-    ['new','list','map','setting'].forEach(t=>{ $('tab-'+t).style.display = (t === b.dataset.tab) ? '' : 'none'; });
+    ['home','new','list','map','setting'].forEach(t=>{ $('tab-'+t).style.display = (t === b.dataset.tab) ? '' : 'none'; });
     if(b.dataset.tab === 'map') initMap();
+    if(b.dataset.tab === 'home') renderHome();
   });
 });
 
@@ -341,7 +369,18 @@ function showGps(){
   $('gpsInfo').innerHTML = GPS
     ? `พิกัด <b>${GPS.lat.toFixed(6)}, ${GPS.lon.toFixed(6)}</b> · ความแม่นยำ ±${Math.round(GPS.acc)} ม.`
     : 'ยังไม่ได้จับพิกัด';
-  if(GPS) renderAnchorPick();
+  if(!GPS) return;
+  autoPickNearestPole();
+  renderAnchorPick();
+}
+/* เลือกเสาต้นที่ใกล้ที่สุดให้เองทันทีที่จับพิกัดได้ — ผู้ใช้กดเปลี่ยนเป็นต้นอื่นได้ตลอด */
+function autoPickNearestPole(){
+  if(ANCHOR.type !== 'POLE' || ANCHOR.ref || !POLES || !GPS) return;
+  const near = nearestPoles(GPS.lat, GPS.lon, 1);
+  if(near.length && near[0].d <= 60){
+    ANCHOR.ref = poleTag(near[0].p);
+    toast('เลือกเสาใกล้ที่สุดให้แล้ว (ห่าง ' + Math.round(near[0].d) + ' ม.) เปลี่ยนได้ในข้อ 1', 'ok');
+  }
 }
 function getPos(){
   return new Promise((res, rej)=> navigator.geolocation.getCurrentPosition(
@@ -603,7 +642,8 @@ async function loadList(){
     const r = await api({ action:'patrolList', status:$('fltStatus').value, severity:$('fltSeverity').value, limit:200 });
     if(!r.ok){ $('listBox').innerHTML = '<div class="hint">' + esc(r.error || 'โหลดไม่สำเร็จ') + '</div>'; return; }
     FINDINGS = r.findings || [];
-    renderList();
+    renderList(); renderHome();
+    if(mapReady) drawMapPins();
   }catch(e){ $('listBox').innerHTML = '<div class="hint">โหลดไม่สำเร็จ</div>'; }
 }
 let FINDINGS = [];
@@ -789,23 +829,10 @@ function fillTypes(){
 
 /* ดาวน์โหลดข้อมูลเสาและอุปกรณ์เก็บไว้ในเครื่อง เพื่อใช้ตอนไม่มีสัญญาณ */
 $('btnCache').onclick = async ()=>{
-  $('cacheInfo').textContent = 'กำลังดาวน์โหลด ...';
-  try{
-    const pr = await fetch(cfg.poles);
-    POLES = await pr.json();
-    await cPut('poles', POLES);
-  }catch(e){ $('cacheInfo').textContent = 'ดาวน์โหลดข้อมูลเสาไม่สำเร็จ — ตรวจว่ามีไฟล์ poles.json อยู่โฟลเดอร์เดียวกัน'; return; }
-  try{
-    const dr = await fetch(cfg.url);
-    const data = await dr.json();
-    DEVICES = [];
-    (data.feeders || []).forEach(f=> (f.devices || []).forEach(d=>{
-      DEVICES.push({ id:d.id, type:d.type, desc:d.desc, lat:d.lat, lon:d.lon, feeder:f.id });
-    }));
-    await cPut('devices', DEVICES);
-  }catch(e){ /* ไม่มีอุปกรณ์ก็ยังใช้เสาได้ */ }
-  showCacheInfo();
-  toast('เก็บข้อมูลไว้ในเครื่องแล้ว ใช้งานออฟไลน์ได้', 'ok');
+  $('cacheInfo').textContent = 'กำลังโหลด ...';
+  await autoLoadData(true);
+  if(POLES) toast('โหลดข้อมูลล่าสุดแล้ว', 'ok');
+  else $('cacheInfo').textContent = 'โหลดข้อมูลเสาไม่สำเร็จ — ตรวจว่ามีไฟล์ poles.json อยู่โฟลเดอร์เดียวกับหน้านี้';
 };
 function showCacheInfo(){
   $('cacheInfo').innerHTML =
@@ -813,6 +840,88 @@ function showCacheInfo(){
     'อุปกรณ์: <b>' + (DEVICES ? DEVICES.length.toLocaleString() : 0) + '</b> รายการ';
 }
 $('btnSync').onclick = ()=> syncQueue(false);
+
+/* ---------- หน้าหลัก ---------- */
+function switchTab(name){
+  document.querySelectorAll('nav button').forEach(x=> x.classList.toggle('active', x.dataset.tab === name));
+  ['home','new','list','map','setting'].forEach(t=>{ $('tab-'+t).style.display = (t === name) ? '' : 'none'; });
+  if(name === 'map') initMap();
+  if(name === 'home') renderHome();
+  window.scrollTo(0, 0);
+}
+function renderHome(){
+  // ผู้ใช้
+  $('homeUser').innerHTML = PROFILE && PROFILE.name
+    ? `<div style="font-size:16px;font-weight:700;color:var(--pea-purple);">${esc(PROFILE.name)}</div>
+       <div class="hint">${esc(PROFILE.position || '')}${PROFILE.org ? ' · ' + esc(PROFILE.org) : ''}</div>`
+    : `<div class="hint">ยังไม่ได้เข้าสู่ระบบ — เข้าที่หน้าศูนย์รวมงานก่อน แล้วกลับมาที่นี่</div>`;
+
+  // สถิติ
+  const open = FINDINGS.filter(f=> f.Status !== 'ปิด');
+  const sev1 = open.filter(f=> String(f.Severity) === '1');
+  const mine = FINDINGS.filter(f=> PROFILE && f.CreatedBy === PROFILE.name);
+  const stats = [
+    { n: sev1.length,  t: 'ระดับ 1 ค้างอยู่', c: 'var(--sev1)' },
+    { n: open.length,  t: 'ยังไม่ปิด',        c: 'var(--sev2)' },
+    { n: FINDINGS.length, t: 'จุดที่พบทั้งหมด', c: 'var(--pea-purple)' },
+    { n: mine.length,  t: 'ที่ฉันบันทึก',      c: 'var(--sev3)' }
+  ];
+  $('homeStats').innerHTML = stats.map(x=>
+    `<div class="stat"><div class="n" style="color:${x.c}">${x.n}</div><div class="t">${x.t}</div></div>`).join('');
+
+  // รายการล่าสุด
+  const recent = FINDINGS.slice(0, 5);
+  $('homeRecent').innerHTML = recent.length
+    ? recent.map(f=>`
+        <div class="item" data-id="${esc(f.FindingID)}" style="margin-bottom:7px;padding:9px;">
+          <div class="top">
+            <span class="pill" style="background:${SEV_COLOR[f.Severity] || '#888'}">${esc(f.Severity)}</span>
+            <b style="flex:1;font-size:14px;">${esc(typeName(f.ProblemType))}</b>
+            <span class="mono">${esc(f.Status)}</span>
+          </div>
+          <div class="hint" style="margin-top:3px;">${esc(f.AnchorRef || f.AnchorType)} · ${esc(f.CreatedAt)}</div>
+        </div>`).join('')
+    : '<div class="hint">ยังไม่มีจุดที่พบในระบบ</div>';
+  $('homeRecent').querySelectorAll('.item').forEach(el=> el.onclick = ()=> openDetail(el.dataset.id));
+
+  // ความพร้อมของข้อมูล
+  const ok = c=> c ? '<span class="dot" style="background:var(--sev3)"></span>' : '<span class="dot" style="background:var(--sev1)"></span>';
+  $('homeData').innerHTML =
+    `<div class="kv"><span>${ok(POLES)}ข้อมูลเสาไฟ</span><span>${POLES && POLES.poles ? POLES.poles.length.toLocaleString() + ' ต้น' : 'ยังไม่มี'}</span></div>
+     <div class="kv"><span>${ok(DEVICES)}อุปกรณ์ในผัง</span><span>${DEVICES ? DEVICES.length.toLocaleString() + ' รายการ' : 'ยังไม่มี'}</span></div>
+     <div class="kv"><span>${ok(TYPES.length)}ประเภทปัญหา</span><span>${TYPES.length} แบบ</span></div>
+     <div class="kv"><span>${ok(navigator.onLine)}สัญญาณ</span><span>${navigator.onLine ? 'ออนไลน์' : 'ออฟไลน์ — บันทึกได้ตามปกติ'}</span></div>`;
+}
+$('btnGoNew').onclick = ()=> switchTab('new');
+$('btnGoList').onclick = ()=> switchTab('list');
+
+/* โหลดข้อมูลเสาและอุปกรณ์ให้เองโดยไม่ต้องกดปุ่ม — ใช้ฐานข้อมูลชุดเดียวกับ Single Line Diagram */
+async function autoLoadData(force){
+  if(!navigator.onLine) return;
+  const fresh = 1000 * 60 * 60 * 24 * 7;   // ข้อมูลในเครื่องเก่ากว่า 7 วันจึงโหลดใหม่
+  try{
+    const c = await cGet('poles');
+    if(force || !c || (Date.now() - c.at) > fresh){
+      const pr = await fetch(cfg.poles);
+      if(pr.ok){ POLES = await pr.json(); await cPut('poles', POLES); }
+    }
+  }catch(e){}
+  try{
+    const c2 = await cGet('devices');
+    if(force || !c2 || (Date.now() - c2.at) > fresh){
+      const dr = await fetch(cfg.url);
+      const data = await dr.json();
+      const arr = [];
+      (data.feeders || []).forEach(f=> (f.devices || []).forEach(d=>{
+        arr.push({ id:d.id, type:d.type, desc:d.desc, lat:d.lat, lon:d.lon, feeder:f.id });
+      }));
+      if(arr.length){ DEVICES = arr; await cPut('devices', DEVICES); }
+    }
+  }catch(e){}
+  showCacheInfo();
+  renderAnchorPick();
+  renderHome();
+}
 
 /* ---------- เริ่มทำงาน ---------- */
 (async function start(){
@@ -831,6 +940,8 @@ $('btnSync').onclick = ()=> syncQueue(false);
   renderAnchorPick();
   await refreshQueueBadge();
 
+  renderHome();
+
   if(navigator.onLine && cfg.url && cfg.name){
     syncQueue(true);
     try{
@@ -842,7 +953,10 @@ $('btnSync').onclick = ()=> syncQueue(false);
         fillTypes(); renderUser();
       }
     }catch(e){}
+    loadList();            // ดึงจุดที่พบมาแสดงในหน้าหลักและแผนที่
+    autoLoadData(false);   // โหลดเสา/อุปกรณ์เองเบื้องหลัง ไม่ต้องกดปุ่ม
   }
+  renderHome();
 })();
 </script>
 </body>
