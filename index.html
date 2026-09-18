@@ -581,6 +581,10 @@
   .report-download-btn:hover{opacity:.9;}
   .report-note{font-size:.76rem;color:var(--muted);margin-bottom:12px;line-height:1.5;}
   .report-table{width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:18px;}
+  .q-cell{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px;}
+  .q-cell:hover{background:var(--pea-soft);}
+  .q-cell.q-bad{color:var(--bad);font-weight:700;}
+  .q-cell.q-inline{padding:0 2px;border-radius:3px;}
   .report-table th{background:var(--pea-purple);color:#fff;padding:8px 6px;text-align:center;
     position:sticky;top:0;}
   .report-table td{padding:6px;text-align:center;border-bottom:1px solid #eee;}
@@ -2296,6 +2300,23 @@ function gisCoordMismatches(f){
 const GIS_FUSE = {"ALA01F-12":[10,8.303828,98.720421],"ALA09F-04/04":[50,8.516699,98.700503],"ALA06WS-15":[400,8.396041,98.741669],"ALA06WS-902":[600,8.385315,98.729919],"ALA06WS-903":[400,8.381799,98.716664],"ALA03WS-902":[600,8.578961,98.919364],"ALA03WS-106":[600,8.44817,98.789537],"ALA01WS-108":[400,8.270968,98.803456],"ALA01WS-107":[600,8.271306,98.803326],"ALA06WS-107":[600,8.373086,98.717084],"ALA05WS-105":[400,8.507169,98.675545],"ALA09WS-109":[600,8.532823,98.710974],"ALA02WS-108":[400,8.270739,98.803872],"ALA07WS-110":[400,8.525165,98.86027],"ALA1CWS-01":[600,8.420532,98.739849],"ALA2CWS-01":[600,8.42036,98.73978],"ALA02WS-01":[600,8.420499,98.739835],"ALA03WS-01":[600,8.420485,98.739829],"ALA04WS-01":[600,8.420472,98.739824],"ALA05WS-01":[600,8.420459,98.739819],"ALA07WS-01":[600,8.420429,98.739807],"ALA06WS-01":[600,8.420444,98.739813],"ALA08WS-01":[600,8.420414,98.739801],"ALA09WS-01":[600,8.4204,98.739795],"ALA10WS-01":[600,8.420385,98.73979],"ALA2BWS-01":[600,8.420427,98.739838],"ALA0BWS-01":[600,8.42045,98.739835],"ALA0BWS-02":[600,8.420441,98.739831],"ALA1TWS-01":[600,8.420522,98.739845],"ALA2TWS-01":[600,8.420371,98.739784],"ALA1BWS-01":[600,8.420511,98.739872],"ALA01WS-01":[600,8.42051,98.739841],"ALA03WS-120":[400,8.580307,98.92705],"ALA02WS-107":[600,8.291764,98.797041],"ALA03WS-114":[600,8.532877,98.860266],"ALA09WS-111":[400,8.57782,98.741817],"ALA06WS-110":[600,8.384792,98.715543],"ALA07WS-104":[600,8.396753,98.745884],"ALA09WF-718":[10,8.651106,98.776237],"ALA09WF-715":[10,8.564785,98.733608],"ALA05WS-102":[400,8.445513,98.738839],"ALA05WS-116":[600,8.500721,98.633646],"PGA07WS-124":[400,8.496369,98.630144],"ALA09WS-105":[400,8.507898,98.670493],"ALA05WS-111":[400,8.517695,98.63378],"ALA03WF-705":[10,8.426014,98.76781],"ALA06WF-125":[10,8.323788,98.670269],"ALA04WS-02":[600,8.421328,98.739681],"ALA03WF-190/01":[2,8.555663,98.79171],"ALA02WF-128":[50,8.292437,98.792635],"CLA01WS-124":[400,8.660304,98.779622],"ALA03WS-110":[600,8.455136,98.789025],"ALA03WS-118":[600,8.55844,98.812945],"ALA02WS-102":[400,8.375158,98.743687],"ALA02WF-117":[10,8.35941,98.770232],"QSA05WS-116":[400,8.583922,98.935123],"ALA08WS-02":[600,8.421483,98.739711],"ALA05F-15/01":[50,8.507505,98.670614],"ALA05WS-108":[600,8.507841,98.668313],"ALA05WF-161":[2,8.411678,98.630561],"ALA05WF-167":[2,8.497379,98.630302],"ALA05WF-135":[2,8.510741,98.630837],"ALA05WF-168":[2,8.500526,98.631398],"ALA05WF-137":[2,8.490292,98.641553],"ALA05WF-158":[2,8.413853,98.637658],"ALA05WF-159":[2,8.412306,98.630922],"ALA06WS-104":[600,8.373728,98.731872],"ALA06WS-103":[400,8.386722,98.729641],"ALA06WS-108":[600,8.384701,98.715522],"ALA06WS-109":[600,8.384796,98.715457],"ALA03WF-151":[50,8.534035,98.796992],"ALA03WF-153":[50,8.500932,98.838055],"ALA03WF-155":[50,8.506592,98.84153],"ALA03WF-156":[50,8.511829,98.846806],"ALA03WF-199":[50,8.542393,98.868492],"ALA03WF-205":[50,8.554764,98.881926],"ALA09WF-138":[50,8.618218,98.754249],"ALA05WF-111":[50,8.473719,98.672183],"ALA05WF-114":[50,8.507448,98.671267],"ALA05WF-115":[50,8.507673,98.668513],"ALA05WS-117":[400,8.458759,98.649999],"ALA05WF-164":[2,8.401557,98.637781],"ALA05WF-165":[2,8.401042,98.637208],"ALA05WF-166":[2,8.400168,98.636711],"ALA05WF-149":[2,8.426997,98.635847],"ALA05WF-153":[2,8.425919,98.643243],"ALA05WF-150":[2,8.423788,98.62315],"ALA07WS-108":[400,8.458368,98.791329],"ALA07WS-105":[400,8.405344,98.748618],"ALA09WS-901":[400,8.514533,98.694757],"ALA03WF-115":[50,8.403836,98.8507],"ALA09WF-143":[50,8.626183,98.760702],"ALA09WF-149":[50,8.65944,98.778768],"ALA09WF-148":[50,8.651911,98.777292],"ALA03WF-174":[50,8.585179,98.827903],"ALA09WF-126":[50,8.576871,98.723432],"ALA03WS-901":[400,8.578937,98.919315],"ALA03WS-104":[600,8.44816,98.789491],"ALA03WS-105":[600,8.448117,98.789547],"ALA03WS-111":[400,8.521772,98.858141],"ALA09WF-137":[50,8.606389,98.748373],"ALA09WF-139":[50,8.618409,98.753532],"ALA09WF-124":[50,8.567561,98.737155],"ALA01WS-104":[600,8.304659,98.778417],"ALA06WS-106":[600,8.373041,98.717065],"ALA06WS-105":[600,8.373063,98.717129],"ALA05WS-104":[400,8.506401,98.684759],"ALA01WS-102":[400,8.360096,98.753179],"ALA02F-27":[50,8.282584,98.79869],"ALA05WS-101":[600,8.421596,98.739419],"ALA01WS-101":[600,8.420328,98.738998],"ALA06WS-101":[600,8.420228,98.738986],"ALA06F-08":[50,8.37844,98.723225],"ALA03WS-102":[400,8.416332,98.758687],"ALA09WS-101":[600,8.421392,98.739683],"ALA02WS-101":[600,8.420206,98.739298],"ALA07WS-101":[600,8.420087,98.739238],"ALA03WS-101":[600,8.42,98.739189],"ALA06WS-102":[400,8.39796,98.742458],"ALA06F-07":[50,8.38081,98.724343],"ALA01WF-106":[50,8.388369,98.741997],"ALA02WF-105":[15,8.381233,98.747627],"ALA09WF-102":[10,8.453941,98.738475],"ALA02WF-102":[20,8.390987,98.742839],"ALA02WF-101":[25,8.399954,98.742536],"ALA02WF-103":[20,8.386153,98.74217],"ALA02WF-104":[30,8.380369,98.741945],"ALA02WF-108":[20,8.388491,98.804477],"ALA09WF-701/01":[2,8.469399,98.737036],"ALA02WF-711":[10,8.313421,98.834271],"ALA02WF-713":[10,8.319529,98.852583],"ALA02WF-136":[20,8.339794,98.885253],"ALA09WF-702":[6,8.486273,98.720465],"ALA09WF-701":[10,8.469035,98.737037],"ALA0W9F-122":[20,8.563538,98.735803],"ALA02WF-123":[6,8.343767,98.792958],"ALA02WF-113":[15,8.332666,98.76995],"ALA06WF-106":[50,8.386649,98.729379],"ALA06WF-103":[50,8.390876,98.733986],"ALA06WF-105":[50,8.387797,98.730999],"ALA09WF-109":[50,8.526396,98.706877],"ALA09WF-112":[50,8.532304,98.711266],"ALA09WF-107":[50,8.515323,98.694498],"ALA09WF-110":[50,8.532785,98.710524],"ALA07WF-XX":[50,8.536415,98.866946],"AALA07WF-142":[50,8.531359,98.864465],"ALA09WF-135":[50,8.599083,98.745583],"ALA09WF-131":[50,8.586084,98.7376],"ALA09WF-133":[50,8.590174,98.742929],"ALA09WF-134":[50,8.591155,98.743195],"ALA09WF-136":[50,8.603817,98.748262],"ALA09WF-141":[50,8.619984,98.758342],"ALA09WF-128":[50,8.570946,98.743826],"ALA09WF-140":[50,8.621323,98.756815],"ALA09WF-146":[50,8.642649,98.774496],"ALA0W5F-105":[50,8.496551,98.704787],"ALA09WS-102":[600,8.448933,98.740221],"ALA09WF-105":[50,8.49555,98.707441],"ALA09WS-103":[400,8.47361,98.73387],"ALA05WS-103":[400,8.447112,98.739557],"ALA05WF-102":[50,8.451554,98.738868],"ALA05WF-106":[50,8.500699,98.69892],"ALA09WF-703":[50,8.505206,98.693917],"ALA05WF-117":[50,8.508501,98.658508],"ALA05WS-109":[600,8.507814,98.667773],"ALA06WF-107":[6,8.388823,98.722537],"ALA06WF-108":[10,8.386088,98.728964],"ALA06WF-111":[10,8.375925,98.728219],"ALA06WF-117":[6,8.366325,98.714788],"ALA06WF-118":[2,8.363533,98.714552],"ALA06WF-123":[6,8.365742,98.638523],"ALA07WF-116":[30,8.452506,98.808192],"ALA02WF-703":[25,8.341841,98.765361],"ALA02WF-705":[10,8.350402,98.781295],"ALA02WF-707":[10,8.355656,98.782329],"ALA02WF-114":[6,8.357276,98.783967],"ALA02WF-118":[10,8.356118,98.767386],"ALA07WF-124":[2,8.475175,98.807793],"ALA02WF-709":[10,8.344532,98.786063],"ALA03WS-10":[600,8.398065,98.858185],"ALA05WF-126":[10,8.510473,98.645705],"ALA01F-10/01":[10,8.302945,98.73471],"ALA03WS-119":[400,8.556568,98.807267],"ALA01WS-103":[400,8.307515,98.77761],"ALA01WS-106":[400,8.296929,98.788809],"ALA03WS-115":[400,8.552863,98.817282],"ALA07WS-112":[400,8.578218,98.921903],"ALA02WS-104":[400,8.290643,98.793442],"ALA09WF-706":[50,8.507503,98.682271],"ALA09WF-707":[2,8.508554,98.68297],"ALA09WF-708":[50,8.510077,98.684068],"ALA09WF-712":[50,8.518785,98.701337],"ALA09WF-113":[50,8.531394,98.713212],"ALA05WF-127":[2,8.511515,98.644272],"ALA05WF-133":[2,8.515524,98.633161],"ALA05WF-157":[2,8.415956,98.63881],"ALA05WF-151":[50,8.425616,98.632049],"ALA05WF-154":[50,8.418816,98.640141],"ALA01WF-706":[10,8.26935,98.785515],"ALA01WF-701":[10,8.305803,98.740134],"ALA06WF-110":[30,8.379978,98.724213],"ALA05WF-110":[50,8.489187,98.67369],"ALA05WF-113":[50,8.477093,98.656353],"ALA05WF-112":[50,8.473767,98.672138],"ALA03WF-157":[6,8.524321,98.859605],"ALA03WF-158":[10,8.525447,98.860395],"ALA03WF-197":[10,8.534169,98.865336],"ALA03WF-198":[6,8.53469,98.864478],"ALA03WF-206":[6,8.57095,98.894091],"ALA03WF-207":[6,8.570654,98.894589],"ALA03WF-208":[2,8.571031,98.915569],"ALA03WF-209":[6,8.573396,98.917184],"ALA06WF-135":[10,8.391783,98.699664],"ALA06WF-139":[6,8.445715,98.69069],"ALA09WF-132":[2,8.583778,98.742507],"ALA03WF-145":[2,8.50583,98.774026],"ALA03WF-146":[2,8.505709,98.773395],"ALA03WF-148":[2,8.519852,98.780689],"ALA03WF-147":[2,8.519538,98.78055],"ALA03WF-150":[2,8.530291,98.787011],"ALA03WF-152":[6,8.474098,98.805202],"ALA03WF-154":[5,8.50154,98.838761],"ALA06WF-130":[10,8.28573,98.656492],"ALA01WF-704":[10,8.300205,98.720938],"ALA01WF-127":[10,8.283455,98.797575],"ALA07WF-706":[2,8.505365,98.841345],"ALA03F-08/01":[10,8.488478,98.795848],"ALA03WS-113":[600,8.532863,98.860236],"ALA07WF-113":[50,8.455757,98.790079],"ALA03F-08":[50,8.493757,98.78374],"ALA03WF-159":[50,8.525773,98.86029],"ALA09WF-130":[50,8.581393,98.741625],"ALA03WF-200":[50,8.546039,98.857161],"ALA01WF-113":[10,8.303705,98.772786],"ALA01WF-116":[10,8.297227,98.750074],"ALA01WF-125":[10,8.298573,98.78668],"ALA01WF-115":[50,8.29656,98.753449],"ALA01WF-120":[25,8.301473,98.745304],"ALA06WF-131":[50,8.280391,98.652647],"ALA02WF-132":[50,8.309016,98.824374],"ALA06WF-127":[50,8.315033,98.666327],"ALA06WF-128":[50,8.309828,98.664137],"ALA06WF-121":[50,8.36439,98.648167],"ALA06WF-126":[50,8.32179,98.668116],"ALA06WF-124":[50,8.334311,98.680069],"ALA06WF-120":[50,8.353914,98.684112],"ALA06WF-116":[50,8.372808,98.717511],"ALA07WF-105":[10,8.404696,98.767228],"ALA07WF-110":[50,8.425494,98.767876],"ALA07WF-711":[50,8.43436,98.777522],"ALA03WF-102":[50,8.428673,98.770618],"ALA06WF-119":[50,8.370542,98.708117],"ALA06WF-134":[50,8.400241,98.704672],"ALA06WF-142":[50,8.447053,98.716307],"ALA06WF-143":[50,8.453922,98.717388],"ALA02WF-141":[50,8.372295,98.891419],"ALA09WF-108":[50,8.516092,98.694177],"ALA05WF-116":[50,8.508039,98.664281],"ALA03WS-107":[400,8.398131,98.858239],"ALA07WS-113":[600,8.580367,98.927877],"ALA05WF-122":[50,8.49504,98.652384],"ALA01WF-117":[20,8.285257,98.744807],"ALA01WF-119":[10,8.281696,98.746659],"ALA01WF-122":[10,8.30804,98.749149],"ALA01WF-110":[20,8.327794,98.770901],"ALA01WF-105":[10,8.40025,98.741729],"ALA04WF-104":[10,8.401384,98.741745],"ALA01WF-103":[10,8.403236,98.741399],"ALA01WF-102":[20,8.403841,98.739335],"ALA07WS-705":[10,8.402898,98.746527],"ALA07WF-109":[10,8.399637,98.744944],"ALA07WF-112":[6,8.430461,98.792092],"ALA07WF-704":[10,8.435869,98.778683],"ALA07WF-104":[6,8.404924,98.758783],"ALA07WF-701":[10,8.407646,98.80193],"ALA07WF-702":[6,8.408572,98.801193],"ALA07WF-125":[2,8.476825,98.813291],"ALA07WF-126":[2,8.477475,98.814568],"ALA07WF-707":[2,8.508443,98.84407],"ALA07WF-130":[2,8.515693,98.855128],"ALA07WF-137":[2,8.504102,98.887078],"ALA02WF-122":[10,8.339671,98.786593],"ALA02WF-124":[6,8.343334,98.798096],"ALA02WF-125":[6,8.343053,98.806303],"ALA02WF-710":[20,8.291533,98.794213],"ALA07F-36":[50,8.49811,98.884149],"ALA05WF-152":[2,8.425758,98.630906],"ALA05WF-124":[2,8.494068,98.647229],"ALA05WF-121":[2,8.496318,98.649467],"ALA06WS-901":[400,8.386193,98.729449],"ALA09WF-120":[10,8.553474,98.719464],"ALA05WF-118":[10,8.508817,98.648611],"ALA02WF-143":[25,8.366724,98.911668],"ALA06WF-136":[50,8.403411,98.703427],"ALA01WF-112":[10,8.320851,98.772839],"ALA01WF-101":[10,8.404265,98.741042],"ALA06WF-109":[50,8.383372,98.72616],"ALA06WF-137":[50,8.420857,98.693682],"ALA06WF-140":[50,8.449333,98.697734],"ALA06WF-141":[50,8.448769,98.69767],"ALA09WF-103":[50,8.466645,98.737433],"ALA09WF-123":[2,8.559063,98.734109],"ALA09WF-125":[2,8.573667,98.731235],"ALA09WF-129":[2,8.577047,98.740483],"ALA09WF-145":[50,8.639881,98.771986],"ALA09WF-147":[50,8.650484,98.776173],"ALA09WF-710":[2,8.514433,98.699446],"ALA05WF-104":[50,8.475171,98.701594],"ALA05WF-701":[50,8.495946,98.686519],"ALA05WF-702":[50,8.484096,98.690836],"ALA07WF-144":[2,8.534631,98.865993],"ALA07WF-146":[2,8.542638,98.869222],"ALA07WF-147":[2,8.54383,98.869587],"ALA07WF-148":[2,8.545989,98.870613],"ALA07WF-149":[2,8.54703,98.871251],"ALA07WF-151-1":[2,8.552488,98.893276],"ALA07WF-152":[2,8.555317,98.904903],"ALA07WF-154":[2,8.55469,98.908313],"ALA07WF-708":[2,8.504462,98.888981],"ALA07WF-138":[2,8.503929,98.889226],"ALA07WF-140":[2,8.499024,98.882196],"ALA07WF-143":[2,8.530097,98.868351],"ALA07WF-709":[2,8.533011,98.865402],"ALA02WF-121":[10,8.305986,98.786003],"ALA09WS-112":[400,8.58283,98.742113],"ALA05WS-113":[600,8.501517,98.629667],"ALA03WF-704":[50,8.42511,98.765585],"ALA06WF-104":[10,8.389903,98.732943],"ALA06WF-132":[10,8.282379,98.649446],"ALA03WF-710":[10,8.466367,98.794739],"ALA06WF-114":[10,8.37743,98.722282],"ALA02WF-708":[10,8.320326,98.788722],"ALA01WF-109":[10,8.329948,98.770185],"ALA01WF-111":[6,8.324969,98.771497],"ALA07WF-103":[10,8.404805,98.756546],"ALA07WF-107":[10,8.404427,98.802183],"ALA09WF-144":[10,8.634069,98.766981],"ALA02WF-706":[15,8.351374,98.781221],"ALA02WF-120":[25,8.301381,98.784642],"ALA02WF-119":[15,8.319131,98.774003],"ALA02WF-714":[50,8.320194,98.872421],"ALA09WF-711":[50,8.515838,98.700643],"ALA09WF-713":[50,8.524728,98.705066],"ALA09WF-714":[50,8.525659,98.719397],"ALA06F-101":[50,8.41261,98.736812],"ALA02WF-129":[50,8.290913,98.793287],"ALA02WS-103":[400,8.344698,98.763462],"ALA09WS-110":[400,8.573855,98.740512],"ALA03WF-104":[50,8.45071,98.786281],"ALA02WS-105":[600,8.29167,98.797002],"ALA02WS-106":[600,8.291729,98.797146],"ALA09WF-118":[10,8.531791,98.749849],"ALA05WF-119":[50,8.508748,98.648507],"ALA03F-01/02":[50,8.426966,98.768648],"ALA03F-11":[10,8.506399,98.774508],"ALA05WF-141":[10,8.472788,98.652203],"ALA05WF-145":[10,8.449907,98.647854],"ALA01WF-702":[15,8.321336,98.744939],"ALA05WF-101":[50,8.431886,98.739506],"ALA09WF-106":[50,8.50281,98.69709],"ALA09WS-106":[400,8.531475,98.709989],"ALA05WF-108":[10,8.495605,98.68629],"ALA01WF-121":[15,8.305136,98.745773],"ALA05WS-110":[600,8.508035,98.664864],"ALA03WS-103":[400,8.447696,98.785711],"ALA01WF-114":[6,8.303845,98.768361],"ALA05WF-128":[2,8.512921,98.642324],"ALA02WF-137":[50,8.343647,98.888593],"ALA02WF-138":[50,8.348024,98.897046],"ALA02WF-712":[50,8.318172,98.850024],"ALA02WF-134":[50,8.327008,98.860575],"ALA02WF-131":[50,8.305709,98.818509],"ALA02WF-110":[50,8.374908,98.833565],"ALA02WF-109":[6,8.378131,98.832024],"ALA02WF-107":[6,8.388508,98.797333],"ALA07WF-108":[50,8.407142,98.814717],"ALA07WF-106":[6,8.403598,98.798793],"ALA02WF-115":[6,8.359979,98.785689],"ALA02WF-133":[50,8.322046,98.854307],"ALA01WF-108":[10,8.360633,98.752476],"ALA01WF-107":[6,8.366228,98.748927],"ALA02WF-116":[6,8.359186,98.773544],"ALA01WF-126":[10,8.28924,98.793725],"ALA01WF-128":[15,8.276264,98.800921],"ALA01WF-118":[6,8.28309,98.743919],"ALA01WF-124":[25,8.30639,98.720577],"ALA01WF-123":[6,8.328336,98.745182],"ALA06WF-112":[50,8.373219,98.733466],"ALA06WF-115":[50,8.373662,98.720173],"ALA06WF-102":[50,8.394425,98.739405],"ALA09WF-121":[50,8.549734,98.73047],"ALA09WF-116":[50,8.541583,98.723283],"ALA09WF-117":[50,8.541968,98.72487],"ALA09WF-114":[50,8.539509,98.719266],"ALA09WS-107":[600,8.532812,98.710921],"ALA03F-170":[50,8.569091,98.823878],"ALA03F-171":[50,8.564418,98.826738],"ALA03F-169":[50,8.561841,98.815048],"ALA09WF-127":[50,8.572778,98.740863],"ALA05WF-103":[50,8.489427,98.71524],"ALA02WF-106":[50,8.381564,98.765405],"ALA07WF-101":[15,8.397304,98.751353],"ALA07WF-102":[6,8.393222,98.755391],"ALA03WF-101":[50,8.423812,98.763283],"ALA03WF-204/1":[6,8.563116,98.855493],"QSA05WS-000":[600,8.583428,98.934124],"ALA09WS-902":[600,8.514497,98.694757],"ALA07WS-106":[600,8.439485,98.782179],"ALA07WS-107":[600,8.439574,98.782271],"ALA09WS-108":[600,8.532868,98.710963],"ALA09WF-115":[50,8.540719,98.720004],"ALA09WF-119":[50,8.547937,98.728495],"ALA03WF-103":[10,8.429149,98.771764],"ALA03WF-703":[6,8.414026,98.755776],"ALA03WF-702":[6,8.403519,98.746586],"ALA09WF-705":[25,8.507187,98.688696],"ALA09WF-704":[20,8.507282,98.68981],"ALA09WF-104":[10,8.47052,98.743176],"ALA09WF-101":[6,8.449174,98.740299],"ALA09WF-717":[20,8.595607,98.744491],"ALA05WF-131":[2,8.517833,98.636614],"ALA09WS-104":[400,8.506839,98.683199],"ALA05WF-163":[2,8.404065,98.639883],"ALA05WF-123":[2,8.496159,98.649355],"ALA05WF-155":[50,8.418546,98.639723],"ALA05WF-156":[50,8.417193,98.639339],"ALA05WF-162":[50,8.413582,98.637835],"ALA05WF-148":[50,8.427344,98.644256],"ALA05WF-132":[50,8.516274,98.633376],"ALA05WF-143":[50,8.461233,98.650259],"ALA05WF-138":[50,8.476833,98.649485],"ALA02F-12/01":[10,8.388492,98.790932],"ALA05WF-160":[50,8.414318,98.630218],"ALA02WF-144":[50,8.377943,98.916764],"ALA05WS-112":[400,8.517156,98.633409],"ALA05WF-125":[2,8.496199,98.644379],"ALA07WS-111":[600,8.549145,98.87225],"ALA07F-01/02":[30,8.396726,98.743137],"ALA01WF-705":[10,8.305816,98.719237],"ALA02WF-130":[10,8.297248,98.810325],"ALA02WF-701":[25,8.38086,98.746476],"ALA02WF-702":[25,8.381038,98.74728],"ALA02WF-704":[15,8.33879,98.767346],"ALA05WF-038":[50,8.443916,98.684956],"ALA06WF-129":[50,8.308136,98.664637],"ALA06WF-122":[50,8.366385,98.638602],"ALA06WF-113":[50,8.368279,98.727485],"ALA05WF-129":[10,8.51492,98.63927],"ALA02WF-142":[50,8.363184,98.907254],"ALA02WF-140":[50,8.358612,98.901548],"ALA02WF-139":[50,8.350649,98.898103],"ALA02WF-135":[50,8.329893,98.871677],"ALA05WF-139":[50,8.476775,98.650463],"ALA05WF-142":[50,8.464555,98.652994],"ALA05WF-144":[50,8.451205,98.649039],"ALA05WF-140":[50,8.473708,98.651902],"ALA05WF-134":[50,8.513349,98.632855],"ALA05WF-136":[50,8.503065,98.6295],"ALA05WS-114":[600,8.500758,98.633614],"ALA05WS-115":[600,8.500754,98.633686],"ALA05WF-146":[50,8.445333,98.648704],"ALA05F-07/02":[50,8.443575,98.685009],"ALA09WF-709":[50,8.514753,98.695431],"ALA07WS-109":[400,8.522013,98.858597],"ALA05WS-107":[600,8.507767,98.668233],"ALA05WS-106":[600,8.507749,98.668355],"ALA07WS-102":[600,8.396652,98.745885],"ALA07WS-103":[600,8.396728,98.74599],"ALA05WF-130":[10,8.515777,98.638109],"ALA05WF-147":[10,8.431447,98.647059],"ALA05WF-120":[2,8.501056,98.64909],"ALA03WF-180":[50,8.641928,98.848451],"ALA07WF-121":[50,8.45137,98.844337],"ALA07WF-128":[50,8.487259,98.828629],"ALA07WF-127":[50,8.486059,98.825812],"ALA07WF-117":[50,8.454017,98.821637],"ALA07WF-114":[50,8.452689,98.807813],"ALA07WF-120":[50,8.448043,98.83981],"ALA07WF-115":[50,8.452088,98.807867],"ALA07WF-119":[50,8.44718,98.834271],"ALA03WF-128":[50,8.390297,98.869245],"ALA03WF-124":[50,8.39278,98.865994],"ALA03WF-122":[50,8.395803,98.861949],"ALA03WF-119":[50,8.401147,98.854619],"ALA03WF-121":[50,8.398273,98.858374],"ALA03WF-195":[50,8.576066,98.753774],"ALA03WF-194":[50,8.573384,98.763146],"ALA03WF-140":[50,8.461167,98.791199],"ALA03WF-111":[50,8.40662,98.847141],"ALA03WF-113":[50,8.43399,98.86123],"ALA03WF-123":[50,8.395376,98.862053],"ALA03WF-110":[50,8.409141,98.843097],"ALA03WF-175":[50,8.591248,98.840871],"ALA03WF-192":[50,8.559721,98.776939],"ALA07WF-157":[50,8.579489,98.925671],"ALA03WF-134":[50,8.378531,98.884696],"ALA03WF-129":[50,8.387399,98.873553],"ALA03F-09":[50,8.498207,98.782474],"ALA02F-28":[50,8.285574,98.807001],"ALA07F-26/01":[10,8.451697,98.850789],"ALA09WF-111":[10,8.544173,98.700591],"ALA09WF-142":[10,8.621715,98.757383],"ALA03WF-133":[50,8.381268,98.880767],"ALA07F-20":[50,8.377654,98.885952],"ALA03WF-201":[50,8.554237,98.878621],"ALA03WF-203":[50,8.580066,98.857882],"ALA03WF-204":[50,8.571123,98.856521],"ALA03F-141":[50,8.466435,98.782332],"ALA03WF-139":[50,8.456196,98.789369],"ALA07WF-129":[50,8.51687,98.85381],"ALA07WF-133":[50,8.498912,98.8509],"ALA07WF-131":[50,8.510661,98.862356],"ALA03WF-186":[50,8.65417,98.857597],"ALA03WF-189":[50,8.672533,98.875451],"ALA03WF-211":[50,8.581504,98.919862],"ALA03WF-108":[50,8.420158,98.828384],"ALA03WF-109":[50,8.417748,98.83177],"ALA03WF-161":[50,8.542222,98.838366],"ALA03WF-166":[50,8.550273,98.819523],"ALA03WF-172":[50,8.584158,98.827398],"ALA03F-190":[50,8.557886,98.794416],"ALA07WF-135":[50,8.505381,98.874655],"ALA07WF-136":[50,8.505263,98.87833],"ALA03F-176":[50,8.613255,98.83671],"ALA03WF-183":[50,8.641577,98.848705],"ALA07WF-134":[50,8.512445,98.878143],"ALA07WF-156":[50,8.573094,98.917368],"ALA07WF-155":[50,8.56407,98.911326],"ALA03WF-210":[50,8.574277,98.917767],"ALA07WF-153":[50,8.555984,98.906175],"ALA07WF-151":[50,8.552047,98.87509],"ALA07WF-145":[50,8.539372,98.867872],"ALA07WF-132":[50,8.510582,98.862598],"ALA03WF-106":[50,8.426348,98.819267],"ALA03WF-196":[50,8.589293,98.766222],"ALA07WF-122":[50,8.465976,98.848182],"ALA03WF-181":[50,8.652661,98.849832],"ALA05WF-109":[50,8.506292,98.681337],"ALA05WF-107":[50,8.505829,98.692002],"ALA07F-38":[50,8.530031,98.863495],"ALA07WF-141":[50,8.53047,98.863881],"ALA03WF-713":[50,8.588395,98.918482],"ALA03WF-709":[25,8.45088,98.785903],"ALA03WF-163":[6,8.546691,98.827858],"ALA03WF-165":[10,8.547607,98.82215],"ALA03WF-118":[6,8.45718,98.890153],"ALA03WF-708":[10,8.38899,98.865932],"ALA7WF-123":[10,8.449946,98.855089],"ALA03WF-120":[10,8.400815,98.854392],"ALA03WF-125":[10,8.392282,98.865658],"ALA03WF-130":[10,8.386915,98.873211],"ALA03WF-131":[10,8.384064,98.876968],"ALA07WF-150":[10,8.548022,98.871698],"ALA03WF-179":[10,8.629385,98.847185],"ALA03WF-178":[10,8.616008,98.842422],"ALA03WF-188":[10,8.671036,98.872201],"ALA03WF-711":[10,8.557457,98.79634],"ALA03WF-193":[10,8.569131,98.764606],"ALA03WF-706":[10,8.430272,98.814483],"ALA03WF-127":[10,8.388841,98.866058],"ALA03WF-107":[10,8.423106,98.823983],"ALA03WF-184":[10,8.647317,98.853807],"ALA03WF-185":[10,8.651883,98.856867],"ALA03WS-112":[600,8.532848,98.860287],"ALA03WS-109":[600,8.455201,98.788997],"ALA03WS-108":[600,8.455149,98.788952],"ALA03WF-114":[10,8.403671,98.850577],"ALA03WF-168":[10,8.55471,98.811542],"ALA03WS-116":[600,8.558403,98.812861],"ALA03WS-117":[600,8.558533,98.812907],"ALA07F-01-01":[20,8.401435,98.742263],"ALA09WF-716":[2,8.572275,98.732856],"ALA09WF-719":[50,8.651634,98.779511],"ALA03WF-191":[50,8.557409,98.780422],"ALA03WF-173":[50,8.599665,98.819903],"ALA03WF-177":[2,8.650566,98.807807],"ALA03WF-182":[50,8.659759,98.849849],"ALA03WF-187":[50,8.661627,98.8723],"ALA03WF-712":[50,8.57322,98.769234],"ALA03WF-167":[50,8.551564,98.818214],"ALA03WF-164":[10,8.547623,98.82327],"ALA03WF-162":[10,8.542329,98.837591],"ALA03WF-160":[6,8.54005,98.843191]};
 const GIS_FUSE_K = new Set([1,2,3,6,8,10,15,20,25,30,40,65,80,100,140,200]);
 function ratingNumber(v){ const m = String(v||'').match(/[\d.]+/); return m ? parseFloat(m[0]) : null; }
+// หม้อแปลงที่มีในผังแต่ไม่มีใน GIS — หาเครื่องใน GIS ที่อยู่ใกล้ที่สุด เผื่อเป็นเครื่องเดียวกันแต่เลขไม่ตรง
+function gisOrphanInfo(d){
+  if(d.type !== 'TRANSFORMER' || GIS_TR[d.id]) return null;
+  let near = null, nd = Infinity;
+  if(d.lat != null){
+    for(const id in GIS_TR){
+      const g = GIS_TR[id];
+      const dist = gpsDistanceMeters(g[0], g[1], d.lat, d.lon);
+      if(dist < nd){ nd = dist; near = { id, g, dist }; }
+    }
+  }
+  return { d, near: near && near.dist <= 60 ? near : null, nearAny: near };
+}
+function feederGisOrphans(f){
+  return f.devices.map(gisOrphanInfo).filter(Boolean);
+}
+
 function gisFuseDiff(d){
   const g = GIS_FUSE[d.id];
   if(!g || d.type !== 'WF') return null;
@@ -5564,10 +5585,104 @@ function buildQualityData(){
     };
   });
 }
+// รายการอุปกรณ์ของแต่ละช่องในตารางคุณภาพข้อมูล — คลิกตัวเลขแล้วมาหน้านี้
+const QUALITY_METRICS = {
+  all:{label:'หม้อแปลงทั้งหมดในผัง'}, PEA:{label:'หม้อแปลงจำหน่าย'}, PRIVATE:{label:'หม้อแปลงเฉพาะราย'},
+  PUBLIC:{label:'หม้อแปลงสาธารณะ/ไฟทางหลวง'}, TEMP:{label:'หม้อแปลงชั่วคราว'}, UNKNOWN:{label:'หม้อแปลงที่ยังรอจำแนกชนิด'},
+  unsaved:{label:'หม้อแปลงที่ยังไม่บันทึกชนิดลงชีต'}, mistyped:{label:'อุปกรณ์ที่ประเภทเพี้ยน'},
+  chained:{label:'หม้อแปลงที่ต่อพ่วงกับหม้อแปลง'}, unconfirmed:{label:'หม้อแปลงที่ต้นทางยังไม่ยืนยัน'},
+  noGps:{label:'หม้อแปลงที่ไม่มีพิกัด'}, far:{label:'หม้อแปลงที่ห่างแนวสายเกิน 100 ม.'},
+  gisOff:{label:'หม้อแปลงที่พิกัดต่างจาก GIS เกิน 50 ม.'}, notInGis:{label:'หม้อแปลงที่ไม่มีในฐานข้อมูล GIS'},
+  gisMissing:{label:'หม้อแปลงที่มีใน GIS แต่ยังไม่เพิ่มในผัง'}, fuseOff:{label:'ฟิวส์ที่ขนาดต่างจาก GIS'},
+  phaseBad:{label:'หม้อแปลงที่เฟสไม่ตรงกับ OPSA'}, noOpsaPea:{label:'หม้อแปลงจำหน่ายที่ไม่มีข้อมูล OPSA'},
+  noOpsaOther:{label:'หม้อแปลงอื่นที่ไม่มีข้อมูล OPSA'}
+};
+function qualityDrillItems(feederId, metric){
+  const f = DATA.feeders.find(x=>x.id === feederId);
+  if(!f) return [];
+  const tx = f.devices.filter(d=>d.type === 'TRANSFORMER');
+  const wrap = (arr, note)=> arr.map(d=>({ d, note: note ? note(d) : '' }));
+  switch(metric){
+    case 'all': return wrap(tx, d=>`${TX_TYPES[txTypeOf(d)].label} · ต่อจาก ${d.parentId || '-'}`);
+    case 'PEA': case 'PRIVATE': case 'PUBLIC': case 'TEMP': case 'UNKNOWN':
+      return wrap(tx.filter(d=>txTypeOf(d) === metric), d=>txTypeSaved(d) ? `บันทึกแล้ว (${d.txTypeSource || 'auto'})` : 'ระบบเดาให้ ยังไม่บันทึก');
+    case 'unsaved': return wrap(tx.filter(d=>!txTypeSaved(d)), d=>`ระบบเดาเป็น ${TX_TYPES[txTypeOf(d)].label}`);
+    case 'mistyped': return findMistypedLeafDevices(f).map(x=>({ d: x.d, note: `ประเภท ${x.d.type} → ควรเป็น ${x.expected}` }));
+    case 'chained': return findChainedTransformers(f).map(x=>({ d: x.d, note: `ต่อพ่วงผ่าน ${x.oldParent.id} → ควรต่อกับ ${x.prot.id}` }));
+    case 'unconfirmed': return wrap(tx.filter(d=>d.parentConfidence !== 'confirmed'), d=>`ต่อจาก ${d.parentId || '-'} (ประมาณจากพิกัด)`);
+    case 'noGps': return wrap(tx.filter(d=>d.lat == null), ()=>'ไม่มีพิกัดในระบบ');
+    case 'far': return feederLineOutliers(f).map(x=>({ d: x.d, note: `ห่างแนวสาย ${x.dist < 1000 ? Math.round(x.dist) + ' ม.' : (x.dist/1000).toFixed(1) + ' กม.'}` }));
+    case 'gisOff': return gisCoordMismatches(f).map(x=>({ d: x.d, note: `ห่างจากพิกัด GIS ${x.dist < 1000 ? Math.round(x.dist) + ' ม.' : (x.dist/1000).toFixed(1) + ' กม.'}` }));
+    case 'notInGis': return feederGisOrphans(f).map(x=>({ d: x.d,
+      note: x.near ? `ใกล้กับ ${x.near.id} ใน GIS ${Math.round(x.near.dist)} ม.` : 'ไม่มีเครื่องใน GIS ใกล้เคียง' }));
+    case 'fuseOff': return feederFuseMismatches(f).map(x=>({ d: x.d, note: `ในผัง ${x.d.rating || '-'} · GIS ${x.gis}K` }));
+    case 'phaseBad': return wrap(tx.filter(opsaPhaseMismatch), d=>{
+      const cols = ['ia','ib','ic'].filter(k=>d.opsa[k] != null).length;
+      return `ในระบบ ${d.phase || '-'} · OPSA มีกระแส ${cols} เฟส`; });
+    case 'noOpsaPea': return wrap(tx.filter(d=>txTypeOf(d) === 'PEA' && (!d.opsa || d.opsa.loadPercent == null)), ()=>'ไม่มีข้อมูลโหลดใน OPSA');
+    case 'noOpsaOther': return wrap(tx.filter(d=>txTypeOf(d) !== 'PEA' && (!d.opsa || d.opsa.loadPercent == null)), d=>`${TX_TYPES[txTypeOf(d)].label} · ไม่มีข้อมูล OPSA`);
+    case 'gisMissing': return GIS_MISSING_TR.filter(x=>x[1] === feederId && !f.devices.some(dd=>dd.id === x[0]))
+      .map(x=>({ gis: x, note: `มีใน GIS: ${x[4] ? x[4] + 'kVA' : ''} ${x[5] || ''} — ยังไม่มีในผัง` }));
+    default: return [];
+  }
+}
+function renderQualityDrill(feederId, metric){
+  const items = qualityDrillItems(feederId, metric);
+  const meta = QUALITY_METRICS[metric] || { label: metric };
+  const body = document.getElementById('reportBody');
+  const actionBtn = metric === 'gisMissing' ? '<button class="btn-sub" id="qdGoImport">➕ เปิดหน้าตรวจและเพิ่ม</button>'
+    : metric === 'fuseOff' ? '<button class="btn-sub" id="qdGoFuse">🔧 เปิดหน้าตรวจและแก้ขนาด</button>'
+    : metric === 'gisOff' ? '<button class="btn-sub" id="qdGoCoord">📍 เปิดหน้าตรวจและแก้พิกัด</button>'
+    : metric === 'chained' ? '<button class="btn-sub" id="qdGoRegroup">🔗 เปิดหน้าจัดต้นทาง</button>'
+    : metric === 'mistyped' ? '<button class="btn-sub" id="qdGoTypeFix">🛠 เปิดหน้าแก้ประเภท</button>' : '';
+  body.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+      <button class="btn-sub" id="qdBack">‹ กลับไปตารางสรุป</button>
+      <b>${escapeHtml(feederId)} · ${escapeHtml(meta.label)}</b>
+      <span style="color:var(--muted);">${items.length} รายการ</span>
+      ${actionBtn}
+    </div>
+    <p class="report-note">คลิกที่แถวเพื่อเปิดอุปกรณ์นั้นในผังและแก้ไขได้ทันที</p>
+    <table class="report-table"><tr><th>รหัส</th><th>ขนาด</th><th>จุดติดตั้ง</th><th>รายละเอียด</th></tr>
+      ${items.length ? items.map(it=>{
+        const id = it.d ? it.d.id : it.gis[0];
+        const rating = it.d ? (it.d.rating || '') : (it.gis[4] ? it.gis[4] + 'kVA' : '');
+        const desc = it.d ? (it.d.desc || '') : (it.gis[5] || '');
+        return `<tr class="q-drill" data-feeder="${escapeHtml(feederId)}" data-id="${escapeHtml(id)}" data-open="${it.d ? '1' : '0'}">
+          <td class="mono">${escapeHtml(id)}</td><td>${escapeHtml(rating)}</td><td>${escapeHtml(desc)}</td><td>${escapeHtml(it.note)}</td></tr>`;
+      }).join('') : '<tr><td colspan="4" style="color:var(--muted);">ไม่มีรายการ</td></tr>'}
+    </table>`;
+  document.getElementById('qdBack').onclick = renderReportTabQuality;
+  const go = (id, fn)=>{ const b = document.getElementById(id); if(b) b.onclick = ()=>{ document.getElementById('reportOverlay').classList.remove('show'); fn(); }; };
+  go('qdGoImport', openGisImportModal);
+  go('qdGoFuse', openFuseCompareModal);
+  go('qdGoCoord', openGisCoordFixModal);
+  go('qdGoTypeFix', ()=>openTypeRepairModal(DATA.feeders.find(x=>x.id === feederId)));
+  go('qdGoRegroup', ()=>openRegroupModal(DATA.feeders.find(x=>x.id === feederId)));
+  body.querySelectorAll('.q-drill').forEach(tr=>{
+    if(tr.dataset.open !== '1'){ tr.style.color = 'var(--muted)'; return; }
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', ()=>{
+      document.getElementById('reportOverlay').classList.remove('show');
+      setShowLeafAssets(true);
+      showFeederDetail(tr.dataset.feeder);
+      setTimeout(()=>{ highlightAndScrollTo(tr.dataset.id); openDeviceModal(tr.dataset.id); }, 200);
+    });
+  });
+}
+
 function renderReportTabQuality(){
   const rows = buildQualityData();
   const sum = k => rows.reduce((s,r)=> s + (Array.isArray(r[k]) ? r[k].length : r[k]), 0);
-  const warnCell = (v, bad)=> `<td${v && bad ? ' style="color:var(--bad);font-weight:700;"' : ''}>${v}</td>`;
+  // ทุกตัวเลขในตารางคลิกได้ — เปิดรายการอุปกรณ์ของช่องนั้นเพื่อดู/แก้รายเครื่อง
+  const cell = (v, feeder, metric, bad)=> {
+    const n = Array.isArray(v) ? v.length : v;
+    if(!n) return `<td>${n}</td>`;
+    return `<td class="q-cell${bad ? ' q-bad' : ''}" data-feeder="${escapeHtml(feeder)}" data-metric="${metric}" title="คลิกเพื่อดูรายการ">${n}</td>`;
+  };
+  const cellInline = (n, feeder, metric)=> n
+    ? `<span class="q-cell q-inline" data-feeder="${escapeHtml(feeder)}" data-metric="${metric}" title="คลิกเพื่อดูรายการ">${n}</span>` : `${n}`;
+  const warnCell = (v, bad)=> `<td${v && bad ? ' style="color:var(--bad);font-weight:700;"' : ''}>${Array.isArray(v) ? v.length : v}</td>`;
   const detailRows = (items, label)=> items.length
     ? items.map(x=>`<tr class="q-detail" data-feeder="${escapeHtml(x.f)}" data-id="${escapeHtml(x.id)}">
         <td>${escapeHtml(x.f)}</td><td class="mono">${escapeHtml(x.id)}</td><td>${escapeHtml(x.rating||'')}</td>
@@ -5577,6 +5692,7 @@ function renderReportTabQuality(){
   const phaseItems = [];
   const gisItems = [];
   const fuseItems = [];
+  const orphanItems = [];
   rows.forEach(r=>{
     r.far.forEach(x=>farItems.push({ f:r.feeder, id:x.d.id, rating:x.d.rating, desc:x.d.desc,
       note: x.kind === 'line'
@@ -5586,6 +5702,10 @@ function renderReportTabQuality(){
             : `อยู่เครื่องเดียวในโซน ${escapeHtml(x.ref.id)} · ห่าง ${(x.dist/1000).toFixed(1)} กม.`) }));
     r.gisOff.forEach(x=>gisItems.push({ f:r.feeder, id:x.d.id, rating:x.d.rating, desc:x.d.desc,
       note: `ห่างจากพิกัด GIS ${x.dist < 1000 ? Math.round(x.dist) + ' ม.' : (x.dist/1000).toFixed(1) + ' กม.'}` }));
+    feederGisOrphans(r.f).forEach(x=>orphanItems.push({ f:r.feeder, id:x.d.id, rating:x.d.rating, desc:x.d.desc,
+      note: x.near
+        ? `ใกล้กับ ${escapeHtml(x.near.id)} ใน GIS เพียง ${Math.round(x.near.dist)} ม. — น่าจะเป็นเครื่องเดียวกันแต่เลขไม่ตรง`
+        : (x.nearAny ? `ไม่มีเครื่องใน GIS ใกล้กว่า ${x.nearAny.dist < 1000 ? Math.round(x.nearAny.dist) + ' ม.' : (x.nearAny.dist/1000).toFixed(1) + ' กม.'} — อาจรื้อถอนแล้ว` : 'ไม่มีพิกัดให้เทียบ') }));
     r.fuseOff.forEach(x=>fuseItems.push({ f:r.feeder, id:x.d.id, rating:x.d.rating, desc:x.d.desc,
       note: `ในผัง ${escapeHtml(x.d.rating || '-')} · GIS ${x.gis}K` }));
     r.phaseBad.forEach(d=>{
@@ -5604,12 +5724,12 @@ function renderReportTabQuality(){
           <th>ต้นทางยัง<br>ไม่ยืนยัน</th><th>ไม่มีพิกัด</th><th>ห่างแนวสาย<br>&gt; 100 ม.</th><th>พิกัดต่างจาก<br>GIS &gt; 50 ม.</th><th>ไม่มีใน<br>GIS</th><th>มีใน GIS<br>ยังไม่เพิ่ม</th><th>ขนาดฟิวส์<br>ต่างจาก GIS</th><th>เฟสไม่ตรง<br>OPSA</th>
           <th>ไม่มีข้อมูล OPSA<br><small>จำหน่าย / อื่นๆ</small></th></tr>
       ${rows.map(r=>`<tr>
-        <td>${escapeHtml(r.feeder)}</td><td>${r.nTx}</td><td>${r.nPEA}</td><td>${r.nPRIVATE}</td><td>${r.nPUBLIC}</td><td>${r.nTEMP}</td>
-        ${warnCell(r.nUNKNOWN, true)}<td>${r.unsaved}</td>
-        ${warnCell(r.mistyped, true)}${warnCell(r.chained, true)}
-        <td>${r.unconfirmed}</td>${warnCell(r.noGps, true)}
-        ${warnCell(r.farN, true)}${warnCell(r.gisOff.length, true)}<td>${r.notInGis}</td>${warnCell(r.gisMissing, true)}${warnCell(r.fuseOff.length, true)}${warnCell(r.phaseBad.length, true)}
-        <td>${r.noOpsaDcc} / ${r.noOpsaPrivate}</td></tr>`).join('')}
+        <td>${escapeHtml(r.feeder)}</td>${cell(r.nTx, r.feeder, 'all')}${cell(r.nPEA, r.feeder, 'PEA')}${cell(r.nPRIVATE, r.feeder, 'PRIVATE')}${cell(r.nPUBLIC, r.feeder, 'PUBLIC')}${cell(r.nTEMP, r.feeder, 'TEMP')}
+        ${cell(r.nUNKNOWN, r.feeder, 'UNKNOWN', true)}${cell(r.unsaved, r.feeder, 'unsaved')}
+        ${cell(r.mistyped, r.feeder, 'mistyped', true)}${cell(r.chained, r.feeder, 'chained', true)}
+        ${cell(r.unconfirmed, r.feeder, 'unconfirmed')}${cell(r.noGps, r.feeder, 'noGps', true)}
+        ${cell(r.farN, r.feeder, 'far', true)}${cell(r.gisOff, r.feeder, 'gisOff', true)}${cell(r.notInGis, r.feeder, 'notInGis')}${cell(r.gisMissing, r.feeder, 'gisMissing', true)}${cell(r.fuseOff, r.feeder, 'fuseOff', true)}${cell(r.phaseBad, r.feeder, 'phaseBad', true)}
+        <td>${cellInline(r.noOpsaDcc, r.feeder, 'noOpsaPea')} / ${cellInline(r.noOpsaPrivate, r.feeder, 'noOpsaOther')}</td></tr>`).join('')}
       <tr class="total-row"><td>รวมทั้งหมด</td><td>${sum('nTx')}</td><td>${sum('nPEA')}</td><td>${sum('nPRIVATE')}</td><td>${sum('nPUBLIC')}</td>
         <td>${sum('nTEMP')}</td><td>${sum('nUNKNOWN')}</td><td>${sum('unsaved')}</td><td>${sum('mistyped')}</td><td>${sum('chained')}</td>
         <td>${sum('unconfirmed')}</td><td>${sum('noGps')}</td><td>${sum('far')}</td><td>${sum('gisOff')}</td><td>${sum('notInGis')}</td><td>${sum('gisMissing')}</td><td>${sum('fuseOff')}</td><td>${sum('phaseBad')}</td>
@@ -5621,6 +5741,9 @@ function renderReportTabQuality(){
     <h3 style="margin:18px 0 6px;font-size:.95rem;">พิกัดในระบบต่างจากฐานข้อมูล GIS เกิน 50 ม. <button type="button" id="gisFixBtn" style="margin-left:6px;border:1px solid var(--pea-purple);background:#fff;color:var(--pea-purple);border-radius:6px;padding:3px 10px;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;">แก้พิกัดตาม GIS ›</button></h3>
     <table class="report-table"><tr><th>วงจร</th><th>เลขหม้อแปลง</th><th>ขนาด</th><th>จุดติดตั้ง</th><th>รายละเอียด</th></tr>
       ${detailRows(gisItems, 'พิกัดต่างจาก GIS')}</table>
+    <h3 style="margin:18px 0 6px;font-size:.95rem;">หม้อแปลงที่มีในผังแต่ไม่มีในฐานข้อมูล GIS (ควรตรวจว่ารื้อถอนแล้วหรือเลขไม่ตรง)</h3>
+    <table class="report-table"><tr><th>วงจร</th><th>เลขหม้อแปลง</th><th>ขนาด</th><th>จุดติดตั้ง</th><th>รายละเอียด</th></tr>
+      ${detailRows(orphanItems, 'ไม่มีใน GIS')}</table>
     <h3 style="margin:18px 0 6px;font-size:.95rem;">ขนาดฟิวส์ในผังไม่ตรงกับฐานข้อมูล GIS
       <button type="button" id="fuseFixBtn" style="margin-left:6px;border:1px solid var(--pea-purple);background:#fff;color:var(--pea-purple);border-radius:6px;padding:3px 10px;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;">ตรวจและแก้ ›</button></h3>
     <p class="report-note">เทียบเฉพาะฟิวส์ (WF) ที่ค่าใน GIS เป็นขนาดฟิวส์จริง · ค่า 50 / 400 / 600 ใน GIS เป็นพิกัดของคัตเอาต์หรือสวิตช์ ไม่ได้นำมาเทียบ</p>
@@ -5630,6 +5753,9 @@ function renderReportTabQuality(){
     <table class="report-table"><tr><th>วงจร</th><th>เลขหม้อแปลง</th><th>ขนาด</th><th>จุดติดตั้ง</th><th>รายละเอียด</th></tr>
       ${detailRows(phaseItems, 'เฟสไม่ตรง')}</table>
     <p class="report-note">คลิกแถวในตารางด้านล่างเพื่อเปิดอุปกรณ์นั้นในผัง</p>`;
+  document.getElementById('reportBody').querySelectorAll('.q-cell').forEach(el=>{
+    el.addEventListener('click', ()=> renderQualityDrill(el.dataset.feeder, el.dataset.metric));
+  });
   const fuseFixBtn = document.getElementById('fuseFixBtn');
   if(fuseFixBtn) fuseFixBtn.onclick = ()=>{ document.getElementById('reportOverlay').classList.remove('show'); openFuseCompareModal(); };
   const gisFixBtn = document.getElementById('gisFixBtn');
