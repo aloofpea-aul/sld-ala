@@ -2346,6 +2346,13 @@ function feederLineOutliers(f){
   return out.sort((a,b)=>b.dist - a.dist);
 }
 
+(function migrateMvLineSource(){
+  try{
+    if(localStorage.getItem('sld_mv_line_source_v2') === 'done') return;
+    localStorage.setItem('sld_mv_line_source', 'gis');
+    localStorage.setItem('sld_mv_line_source_v2', 'done');
+  }catch(e){}
+})();
 function gisLineMode(){ return localStorage.getItem('sld_mv_line_source') === 'straight' ? 'straight' : 'gis'; }
 function hasGisLines(feederId){ return !!(GIS_MV_LINES[feederId] && GIS_MV_LINES[feederId].length); }
 
@@ -2386,7 +2393,15 @@ function feederZoneOutliers(f){
   });
   return out;
 }
-// รูปแบบเส้นหม้อแปลง: tap = ก้านสั้นแตะแนวสายจริง (ค่าเริ่มต้นเมื่อมีแนวสาย GIS) · mst = แนวสายรวมประมาณ · straight = เส้นตรงถึงต้นทาง
+// รูปแบบเส้นหม้อแปลง: tap = ก้านสั้นแตะแนวสายจริง (ค่าเริ่มต้น) · mst = แนวสายรวมประมาณ · straight = เส้นตรงถึงต้นทาง
+// เครื่องที่เคยเลือกค่าเดิมไว้ จะถูกตั้งเป็น "ก้านสั้น" ให้หนึ่งครั้ง (หลังจากนั้นถ้าเลือกเองระบบจะจำตามที่เลือก)
+(function migrateLeafLineMode(){
+  try{
+    if(localStorage.getItem('sld_leaf_line_mode_v2') === 'done') return;
+    localStorage.setItem('sld_leaf_line_mode', 'tap');
+    localStorage.setItem('sld_leaf_line_mode_v2', 'done');
+  }catch(e){}
+})();
 function getLeafLineMode(){
   const v = localStorage.getItem('sld_leaf_line_mode');
   if(v === 'straight' || v === 'mst' || v === 'tap') return v;
