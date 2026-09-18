@@ -239,6 +239,9 @@
   .hist-note{font-size:.8rem;margin-top:4px;line-height:1.5;word-break:break-word;}
   .hist-photos{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}
   .hist-photo{display:block;text-decoration:none;color:var(--muted);font-size:.72rem;text-align:center;}
+  .ph-tools{display:flex;gap:6px;margin-top:4px;justify-content:center;}
+  .ph-btn{border:1px solid var(--line);background:#fff;border-radius:7px;padding:5px 8px;font-family:inherit;font-size:.7rem;cursor:pointer;color:var(--ink);}
+  .ph-btn.del{border-color:#e3b3b3;color:var(--bad);}
   .hist-photo .ph-box{aspect-ratio:4/3;border-radius:8px;border:1px solid var(--line);background:var(--paper) center/cover no-repeat;
     display:flex;align-items:center;justify-content:center;margin-bottom:3px;overflow:hidden;}
   .hist-photo img{width:100%;height:100%;object-fit:cover;display:block;}
@@ -1476,12 +1479,75 @@ function driveThumb(url){
   const m = String(url||'').match(/\/d\/([\w-]{20,})/) || String(url||'').match(/[?&]id=([\w-]{20,})/);
   return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w600` : null;
 }
-function histPhotoHtml(url, label){
-  if(!url) return `<div class="hist-photo"><div class="ph-box">ไม่มีรูป</div>${label}</div>`;
-  if(String(url).startsWith('UPLOAD_FAILED')) return `<div class="hist-photo"><div class="ph-box" style="color:var(--bad)">อัปโหลดไม่สำเร็จ</div>${label}</div>`;
+// ปุ่มแก้/ลบรูป — อ้างอิงแถวจริงในชีต FieldVerification (rec.row) และช่องรูป (pole/tank)
+function histPhotoHtml(url, label, rec, kind){
+  const tools = rec && rec.row ? `<div class="ph-tools">
+      <button type="button" class="ph-btn" data-act="replace" data-row="${rec.row}" data-kind="${kind}">🔄 ถ่ายใหม่</button>
+      ${url && !String(url).startsWith('UPLOAD_FAILED') ? `<button type="button" class="ph-btn del" data-act="delete" data-row="${rec.row}" data-kind="${kind}">🗑 ลบ</button>` : ''}
+    </div>` : '';
+  if(!url) return `<div class="hist-photo"><div class="ph-box">ไม่มีรูป</div>${label}${tools}</div>`;
+  if(String(url).startsWith('UPLOAD_FAILED')) return `<div class="hist-photo"><div class="ph-box" style="color:var(--bad)">อัปโหลดไม่สำเร็จ</div>${label}${tools}</div>`;
   const th = driveThumb(url);
-  return `<a class="hist-photo" href="${escapeHtml(url)}" target="_blank" rel="noopener">
-    <div class="ph-box">${th ? `<img src="${escapeHtml(th)}" alt="${escapeHtml(label)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('แตะเพื่อเปิดรูป'))">` : 'แตะเพื่อเปิดรูป'}</div>${label} ↗</a>`;
+  return `<div class="hist-photo">
+    <a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;display:block;">
+      <div class="ph-box">${th ? `<img src="${escapeHtml(th)}" alt="${escapeHtml(label)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('แตะเพื่อเปิดรูป'))">` : 'แตะเพื่อเปิดรูป'}</div>${label} ↗</a>
+    ${tools}</div>`;
+}
+// แก้ไข/ลบรูปของผลสำรวจที่บันทึกไว้แล้ว (action photoEdit ใน Code.gs)
+async function photoEditRequest(deviceId, row, kind, mode, photo){
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(()=>ctrl.abort(), SAVE_TIMEOUT_MS) : null;
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, signal: ctrl ? ctrl.signal : undefined,
+      body: JSON.stringify({ action:'photoEdit', deviceId, row, kind, mode,
+        base64: photo ? photo.base64 : null, mimeType: photo ? photo.mime : null,
+        changedBy: CURRENT_USER.name, changedByPassword: CURRENT_USER.password })
+    });
+    const json = await res.json();
+    if(!json || !json.ok) return { ok:false, error:(json && (json.error||json.message)) || 'ชีตตอบกลับว่าไม่สำเร็จ' };
+    return { ok:true, url: json.url };
+  }catch(e){
+    return { ok:false, error: e && e.name === 'AbortError' ? 'ไม่มีการตอบกลับจากชีต' : 'เชื่อมต่อ Google Sheet ไม่ได้' };
+  }finally{ if(timer) clearTimeout(timer); }
+}
+function bindHistPhotoTools(deviceId){
+  const box = document.getElementById('histBox');
+  if(!box) return;
+  box.querySelectorAll('.ph-btn').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const kind = btn.dataset.kind, row = +btn.dataset.row;
+    const label = kind === 'tank' ? 'รูปตัวถัง/เลข PEA' : 'รูปต้นหม้อแปลง';
+    if(!(await requireAuth())){ showToast('ต้องเข้าสู่ระบบก่อนจึงจะแก้รูปได้', 'err'); return; }
+    if(btn.dataset.act === 'delete'){
+      if(!confirm(`ลบ${label}ของผลสำรวจครั้งนี้?\nไฟล์จะถูกย้ายไปถังขยะใน Google Drive (กู้คืนได้ภายใน 30 วัน)`)) return;
+      saving = true; photoEditMode = true; showSaveLock('saving');
+      const r = await photoEditRequest(deviceId, row, kind, 'delete', null);
+      saving = false;
+      if(!r.ok){ showSaveLock('error', 'ลบรูปไม่สำเร็จ: ' + r.error); return; }
+      photoEditMode = false;
+      showSaveLock('hide'); historyCache.delete(deviceId); await renderHistoryBox(deviceId);
+      showToast(`ลบ${label}แล้ว`, 'ok');
+      return;
+    }
+    const picker = document.createElement('input');
+    picker.type = 'file'; picker.accept = 'image/*'; picker.capture = 'environment';
+    picker.onchange = async ()=>{
+      const file = picker.files[0];
+      if(!file) return;
+      saving = true; photoEditMode = true; showSaveLock('saving');
+      document.getElementById('saveText').textContent = 'กำลังย่อรูปและอัปโหลดรูปใหม่...';
+      let photo = null;
+      try{ photo = await compressImage(file); }
+      catch(e){ saving = false; showSaveLock('error', 'ย่อรูปไม่สำเร็จ กรุณาลองถ่ายใหม่'); return; }
+      const r = await photoEditRequest(deviceId, row, kind, 'replace', photo);
+      saving = false;
+      if(!r.ok){ showSaveLock('error', 'อัปโหลดรูปใหม่ไม่สำเร็จ: ' + r.error); return; }
+      photoEditMode = false;
+      showSaveLock('hide'); historyCache.delete(deviceId); await renderHistoryBox(deviceId);
+      showToast(`เปลี่ยน${label}แล้ว`, 'ok');
+    };
+    picker.click();
+  }));
 }
 async function loadFieldHistory(deviceId, force){
   if(!force && historyCache.has(deviceId)) return historyCache.get(deviceId);
@@ -1511,13 +1577,14 @@ async function renderHistoryBox(deviceId){
       ${r0.gpsDistanceMeters != null && r0.gpsDistanceMeters !== '' ? ` · ห่าง ${escapeHtml(r0.gpsDistanceMeters)} ม.` : ''}</div>
     ${r0.correctedRating || r0.correctedDesc ? `<div class="hist-note">แก้ไข: ${escapeHtml([r0.correctedRating, r0.correctedDesc].filter(Boolean).join(' · '))}</div>` : ''}
     ${r0.note ? `<div class="hist-note">${escapeHtml(r0.note)}</div>` : ''}
-    <div class="hist-photos">${histPhotoHtml(r0.photoPoleUrl, 'ต้นหม้อแปลง')}${histPhotoHtml(r0.photoTankUrl, 'ตัวถัง/เลข PEA')}</div>
+    <div class="hist-photos">${histPhotoHtml(r0.photoPoleUrl, 'ต้นหม้อแปลง', r0, 'pole')}${histPhotoHtml(r0.photoTankUrl, 'ตัวถัง/เลข PEA', r0, 'tank')}</div>
     ${recs.length > 1 ? `<details class="hist-older"><summary>ดูครั้งก่อนหน้าอีก ${recs.length - 1} ครั้ง</summary>
       ${recs.slice(1).map(r=>`<div class="ho-row"><div class="hist-meta">${escapeHtml(r.time)} · ${escapeHtml(r.inspector||'-')} · <b>${stTxt(r)}</b></div>
         ${r.note ? `<div class="hist-note">${escapeHtml(r.note)}</div>` : ''}
         <div class="hist-meta">${r.photoPoleUrl && !r.photoPoleUrl.startsWith('UPLOAD_FAILED') ? `<a href="${escapeHtml(r.photoPoleUrl)}" target="_blank" rel="noopener">รูปต้นหม้อแปลง ↗</a>` : ''}
           ${r.photoTankUrl && !r.photoTankUrl.startsWith('UPLOAD_FAILED') ? ` · <a href="${escapeHtml(r.photoTankUrl)}" target="_blank" rel="noopener">รูปตัวถัง ↗</a>` : ''}</div></div>`).join('')}
     </details>` : ''}`;
+  bindHistPhotoTools(deviceId);
 }
 
 function bindDetailForm(){
@@ -1939,8 +2006,16 @@ function showSaveLock(state, errMsg){
     list.style.display = errMsg ? 'block' : 'none';
   }
 }
-document.getElementById('saveRetryBtn').addEventListener('click', saveSurvey);
-document.getElementById('saveBackBtn').addEventListener('click', ()=>{ showSaveLock('hide'); if(form) renderConfirm(); });
+document.getElementById('saveRetryBtn').addEventListener('click', ()=>{
+  if(photoEditMode){ showSaveLock('hide'); photoEditMode = false; return; } // ลองใหม่ = กดปุ่มรูปอีกครั้ง
+  saveSurvey();
+});
+let photoEditMode = false; // กำลังแก้รูปของผลสำรวจเดิม — ปุ่มในหน้าต่างแจ้งเตือนทำงานต่างจากตอนบันทึกผลสำรวจ
+document.getElementById('saveBackBtn').addEventListener('click', ()=>{
+  showSaveLock('hide');
+  if(photoEditMode){ photoEditMode = false; return; }
+  if(form) renderConfirm();
+});
 
 async function saveSurvey(){
   if(saving || !form) return;
