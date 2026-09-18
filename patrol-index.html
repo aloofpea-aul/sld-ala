@@ -94,6 +94,7 @@
       <button data-a="DEVICE">อุปกรณ์</button>
       <button data-a="POINT">หมุดอิสระ</button>
     </div>
+    <div id="anchorState" class="hint" style="margin-top:8px;"></div>
     <div id="anchorPick" style="margin-top:9px;"></div>
   </div>
 
@@ -395,8 +396,22 @@ function poleTag(p){
   const pre = (POLES.prefix && POLES.prefix[p[3]]) || '';
   return p[4] ? pre + String(p[4]).padStart(9,'0') : '(ไม่มีเลขในระบบ)';
 }
+function anchorSummary(){
+  const el = $('anchorState');
+  if(!el) return;
+  const names = { POLE:'เสาไฟ', SPAN:'ช่วงสาย', DEVICE:'อุปกรณ์', POINT:'หมุดอิสระ' };
+  if(ANCHOR.type === 'POINT'){
+    el.innerHTML = '<span style="color:var(--sev3);font-weight:700;">✓ พร้อม — ใช้หมุดอิสระ ไม่ต้องเลือกอะไรเพิ่ม</span>';
+  } else if(ANCHOR.ref){
+    el.innerHTML = '<span style="color:var(--sev3);font-weight:700;">✓ ผูกกับ' + names[ANCHOR.type] + ': ' + esc(ANCHOR.ref) + '</span>';
+  } else {
+    el.innerHTML = '<span style="color:var(--sev1);font-weight:700;">⚠ ยังไม่ได้เลือก' + names[ANCHOR.type] +
+      ' — เลือกจากรายการด้านล่าง หรือกดปุ่ม "หมุดอิสระ" ถ้าไม่ต้องการผูกกับอะไร</span>';
+  }
+}
 function renderAnchorPick(){
   const box = $('anchorPick');
+  anchorSummary();
   if(ANCHOR.type === 'POINT'){
     box.innerHTML = '<div class="hint">ใช้พิกัด GPS ที่จับไว้เป็นตำแหน่งของจุดที่พบ ไม่ต้องผูกกับอะไร</div>';
     return;
@@ -406,9 +421,20 @@ function renderAnchorPick(){
     return;
   }
   if(ANCHOR.type === 'POLE' || ANCHOR.type === 'SPAN'){
-    if(!POLES){ box.innerHTML = '<div class="hint">ยังไม่มีข้อมูลเสาในเครื่อง — ไปที่แท็บตั้งค่า แล้วกด "ดาวน์โหลดข้อมูลไว้ใช้ออฟไลน์"</div>'; return; }
+    const fallback = '<button class="ghost small" id="btnUsePoint" style="width:100%;margin-top:8px;">ใช้หมุดอิสระแทน (ไม่ผูกกับเสา)</button>';
+    const bindFallback = ()=>{ const fb = $('btnUsePoint'); if(fb) fb.onclick = ()=>{
+      document.querySelectorAll('#anchorSeg button').forEach(x=> x.classList.toggle('on', x.dataset.a === 'POINT'));
+      ANCHOR = { type:'POINT', ref:'', feeder:'' }; renderAnchorPick();
+    }; };
+    if(!POLES){
+      box.innerHTML = '<div class="hint">ยังไม่มีข้อมูลเสาในเครื่อง — ไปที่แท็บตั้งค่า แล้วกด "ดาวน์โหลดข้อมูลไว้ใช้ออฟไลน์" (ทำครั้งเดียวตอนสัญญาณดี)</div>' + fallback;
+      bindFallback(); return;
+    }
     const near = nearestPoles(GPS.lat, GPS.lon, 10);
-    if(!near.length){ box.innerHTML = '<div class="hint">ไม่พบเสาในรัศมี 500 ม. จากตำแหน่งนี้</div>'; return; }
+    if(!near.length){
+      box.innerHTML = '<div class="hint">ไม่พบเสาในรัศมี 500 ม. จากตำแหน่งนี้</div>' + fallback;
+      bindFallback(); return;
+    }
     const label = ANCHOR.type === 'SPAN' ? 'เลือกเสา 2 ต้นหัวท้ายของช่วงสาย' : 'เลือกเสาที่พบปัญหา';
     const picked = ANCHOR.ref ? ANCHOR.ref.split('~') : [];
     box.innerHTML = '<div class="hint" style="margin-bottom:6px;">' + label + '</div>' +
@@ -522,7 +548,12 @@ $('btnSave').onclick = async ()=>{
   const problemType = $('problemType').value;
   if(!problemType){ toast('ยังไม่ได้เลือกประเภทปัญหา', 'err'); return; }
   if(!PHOTOS.length){ toast('ต้องมีรูปก่อนปรับปรุงอย่างน้อย 1 รูป', 'err'); return; }
-  if(ANCHOR.type !== 'POINT' && !ANCHOR.ref){ toast('ยังไม่ได้เลือกสิ่งที่จะผูกจุดที่พบ', 'err'); return; }
+  if(ANCHOR.type !== 'POINT' && !ANCHOR.ref){
+    const names = { POLE:'เสาไฟ', SPAN:'ช่วงสาย (ต้องเลือก 2 ต้น)', DEVICE:'อุปกรณ์' };
+    toast('ข้อ 1 ยังไม่ได้เลือก' + names[ANCHOR.type] + ' — หรือกด "หมุดอิสระ" ถ้าไม่ต้องผูกกับอะไร', 'err');
+    $('anchorSeg').scrollIntoView({ behavior:'smooth', block:'center' });
+    return;
+  }
 
   const finding = {
     findingId: newId('F'),
