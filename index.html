@@ -847,6 +847,7 @@
       <button class="menuitem" id="txTypeSeedBtn">🏷 จำแนกชนิดหม้อแปลง (เติมค่าครั้งแรก)</button>
       <button class="menuitem" id="opsaImportBtn">➕ เพิ่มหม้อแปลงที่พบใน OPSA แต่ไม่มีในผัง</button>
       <button class="menuitem" id="gisCoordBtn">📍 แก้พิกัดหม้อแปลงตาม GIS</button>
+      <button class="menuitem" id="gisImportBtn">➕ เพิ่มหม้อแปลงที่พบใน GIS แต่ไม่มีในผัง</button>
       <label class="menuitem"><input type="checkbox" id="leafToggle"> แสดงหม้อแปลง/มิเตอร์</label>
       <label class="menuitem"><input type="checkbox" id="editToggle"> โหมดแก้ไข</label>
       <label class="menuitem"><input type="checkbox" id="fieldToggle"> 📷 ตรวจสอบภาคสนาม</label>
@@ -2260,6 +2261,27 @@ function gisCoordMismatches(f){
   }).filter(Boolean).sort((a,b)=>b.dist - a.dist);
 }
 
+// ===== หม้อแปลงที่มีใน GIS แต่ยังไม่มีในผัง (ชั้น TR 25 ก.ค. 2568) =====
+// [id, วงจร, lat, lon, kVA, จุดติดตั้ง, เฟส]
+const GIS_MISSING_TR = [["62-006648","ALA03",8.396128,98.880278,30,"อบต.คลองยา","AN"],["61-108244","ALA09",8.54033,98.757059,30,"สถานีพัฒนาที่ดิน","CN"],["49-012667","ALA03",8.532736,98.809596,30,"ประปาบ้านบางส้าน","BN"],["55-009478","ALA07",8.532809,98.865644,250,"รพ.ปลายพระยา","ABC"],["59-112674","ALA07",8.52708,98.88077,30,"ไฟทางหลวง บ้านวัง","CN"],["62-000900","ALA07",8.407755,98.782618,500,"อบต.อ่าวลึกเหนือ","ABC"],["46-111977","ALA07",8.51511,98.896585,75,"DCC_","AN"],["65-101523","ALA09",8.508728,98.713621,30,"ไฟทางหลวง ซ.บางไทร","BN"],["49-008908","ALA03",8.420107,98.875013,30,"ประปาหมู่บ้านน้ำ","AN"],["65-101180","ALA09",8.435377,98.739813,50,"วัดไพรสณฑ์","ABC"],["45-013273","ALA01",8.277019,98.768517,30,"หม้อแปลงเช่า บริษ","BN"],["67-018972","ALA03",8.488021,98.829326,30,"หม้อแปลงไฟทางหลว","BN"],["41-005248","ALA06",8.469192,98.714271,30,"DCC_","AN"],["47-006969","ALA09",8.424837,98.740478,50,"บริษัทเวียงสระคอ","ABC"],["50-000696","ALA06",8.338235,98.660449,30,"ประปาหมู่บ้านในไ","CN"],["32-006097","ALA06",8.40792,98.675016,30,"DCC_","BN"],["32-011858","ALA06",8.363698,98.660909,20,"DCC_","BN"],["56-117094","ALA02",8.376929,98.799853,30,"บ้านพักพนักงานสว","BN"],["42-003681","ALA09",8.485583,98.755354,30,"DCC_","AN"],["49-008888","ALA02",8.308482,98.879625,30,"DCC_","BN"],["42-003519","ALA03",8.361922,98.865461,30,"DCC_","CN"],["35-002697","ALA01",8.381996,98.741323,30,"-","AN"],["59-010571","ALA09",8.600802,98.724306,30,"DCC_ซอยน้ำตกบางเท่า","BN"],["55-940219","ALA02",8.322224,98.809693,30,"บ.ทุ่งค้อ-ควนสบาย","BN"],["42-000007","ALA07",8.471198,98.83243,30,"DCC_","BN"],["40-013151","ALA09",8.565699,98.719956,30,"DCC_","CN"],["26-005856","ALA07",8.483483,98.894565,30,"DCC_","CN"],["38-014682","ALA07",8.483001,98.894244,30,"","CN"],["36-020074","ALA07",8.475803,98.896193,30,"DCC_","CN"],["50-000698","ALA03",8.417313,98.855163,30,"DCC_","AN"],["49-008904","ALA02",8.391652,98.894258,30,"ประปาบ้านปากช่อง","BN"],["51-008577","ALA03",8.476592,98.792119,30,"DCC_","AN"],["42-004649","ALA03",8.567368,98.875513,30,"DCC_DCC_","CN"],["61-001819","ALA07",8.408297,98.781667,250,"อบต.อ่าวลึกเหนือ","ABC"],["63-028424","ALA03",8.445971,98.882426,160,"สกรณ์ ซ.8","ABC"],["49-012548","ALA02",8.388345,98.907336,30,"DCC_","BN"],["51-008578","ALA03",8.457022,98.759949,30,"DCC_","CN"],["42-000873","ALA03",8.461367,98.765213,30,"DCC_","CN"],["37-003853","ALA03",8.519555,98.81411,30,"DCC_","CN"],["63-103361","ALA06",8.465758,98.68318,30,"ไฟสาธารณะ ช่วงที่4","CN"],["66-014206","ALA09",8.533244,98.690049,30,"บ.ควน","AN"],["62-101872","ALA03",8.510854,98.817091,100,"บ.ปากหยา","ABC"],["41-005380","ALA03",8.394261,98.834796,30,"DCC_","CN"],["65-017642","ALA03",8.631726,98.809338,30,"ถ้ำธนาคาร","CN"],["66-007889","ALA06",8.406275,98.678831,30,"บ้านถ้ำเสือใน","BN"],["42-000020","ALA09",8.637715,98.755195,30,"DCC_","AN"],["59-023143","ALA02",8.366838,98.749375,100,"เซเว่น อีเลฟเว่น ป","ABC"],["63-017418","ALA03",8.425788,98.855329,30,"บ.ห้วยกรวด","AN"],["30-002145","ALA09",8.507152,98.732864,10,"บ.บางไทร","BN"],["60-001369","ALA03",8.441983,98.79851,30,"ฟาร์มไก่ ไพริน ขาว","CN"],["62-109474","ALA09",8.486175,98.755828,30,"นายรัฐพล ลีลภัสธน","AN"],["63-106057","ALA09",8.507255,98.710029,30,"ประปาบ้านบางไทร ม.","BN"],["56-000941","ALA06",8.364581,98.640099,30,"DCC_ม.5 บ้านหินราว","CN"],["41-005281","ALA02",8.305542,98.886544,30,"DCC_","BN"],["33-000325","ALA09",8.569055,98.71387,10,"เซาร์เทริน์","CN"],["41-005100","ALA03",8.553948,98.76608,30,"DCC_","AN"],["41-005086","ALA03",8.548395,98.759112,30,"DCC_","AN"],["49-013078","ALA03",8.370973,98.873339,30,"ประปาหมู่บ้านซอย","CN"],["63-103463","ALA07",8.479937,98.853796,30,"บ.เขานุ้ย","CN"],["42-003518","ALA03",8.372977,98.86862,30,"DCC_","CN"],["44-006942","ALA03",8.425126,98.848254,30,"DCC_","AN"],["42-003530","ALA03",8.372986,98.874527,30,"DCC_","CN"],["29-009778","ALA02",8.406709,98.911523,10,"บ.ห้วยหินเขียน","BN"],["63-024062","ALA07",8.46651,98.890814,30,"บ.คลองพระยา ซ.7 ต.คล","CN"],["42-001459","ALA03",8.644519,98.892026,30,"DCC_","BN"],["47-006152","ALA03",8.583254,98.902018,30,"DCC_","BN"],["62-003024","ALA06",8.445034,98.731884,30,"DCC_บ.เขาล่อม","BN"],["58-015621","ALA03",8.507446,98.817132,30,"DCC_","CN"],["49-008905","ALA03",8.625152,98.816176,30,"ประปาหมู่บ้านถ้ำ","CN"],["59-010596","ALA03",8.624169,98.806219,30,"DCC_บ้านถ้ำรอบ ม.4 ต.เ","CN"],["45-013274","ALA03",8.648593,98.892667,30,"DCC_","BN"],["45-012414","ALA03",8.648448,98.878165,30,"DCC_","BN"],["59-000901","ALA03",8.562069,98.861245,30,"DCC_ม.11 บ้านน้ำซ่ำ","CN"],["59-108024","ALA01",8.271626,98.80316,30,"ไฟทางหลวง สาลาพระ","BN"],["42-003679","ALA05",8.462415,98.658663,30,"DCC_","BN"],["55-115561","ALA03",8.513041,98.831975,50,"ฟาร์มไก่นายมนตรี","AN"],["45-013009","ALA02",8.365241,98.847466,30,"DCC_","AN"],["51-009194","ALA02",8.355719,98.851078,30,"DCC_","AN"],["48-007029","ALA02",8.365375,98.814778,30,"DCC_DCC_ประปาหมู่บ้าน","BN"],["40-011859","ALA07",8.407258,98.802012,30,"DCC_DCC_","BN"],["40-011456","ALA06",8.426953,98.710161,30,"DCC_","BN"],["40-013393","ALA06",8.404768,98.682515,30,"DCC_","BN"],["54-000692","ALA06",8.414092,98.672424,30,"DCC_","BN"],["42-002717","ALA05",8.454005,98.728304,30,"DCC_","AN"],["47-006161","ALA03",8.632224,98.795257,30,"DCC_","CN"],["54-012066","ALA03",8.636968,98.803036,30,"DCC_","CN"],["66-014295","ALA03",8.347977,98.869913,50,"ซลประทาน 18","ABC"],["65-101522","ALA09",8.509523,98.722738,30,"ไฟทางหลวง ซ.บางไทร","BN"],["59-000887","ALA09",8.507117,98.733322,30,"ฟาร์มหมู น.ส.อัญชล","BN"],["54-011955","ALA02",8.386564,98.77411,30,"DCC_บ้านถ้ำเพชร ม.6 ต.","BN"],["64-101155","ALA03",8.572644,98.876413,30,"ฟาร์มหมู นายปกรณ์","CN"],["63-036624","ALA02",8.363743,98.751187,250,"ปั๊มบางจาก","ABC"],["65-017641","ALA03",8.357909,98.869376,30,"สหกรณ์ซอย 17","CN"],["42-003341","ALA03",8.35715,98.874308,30,"DCC_","CN"],["66-110584","ALA03",8.348461,98.867223,100,"โครงการอ่างเก็บน","ABC"],["36-002928","ALA03",8.413831,98.864095,30,"DCC_บ้านสหกรณ์ ซอย9","CN"],["40-012433","ALA06",8.468128,98.68832,30,"DCC_","CN"],["38-014919","ALA09",8.507642,98.710335,30,"DCC_","BN"],["57-004243","ALA06",8.329648,98.637213,30,"DCC_","CN"],["41-005314","ALA06",8.335969,98.66161,30,"DCC_","CN"],["38-010348","ALA02",8.360356,98.753424,100,"DCC_","ABC"],["65-000009","ALA05",8.491002,98.65041,30,"ม.6 บ.ไทรมาศ ซ.บางเร","BN"],["60-108667","ALA06",8.407822,98.676093,30,"ไฟทางหลวง บ.ถ้ำเสื","BN"],["66-014216","ALA09",8.655517,98.757844,30,"บ.บางแห้ง ม.2 ต.เขาต","BN"],["63-015669","ALA06",8.289249,98.654495,30,"บ้่นไสโต๊ะดำ","CN"],["65-019999","ALA09",8.435309,98.739679,30,"ไฟทางหลวง แขวงพัง","BN"],["49-008935","ALA06",8.312981,98.647289,30,"DCC_ม.2 บ้านอ่าวน้ำ","CN"],["57-012325","ALA09",8.57725,98.740554,100,"เซเว่นบ้านเขาต่อ","ABC"],["57-004608","ALA03",8.503564,98.805471,30,"DCC_ม.5บ้านควนเศียร","AN"],["42-003595","ALA07",8.416521,98.77422,30,"DCC_","BN"],["42-000869","ALA03",8.447435,98.751212,30,"DCC_","CN"],["45-004624","ALA09",8.494668,98.727797,30,"DCC_","AN"],["49-008885","ALA02",8.316036,98.813939,30,"DCC_","BN"],["65-113829","ALA03",8.635442,98.803948,30,"ไฟทางหลวง","CN"],["65-113830","ALA03",8.626436,98.814605,30,"ไฟทางหลวง","CN"],["49-012672","ALA06",8.304635,98.649128,30,"DCC_","BN"],["40-019837","ALA02",8.389275,98.915142,30,"DCC_","BN"],["40-018415","ALA03",8.533229,98.81104,30,"DCC_","BN"],["54-000770","ALA03",8.505021,98.813364,30,"DCC_","AN"],["49-012662","ALA03",8.508351,98.828239,30,"DCC_","CN"],["63-024080","ALA09",8.509665,98.721773,30,"DCC_","BN"],["47-006142","ALA03",8.50271,98.797796,30,"DCC_","AN"],["35-002689","ALA03",8.498328,98.809246,30,"DCC_","AN"],["49-013198","ALA03",8.415814,98.887589,30,"DCC_","AN"],["42-000031","ALA03",8.589587,98.776336,30,"DCC_","BN"],["44-006764","ALA03",8.431579,98.848048,30,"DCC_","AN"],["40-002501","ALA03",8.651469,98.82097,30,"บริษัทไทยร่วมพัฒ","CN"],["49-013233","ALA02",8.403336,98.898799,30,"DCC_","BN"],["63-017454","ALA02",8.294868,98.827183,30,"บ.โต๊ะกราวด์","CN"],["63-024077","ALA03",8.423805,98.860038,30,"สหกรณ์","AN"],["32-010676","ALA02",8.424054,98.912263,10,"ห้วยหินเขียน","BN"],["65-033769","ALA02",8.287912,98.824187,30,"น.ส.อัญชิรา","CN"],["65-006956","ALA03",8.55938,98.907821,100,"ชุมชนหาดถั่ว","ABC"],["40-019838","ALA02",8.388875,98.899201,30,"DCC_","BN"],["40-011450","ALA03",8.523778,98.809618,30,"DCC_","BN"],["32-004191","ALA09",8.61592,98.741873,20,"DCC_","CN"],["58-100961","ALA02",8.363729,98.751421,160,"บริษัท บี.พี.1999 จำกั","ABC"],["53-002202","ALA09",8.509487,98.716438,30,"ประปาบ้านบางไทร  ม","BN"],["37-009757","ALA09",8.536422,98.740131,50,"DCC_","CN"],["42-003277","ALA09",8.531652,98.690424,30,"DCC_","AN"],["52-010808","ALA02",8.300051,98.889062,30,"DCC_บ้านช่องไม้ดำ","BN"],["67-028412","ALA03",8.351358,98.869713,30,"อบต.คลองยา ประปา ซ.","BN"],["53-001933","ALA03",8.589024,98.87103,30,"สวนปาล์ม นายเรียง","CN"],["42-000032","ALA03",8.5963,98.784685,30,"DCC_","BN"],["45-013066","ALA03",8.605832,98.850471,30,"DCC_","CN"],["40-021888","ALA03",8.4943,98.772687,30,"DCC_","BN"],["38-006976","ALA03",8.463416,98.769034,30,"DCC_","CN"],["40-018414","ALA03",8.527985,98.807362,30,"DCC_","BN"],["49-013203","ALA03",8.510444,98.80774,30,"ประปาหมู่บ้านควน","AN"],["59-010564","ALA03",8.57502,98.876473,30,"ฟาร์ไก่ พัชรินทร์","CN"],["59-010577","ALA03",8.640347,98.891841,30,"รร.บ้านคลองพวน","BN"],["33-002273","ALA03",8.659723,98.820248,30,"DCC_","CN"],["49-013238","ALA01",8.281824,98.773506,30,"DCC_","BN"],["40-011594","ALA01",8.283739,98.778764,30,"DCC_","BN"],["58-940527","ALA03",8.580068,98.909125,30,"DCC_ม.9 บ้านช่องหลำ","BN"],["42-000744","ALA09",8.675854,98.762701,30,"DCC_","BN"],["49-013062","ALA09",8.660752,98.758282,30,"ประปาหมู่บ้านบาง","BN"],["36-020234","ALA09",8.646208,98.76083,30,"DCC_","BN"],["51-009225","ALA09",8.661321,98.76786,30,"DCC_","BN"],["49-012660","ALA09",8.661019,98.759475,30,"DCC_","BN"],["45-013321","ALA03",8.507658,98.76021,30,"DCC_","CN"],["26-010098","ALA03",8.581581,98.874259,20,"DCC_DCC_","CN"],["58-006184","ALA03",8.517038,98.819965,30,"DCC_บ้านปากหยา ม.3 ต.ป","CN"],["51-009197","ALA06",8.324967,98.645381,30,"DCC_","CN"],["40-021829","ALA06",8.353847,98.65161,30,"DCC_","BN"],["54-001560","ALA06",8.429361,98.715215,30,"DCC_","BN"],["41-005213","ALA06",8.421788,98.667451,30,"DCC_","BN"],["42-003594","ALA07",8.42068,98.781326,30,"DCC_","BN"],["36-020134","ALA01",8.27707,98.769159,30,"DCC_","BN"],["49-013232","ALA02",8.395719,98.893145,30,"DCC_","BN"],["45-013224","ALA03",8.657763,98.886573,30,"DCC_","BN"],["41-000591","ALA03",8.535082,98.864081,100,"ประปาอำเภอปลายพร","ABC"],["45-013271","ALA03",8.670351,98.859396,30,"DCC_","AN"],["42-000050","ALA03",8.6727,98.854851,30,"DCC_","AN"],["38-014713","ALA03",8.588384,98.870606,30,"DCC_","CN"],["49-013530","ALA03",8.61287,98.797465,30,"DCC_","CN"],["49-008909","ALA03",8.361865,98.871933,30,"ประปาบ้านคลองยา ม.","CN"],["40-002386","ALA06",8.316832,98.645675,30,"DCC_","CN"],["47-112184","ALA02",8.359755,98.850111,30,"DCC_DCC_","AN"],["20-002252","ALA01",8.339046,98.766402,10,"สนง.ผดุงครรภ์บ้าน","BN"],["40-002377","ALA03",8.555812,98.905385,30,"ไฟฟ้าแสงสว่างสาม","BN"],["59-009269","ALA09",8.535602,98.759304,30,"ประปาบางเจริญ","BN"],["58-018457","ALA02",8.387389,98.902173,30,"ประปาบ้านห้วยลึก","BN"],["64-111843","ALA09",8.533931,98.689758,30,"ประปา อบต.นาเหนือ","AN"],["51-008584","ALA03",8.575678,98.800153,30,"DCC_","BN"],["45-004920","ALA07",8.442199,98.814227,30,"DCC_","CN"],["26-007889","ALA03",8.562999,98.763469,10,"ซอยหลวงเท่ง เขาต่","BN"],["63-017404","ALA03",8.460894,98.863077,30,"มป.บางใหญ่","AN"],["63-036330","ALA03",8.410227,98.873059,30,"ปะปาหมู่บ้าน","BN"],["63-009566","ALA02",8.36547,98.750631,100,"บ.มิตซูเกียรติยนต","ABC"],["36-019580","ALA05",8.517788,98.636535,50,"บริษัท เชลล์แห่งป","ABC"],["65-019996","ALA05",8.463706,98.737152,30,"บ.เขาใหญ่","BN"],["60-100985","ALA06",8.318949,98.643495,50,"ประปาหมู่บ้าน บ้า","CN"],["63-015796","ALA03",8.443161,98.878097,30,"สหกรณ์","BN"],["61-002689","ALA03",8.588043,98.901146,30,"ช่องหลำ","BN"],["66-102054","ALA03",8.492414,98.758762,30,"บ.หินดาน","CN"],["42-002939","ALA03",8.594775,98.90319,30,"บ้านช่องหลำ","BN"],["36-020133","ALA03",8.500724,98.823956,30,"บ้านปากหยา","CN"],["48-007447","ALA09",8.553979,98.703787,30,"บ.ควนสบาย","AN"],["28-010074","ALA01",8.343265,98.744612,30,"DCC_","BN"],["51-008401","ALA02",8.391494,98.913329,30,"DCC_","BN"],["65-033765","ALA06",8.467482,98.685245,30,"บ้านปากลาว","CN"],["61-112651","ALA02",8.363652,98.751501,100,"บริษัท นาเหนือ เมท","ABC"],["66-014200","ALA02",8.290018,98.893634,30,"บ.ช่องไม้ดำ ม.5 ต.คล","BN"],["57-940197","ALA03",8.446256,98.876329,30,"บ.ห้วยกรวด","BN"],["56-110164","ALA06",8.402528,98.686804,30,"ไร่ปรีดาโฮมสเตย์","BN"],["60-103273","ALA02",8.378686,98.768966,30,"หจก.แม่เพียร ม.6 อ่า","BN"],["63-017427","ALA03",8.621926,98.816136,30,"บ.ถ้ำรอบ","CN"],["59-005644","ALA03",8.572062,98.798689,30,"DCC_ซ.ทุ่งหยา 1","BN"],["67-023436","ALA01",8.342216,98.744499,100,"นายวินิจ ยูรวงศ์ ม","ABC"],["31-002767","ALA09",8.670684,98.762664,20,"บ.บางแห้ง","BN"],["63-015789","ALA09",8.522611,98.725409,30,"DCC_บ.บางโทง","CN"],["61-108814","ALA09",8.540051,98.757051,250,"DCC_สถานีพัฒนาที่ดิ","ABC"],["45-006042","ALA05",8.456641,98.650359,50,"DCC_มะรุ่ย","ABC"],["37-009712","ALA05",8.448771,98.647849,50,"DCC_หจก.มะรุ่ย","BN"]];
+function gisMissingPending(){
+  const known = new Set();
+  DATA.feeders.forEach(f=>f.devices.forEach(d=>known.add(d.id)));
+  return GIS_MISSING_TR.filter(x=>!known.has(x[0]) && DATA.feeders.some(f=>f.id === x[1]));
+}
+// เดาต้นทาง: หาหม้อแปลงที่ใกล้ที่สุดในวงจรเดียวกัน แล้วใช้อุปกรณ์ตัดตอนต้นทางของเครื่องนั้น
+function guessParentForPoint(f, lat, lon){
+  let best = null, bd = Infinity;
+  f.devices.forEach(x=>{
+    if(x.type !== 'TRANSFORMER' || x.lat == null) return;
+    const dist = gpsDistanceMeters(x.lat, x.lon, lat, lon);
+    if(dist < bd){ bd = dist; best = x; }
+  });
+  if(!best) return null;
+  const prot = sldProtectiveDevice(f, best);
+  return prot ? { parent: prot, via: best, dist: bd } : null;
+}
+
 // ===== วัดระยะจากอุปกรณ์ถึงแนวสายแรงสูงจริง (ดัชนีตารางกริดเพื่อให้ค้นเร็ว) =====
 const GIS_LINE_TOLERANCE_M = 100;   // ห่างจากแนวสายเกินเท่านี้ = พิกัดหรือวงจรน่าจะผิด (ปกติหม้อแปลงอยู่ห่างสายไม่เกิน 10 ม.)
 const GIS_GRID = 0.003;             // ขนาดช่องกริด (~330 ม.)
@@ -3403,6 +3425,100 @@ function openOpsaImportModal(){
 }
 
 // ===== แก้พิกัดหม้อแปลงให้ตรงกับฐานข้อมูล GIS =====
+// ===== เพิ่มหม้อแปลงที่มีใน GIS แต่ยังไม่มีในผัง =====
+function openGisImportModal(){
+  const pending = gisMissingPending();
+  document.getElementById('deviceModalTitle').textContent = 'เพิ่มหม้อแปลงจากฐานข้อมูล GIS';
+  if(!pending.length){
+    document.getElementById('deviceBody').innerHTML = `<div class="dm-confirm-box add">หม้อแปลงใน GIS อยู่ในผังครบแล้ว</div>
+      <div class="device-modal-actions"><button id="giCancel">ปิด</button></div>`;
+    document.getElementById('deviceOverlay').classList.add('show');
+    document.getElementById('giCancel').onclick = closeDeviceModal;
+    return;
+  }
+  const rows = pending.map(x=>{
+    const f = DATA.feeders.find(ff=>ff.id === x[1]);
+    const g = guessParentForPoint(f, x[2], x[3]);
+    return { x, f, guess: g };
+  });
+  const conf = r => !r.guess ? 'none' : r.guess.dist <= 200 ? 'good' : r.guess.dist <= 1000 ? 'fair' : 'poor';
+  const confLabel = { good:'<span class="pc-badge ok">มั่นใจ</span>', fair:'<span class="pc-badge est">พอใช้</span>',
+    poor:'<span class="pc-badge est" style="background:#fdecea;color:var(--bad)">ควรตรวจ</span>', none:'<span class="pc-badge est">เดาไม่ได้</span>' };
+  const lists = {};
+  DATA.feeders.forEach(f=>{
+    lists[f.id] = `<datalist id="giList-${escapeHtml(f.id)}">${f.devices.filter(x=>PROTECTIVE_TYPES.has(x.type))
+      .sort((a,b)=>a.id.localeCompare(b.id, undefined, {numeric:true}))
+      .map(x=>`<option value="${escapeHtml(x.id)}">${escapeHtml(x.rating||'')} ${escapeHtml(x.desc||'')}</option>`).join('')}</datalist>`;
+  });
+  const nGood = rows.filter(r=>conf(r) === 'good').length;
+  document.getElementById('deviceBody').innerHTML = `
+    <div class="dm-confirm-box">พบหม้อแปลงใน GIS <b>${pending.length}</b> เครื่องที่ยังไม่มีในผัง —
+      มีพิกัด ขนาด เฟส และวงจรครบ ระบบเดาต้นทางให้จากหม้อแปลงที่ใกล้ที่สุดในวงจรเดียวกัน แก้ได้ทุกช่อง</div>
+    <div class="dm-confirm-box warn">ระยะจากหม้อแปลงที่ใช้เดายิ่งใกล้ยิ่งน่าเชื่อถือ — <b>มั่นใจ</b> ≤ 200 ม. · <b>พอใช้</b> ≤ 1 กม. · <b>ควรตรวจ</b> เกิน 1 กม.
+      · การเพิ่มมีผลกับขนาดฟิวส์แนะนำของต้นทางที่เลือก</div>
+    <div style="display:flex;gap:8px;margin:8px 0;">
+      <button type="button" class="btn-sub" id="giPickGood">ติ๊กเฉพาะที่มั่นใจ (${nGood})</button>
+      <button type="button" class="btn-sub" id="giPickAll">ติ๊กทั้งหมด</button>
+      <button type="button" class="btn-sub" id="giPickNone">ล้างทั้งหมด</button>
+    </div>
+    ${Object.values(lists).join('')}
+    <div>${rows.map((r,i)=>`<div class="oi-row">
+      <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">
+        <input type="checkbox" class="giChk" data-i="${i}" ${conf(r)==='good'?'checked':''} style="width:18px;height:18px;margin-top:3px;">
+        <span><b>${escapeHtml(r.x[0])}</b> ${r.x[4] ? escapeHtml(r.x[4] + 'kVA') : ''} · ${escapeHtml(r.x[1])} · เฟส ${escapeHtml(r.x[6] || '-')} ${confLabel[conf(r)]}<br>
+        <span style="font-size:.8rem;color:var(--muted);">${escapeHtml(r.x[5] || '(ไม่ระบุจุดติดตั้ง)')}
+        ${r.guess ? ` · เดาจาก ${escapeHtml(r.guess.via.id)} ห่าง ${r.guess.dist < 1000 ? Math.round(r.guess.dist) + ' ม.' : (r.guess.dist/1000).toFixed(1) + ' กม.'}` : ''}</span></span>
+      </label>
+      <input class="txt giParent" data-i="${i}" list="giList-${escapeHtml(r.x[1])}" value="${r.guess ? escapeHtml(r.guess.parent.id) : ''}" placeholder="ต่อจากอุปกรณ์ (พิมพ์รหัสแล้วเลือก)">
+    </div>`).join('')}</div>
+    <div id="dmMsg" class="dm-msg"></div>
+    <div class="device-modal-actions">
+      <button id="giCancel">ยกเลิก</button>
+      <button class="btn-primary" id="giConfirm">✓ เพิ่มเครื่องที่ติ๊กไว้</button>
+    </div>`;
+  document.getElementById('deviceOverlay').classList.add('show');
+  const setAll = fn => document.querySelectorAll('#deviceBody .giChk').forEach((c,i)=>{ c.checked = fn(rows[i]); });
+  document.getElementById('giPickGood').onclick = ()=> setAll(r=>conf(r) === 'good');
+  document.getElementById('giPickAll').onclick = ()=> setAll(()=>true);
+  document.getElementById('giPickNone').onclick = ()=> setAll(()=>false);
+  document.getElementById('giCancel').onclick = closeDeviceModal;
+  document.getElementById('giConfirm').onclick = async ()=>{
+    const picks = [];
+    document.querySelectorAll('#deviceBody .giChk:checked').forEach(c=>{
+      const i = +c.dataset.i, r = rows[i];
+      const raw = document.querySelector(`#deviceBody .giParent[data-i="${i}"]`).value.trim();
+      const parent = raw ? r.f.devices.find(y=>y.id.toLowerCase() === raw.toLowerCase()) : null;
+      picks.push({ r, raw, parent });
+    });
+    const bad = picks.filter(p=>!p.parent);
+    if(bad.length){ modalMsg(`ยังไม่ได้เลือกต้นทางที่ถูกต้อง: ${escapeHtml(bad.map(p=>p.r.x[0]).join(', '))}`, 'err'); return; }
+    if(!picks.length){ modalMsg('ยังไม่ได้ติ๊กเครื่องใดเลย', 'err'); return; }
+    if(dataIsFallback){ modalMsg('บันทึกไม่ได้ — กำลังดูข้อมูลสำรองในไฟล์ กรุณารีเฟรชหน้าเว็บก่อน', 'err'); return; }
+    if(!(await requireAuth())){ modalMsg('ยังไม่ได้ยืนยันตัวตน จึงยังไม่ได้บันทึก', 'err'); return; }
+    setModalBusy(true);
+    const plan = picks.map(p=>{
+      const x = p.r.x;
+      const dev = { id: x[0], type: 'TRANSFORMER', rating: x[4] ? x[4] + 'kVA' : '', desc: x[5] || '',
+        lat: x[2], lon: x[3], phase: x[6] || '', parentId: p.parent.id, parentConfidence: 'estimated', source: 'gis-import' };
+      dev.txType = guessTxType(dev); dev.txTypeSource = 'auto';
+      return { feeder: p.r.f.id, device: dev, reason: `เพิ่มจากฐานข้อมูล GIS ต่อจาก ${p.parent.id}`, ref: p.r };
+    });
+    const { failed } = await persistDevicesBatchQuiet(plan, (done, total)=> modalMsg(`⏳ กำลังเพิ่ม ${done}/${total}...`, ''));
+    const failSet = new Set(failed);
+    let okN = 0; const fails = [];
+    plan.forEach(pln=>{
+      if(failSet.has(pln.device.id)){ fails.push(pln.device.id); return; }
+      pln.ref.f.devices.push(pln.device); okN++;
+    });
+    setModalBusy(false);
+    if(selectedFeeder) refreshAfterDeviceChange(DATA.feeders.find(x=>x.id===selectedFeeder), null);
+    if(mapMode && leafletMap) rebuildMapMarkers();
+    if(fails.length){ modalMsg(`เพิ่มสำเร็จ ${okN} เครื่อง · ไม่สำเร็จ: ${escapeHtml(fails.join(', '))}`, 'err'); return; }
+    closeDeviceModal();
+    showToast(`เพิ่มหม้อแปลงจาก GIS แล้ว ${okN} เครื่อง`, 'ok');
+  };
+}
+
 function openGisCoordFixModal(){
   const list = [];
   DATA.feeders.forEach(f=>gisCoordMismatches(f).forEach(x=>list.push({ f, d: x.d, gis: x.gis, dist: x.dist })));
@@ -5295,6 +5411,7 @@ function buildQualityData(){
       phaseBad: tx.filter(opsaPhaseMismatch),
       gisOff: gisCoordMismatches(f),
       notInGis: tx.filter(d=>!GIS_TR[d.id]).length,
+      gisMissing: GIS_MISSING_TR.filter(x=>x[1] === f.id && !f.devices.some(dd=>dd.id === x[0])).length,
       nPEA: tx.filter(d=>txTypeOf(d)==='PEA').length,
       nPRIVATE: tx.filter(d=>txTypeOf(d)==='PRIVATE').length,
       nPUBLIC: tx.filter(d=>txTypeOf(d)==='PUBLIC').length,
@@ -5341,18 +5458,18 @@ function renderReportTabQuality(){
     <table class="report-table">
       <tr><th>วงจร</th><th>หม้อแปลง<br>ในผัง</th><th>จำหน่าย</th><th>เฉพาะราย</th><th>สาธารณะ</th><th>ชั่วคราว</th><th>รอจำแนก</th>
           <th>ยังไม่บันทึก<br>ชนิด</th><th>ประเภทเพี้ยน</th><th>ต่อพ่วงกับ<br>หม้อแปลง</th>
-          <th>ต้นทางยัง<br>ไม่ยืนยัน</th><th>ไม่มีพิกัด</th><th>ห่างแนวสาย<br>&gt; 100 ม.</th><th>พิกัดต่างจาก<br>GIS &gt; 50 ม.</th><th>ไม่มีใน<br>GIS</th><th>เฟสไม่ตรง<br>OPSA</th>
+          <th>ต้นทางยัง<br>ไม่ยืนยัน</th><th>ไม่มีพิกัด</th><th>ห่างแนวสาย<br>&gt; 100 ม.</th><th>พิกัดต่างจาก<br>GIS &gt; 50 ม.</th><th>ไม่มีใน<br>GIS</th><th>มีใน GIS<br>ยังไม่เพิ่ม</th><th>เฟสไม่ตรง<br>OPSA</th>
           <th>ไม่มีข้อมูล OPSA<br><small>จำหน่าย / อื่นๆ</small></th></tr>
       ${rows.map(r=>`<tr>
         <td>${escapeHtml(r.feeder)}</td><td>${r.nTx}</td><td>${r.nPEA}</td><td>${r.nPRIVATE}</td><td>${r.nPUBLIC}</td><td>${r.nTEMP}</td>
         ${warnCell(r.nUNKNOWN, true)}<td>${r.unsaved}</td>
         ${warnCell(r.mistyped, true)}${warnCell(r.chained, true)}
         <td>${r.unconfirmed}</td>${warnCell(r.noGps, true)}
-        ${warnCell(r.farN, true)}${warnCell(r.gisOff.length, true)}<td>${r.notInGis}</td>${warnCell(r.phaseBad.length, true)}
+        ${warnCell(r.farN, true)}${warnCell(r.gisOff.length, true)}<td>${r.notInGis}</td>${warnCell(r.gisMissing, true)}${warnCell(r.phaseBad.length, true)}
         <td>${r.noOpsaDcc} / ${r.noOpsaPrivate}</td></tr>`).join('')}
       <tr class="total-row"><td>รวมทั้งหมด</td><td>${sum('nTx')}</td><td>${sum('nPEA')}</td><td>${sum('nPRIVATE')}</td><td>${sum('nPUBLIC')}</td>
         <td>${sum('nTEMP')}</td><td>${sum('nUNKNOWN')}</td><td>${sum('unsaved')}</td><td>${sum('mistyped')}</td><td>${sum('chained')}</td>
-        <td>${sum('unconfirmed')}</td><td>${sum('noGps')}</td><td>${sum('far')}</td><td>${sum('gisOff')}</td><td>${sum('notInGis')}</td><td>${sum('phaseBad')}</td>
+        <td>${sum('unconfirmed')}</td><td>${sum('noGps')}</td><td>${sum('far')}</td><td>${sum('gisOff')}</td><td>${sum('notInGis')}</td><td>${sum('gisMissing')}</td><td>${sum('phaseBad')}</td>
         <td>${sum('noOpsaDcc')} / ${sum('noOpsaPrivate')}</td></tr>
     </table>
     <h3 style="margin:18px 0 6px;font-size:.95rem;">หม้อแปลงที่อยู่ห่างจากแนวสายแรงสูงจริงเกิน 100 ม. (พิกัดหรือวงจรน่าจะผิด)</h3>
@@ -5416,6 +5533,10 @@ function renderReportDrilldown(feeder, cat){
   });
 }
 
+document.getElementById('gisImportBtn').addEventListener('click', ()=>{
+  document.getElementById('moreMenuOverlay').classList.remove('show');
+  openGisImportModal();
+});
 document.getElementById('gisCoordBtn').addEventListener('click', ()=>{
   document.getElementById('moreMenuOverlay').classList.remove('show');
   openGisCoordFixModal();
