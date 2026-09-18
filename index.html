@@ -150,6 +150,28 @@
   }
   /* ป้ายชื่อรหัสอุปกรณ์บนแผนที่จริง — ซ่อนไว้ตามปกติ (จุดเยอะเกินจะอ่านไม่ออก) โชว์เฉพาะตอนซูมเข้าใกล้พอ */
   .tr-map-hit{position:relative;}
+  /* ===== จอคอมพิวเตอร์: ขยายตัวอักษรและเพิ่มความคมชัด (มือถือคงเดิม) ===== */
+  @media (min-width:821px){
+    html, body{ font-size:19px; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+    body, button, input, select, textarea{ font-weight:400; letter-spacing:.005em; }
+    .device-row .did, .trunk-node text, .tap-label{ font-weight:700; }
+    .device-row{ font-size:.92rem; }
+    .device-row .ddesc{ font-size:.86rem; color:#4a4a4a; }
+    .device-row .rating-badge-est, .device-row .phase-badge, .device-row .impact-badge,
+    .device-row .src-badge, .device-row .verify-badge-ok, .device-row .verify-badge-mismatch,
+    .device-row .seq-badge-ok{ font-size:.74rem; height:21px; }
+    .pf-btn, .chk-btn, .pda-btn{ font-size:.82rem; }
+    .pf-label{ font-size:.84rem; }
+    .report-table{ font-size:.86rem; }
+    .report-note{ font-size:.82rem; }
+    .menuitem{ font-size:.92rem; }
+    #mapControlBody, .mcp-section label{ font-size:.82rem; }
+    .device-view-row{ font-size:.92rem; }
+    .dm-confirm-box, .dm-step, .dm-msg, .dm-hint{ font-size:.86rem; }
+    #mapHoverTip{ font-size:13.5px !important; }
+    .map-device-label{ font-size:12px !important; }
+    #legend{ font-size:.8rem; }
+  }
   .map-device-label{display:none;position:absolute;top:-3px;left:50%;transform:translate(-50%,-100%);
     background:rgba(255,255,255,.92);border:none;box-shadow:0 1px 3px rgba(0,0,0,.3);
     font-size:10px;font-weight:700;padding:1px 4px;border-radius:3px;white-space:nowrap;}
@@ -176,6 +198,11 @@
   .tap-stem{stroke-linecap:round;}
   .tap-dot{cursor:pointer;}
   .tap-label{font-size:11px;cursor:pointer;paint-order:stroke;stroke:#fff;stroke-width:3px;}
+  @media (min-width:821px){
+    .tap-label{font-size:13px;stroke-width:3.5px;}
+    .trunk-node text{font-size:12px;}
+    .root-label{font-size:13px;}
+  }
   .tap-label-leaf{font-size:7.8px;cursor:pointer;paint-order:stroke;stroke:#fff;stroke-width:2.4px;}
   .tap-label.selected, .trunk-node.selected text{fill:#c62828 !important;font-weight:700;}
   .inline-mark{cursor:pointer;}
@@ -2634,7 +2661,9 @@ function rebuildMapMarkers(){
       if(d.lat == null || d.lon == null) return;
       const isTrunk = TRUNK_TYPES.has(d.type);
       const idShort = String(d.id).replace(f.id,'');
-      const dotSize = isTrunk ? 14 : 9;
+      // ขนาดสัญลักษณ์บนแผนที่ — จอคอมใหญ่กว่ามือถือเพื่อให้มองเห็นชัด
+      const bigScreen = window.matchMedia && window.matchMedia('(min-width:821px)').matches;
+      const dotSize = (isTrunk ? 14 : 9) * (bigScreen ? 1.45 : 1.15);
       const fillOpacity = d.rating ? 0.85 : 0.35;
       // จุด + ป้ายชื่อรวมอยู่ใน div เดียว (HTML marker ของ Longdo) — ป้ายชื่อซ่อนไว้ปกติด้วย CSS .map-zoomed-in (จุดเยอะมากจะรกจนอ่านไม่ออกถ้าโชว์ตลอด)
       const isTransformer = d.type === 'TRANSFORMER';
