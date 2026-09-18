@@ -63,6 +63,26 @@
   .stat .n{font-size:26px;font-weight:700;line-height:1.1;}
   .stat .t{font-size:12px;color:var(--muted);margin-top:3px;}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:1px;}
+  #bootOverlay{position:fixed;inset:0;background:linear-gradient(170deg,#f6f5f2 0%,#eeeaf5 100%);
+    z-index:400;display:none;align-items:center;justify-content:center;padding:24px;}
+  #bootOverlay.show{display:flex;}
+  .boot-box{text-align:center;max-width:360px;width:100%;}
+  .boot-art{margin-bottom:12px;animation:bootIn .5s ease;}
+  @keyframes bootIn{from{transform:scale(.8);opacity:0;}to{transform:scale(1);opacity:1;}}
+  .boot-title{font-size:20px;font-weight:700;color:var(--pea-purple);}
+  .boot-sub{font-size:12.5px;color:var(--muted);margin-top:3px;}
+  .boot-steps{margin:18px 0 10px;text-align:left;background:#fff;border:1px solid var(--line);
+    border-radius:10px;padding:11px 13px;}
+  .boot-step{display:flex;align-items:center;gap:9px;font-size:13.5px;padding:4px 0;color:var(--muted);}
+  .boot-step .ic{width:19px;height:19px;flex:0 0 auto;border-radius:50%;border:2px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;}
+  .boot-step.run .ic{border-color:var(--pea-purple);border-right-color:transparent;animation:spin .8s linear infinite;}
+  .boot-step.done{color:#333;} .boot-step.done .ic{background:var(--sev3);border-color:var(--sev3);}
+  .boot-step.skip .ic{background:#bbb;border-color:#bbb;}
+  .boot-bar{height:5px;background:#e3e0da;border-radius:3px;overflow:hidden;}
+  .boot-bar-go{height:100%;width:0;background:var(--pea-purple);transition:width .35s ease;}
+  .boot-tip{margin-top:16px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px;
+    font-size:13.5px;line-height:1.75;color:#333;min-height:78px;display:flex;align-items:center;justify-content:center;}
   #savingOverlay{position:fixed;inset:0;background:rgba(246,245,242,.96);z-index:300;
     display:none;align-items:center;justify-content:center;padding:24px;}
   #savingOverlay.show{display:flex;}
@@ -275,6 +295,31 @@
 </section>
 
 </main>
+
+<div id="bootOverlay" class="show">
+  <div class="boot-box">
+    <div class="boot-art">
+      <svg viewBox="0 0 120 120" width="104" height="104">
+        <circle cx="60" cy="60" r="52" fill="#4b2e83"/>
+        <g fill="#fff">
+          <rect x="56" y="34" width="8" height="58"/>
+          <rect x="34" y="40" width="52" height="6"/>
+          <rect x="41" y="56" width="38" height="5"/>
+          <circle cx="36" cy="37" r="4"/><circle cx="60" cy="37" r="4"/><circle cx="84" cy="37" r="4"/>
+        </g>
+        <polygon class="bolt" points="74,62 92,62 81,79 95,79 70,105 77,86 65,86" fill="#ffc400"/>
+      </svg>
+    </div>
+    <div class="boot-title">Patrol ระบบจำหน่าย</div>
+    <div class="boot-sub">งานป้องกันไฟดับ · กฟส.อ่าวลึก</div>
+
+    <div class="boot-steps" id="bootSteps"></div>
+    <div class="boot-bar"><div class="boot-bar-go" id="bootBar"></div></div>
+
+    <div class="boot-tip" id="bootTip"></div>
+    <button class="ghost small" id="btnBootSkip" style="width:100%;margin-top:12px;">เข้าใช้งานเลย</button>
+  </div>
+</div>
 
 <div id="savingOverlay">
   <div class="saving-box">
@@ -636,7 +681,6 @@ function initPickMap(){
     pickMap.Ui.DPad.visible(false);
     pickMap.Ui.Zoombar.visible(false);        // ใช้ปุ่มของเราเอง จอมือถือจะได้ไม่แน่น
     pickReady = true;
-    bindPickTap();
   }catch(e){}
 }
 function drawPickMap(){
@@ -681,42 +725,61 @@ function drawPickMap(){
         box-shadow:0 0 3px rgba(0,0,0,.5);"></div>`, offset:{ x:sz/2+1, y:sz/2+1 } } }));
   });
 }
-/* แตะบนแผนที่ = เลือกสัญลักษณ์ที่ใกล้ที่สุด (คำนวณเอง เพราะ Longdo ส่งเหตุการณ์คลิกของหมุดมาไม่แน่นอน) */
-function bindPickTap(){
-  const el = $('pickMap');
-  let down = null;
-  const mercY = lat => Math.log(Math.tan(Math.PI/4 + lat*Math.PI/360));
-  el.addEventListener('pointerdown', e=>{ down = { x:e.clientX, y:e.clientY }; }, true);
-  el.addEventListener('pointerup', e=>{
-    if(!down) return;
-    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6;
-    down = null;
-    if(moved || !pickItems.length) return;
-    let b;
-    try{ b = pickMap.bound(); }catch(err){ return; }
-    const rect = el.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    const yTop = mercY(b.maxLat), yBot = mercY(b.minLat);
-    let best = null, bestD = 22;
-    pickItems.forEach(it=>{
-      const x = (it.lon - b.minLon) / (b.maxLon - b.minLon) * rect.width;
-      const y = (yTop - mercY(it.lat)) / (yTop - yBot) * rect.height;
-      const d = Math.hypot(x - mx, y - my);
-      if(d < bestD){ bestD = d; best = it; }
-    });
-    if(!best) return;
-    if(ANCHOR.type === 'SPAN'){
-      let arr = ANCHOR.ref ? ANCHOR.ref.split('~') : [];
-      const i = arr.indexOf(best.key);
-      if(i >= 0) arr.splice(i, 1); else arr.push(best.key);
-      ANCHOR.ref = arr.slice(-2).join('~');
-    } else {
-      ANCHOR.ref = best.key;
-      if(best.feeder) ANCHOR.feeder = best.feeder;
-    }
-    renderAnchorPick();
-  }, true);
+/* แตะบนแผนที่ = เลือกสัญลักษณ์ที่ใกล้ที่สุด
+   ฟังเหตุการณ์ที่ window แบบ capture เพราะ Longdo ดักเหตุการณ์ของตัวเองไว้ที่ชั้นในของแผนที่ */
+const mercY_ = lat => Math.log(Math.tan(Math.PI/4 + lat*Math.PI/360));
+function hitTest(mapObj, el, items, clientX, clientY, radius){
+  let b;
+  try{ b = mapObj.bound(); }catch(err){ return null; }
+  if(!b || b.maxLon === b.minLon || b.maxLat === b.minLat) return null;
+  const rect = el.getBoundingClientRect();
+  const mx = clientX - rect.left, my = clientY - rect.top;
+  if(mx < 0 || my < 0 || mx > rect.width || my > rect.height) return null;
+  const yTop = mercY_(b.maxLat), yBot = mercY_(b.minLat);
+  let best = null, bestD = radius;
+  items.forEach(it=>{
+    const x = (it.lon - b.minLon) / (b.maxLon - b.minLon) * rect.width;
+    const y = (yTop - mercY_(it.lat)) / (yTop - yBot) * rect.height;
+    const d = Math.hypot(x - mx, y - my);
+    if(d < bestD){ bestD = d; best = it; }
+  });
+  return best;
 }
+let tapDown = null;
+window.addEventListener('pointerdown', e=>{ tapDown = { x:e.clientX, y:e.clientY, t:Date.now() }; }, true);
+window.addEventListener('pointerup', e=>{
+  const d = tapDown; tapDown = null;
+  if(!d) return;
+  if(Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8) return;   // ลากแผนที่ ไม่นับเป็นการแตะ
+  if(e.target && e.target.closest && e.target.closest('button, select, input, a, .ldmap_ui, [class*="ldmap_"]')) return;
+
+  // แผนที่ช่วยเลือกในข้อ 1
+  const pm = $('pickMap');
+  if(pickReady && pm && pm.offsetWidth && pm.contains(e.target) && pickItems.length){
+    const hit = hitTest(pickMap, pm, pickItems, e.clientX, e.clientY, 24);
+    if(hit){
+      if(ANCHOR.type === 'SPAN'){
+        let arr = ANCHOR.ref ? ANCHOR.ref.split('~') : [];
+        const i = arr.indexOf(hit.key);
+        if(i >= 0) arr.splice(i, 1); else arr.push(hit.key);
+        ANCHOR.ref = arr.slice(-2).join('~');
+      } else {
+        ANCHOR.ref = hit.key;
+        if(hit.feeder) ANCHOR.feeder = hit.feeder;
+      }
+      beep('tap'); renderAnchorPick();
+      return;
+    }
+  }
+
+  // แผนที่หลัก
+  const mb = $('mapBox');
+  if(mapReady && mb && mb.offsetWidth && mb.contains(e.target) && mapPins.length){
+    const hit = hitTest(map, mb, mapPins, e.clientX, e.clientY, 28);
+    if(hit){ beep('tap'); openDetail(hit.id); }
+  }
+}, true);
+
 $('btnPickMe').onclick = ()=>{ if(pickReady && GPS) pickMap.location({ lon:GPS.lon, lat:GPS.lat }, true); };
 $('btnPickZoomIn').onclick = ()=>{ if(pickReady) pickMap.zoom(pickMap.zoom()+1, true); };
 $('btnPickZoomOut').onclick = ()=>{ if(pickReady) pickMap.zoom(pickMap.zoom()-1, true); };
@@ -1022,7 +1085,6 @@ function initMap(){
     map = new longdo.Map({ placeholder: el, location:{ lon:98.76, lat:8.38 }, zoom:13, lastView:false });
     map.Ui.DPad.visible(false);
     mapReady = true;
-    bindMapTap();
     if(GPS) map.location({ lon:GPS.lon, lat:GPS.lat }, true);
     if(!FINDINGS.length && navigator.onLine) loadList(); else drawMapPins();
   }catch(e){ $('mapHint').textContent = 'โหลดแผนที่ไม่ได้ (ต้องมีสัญญาณ)'; }
@@ -1063,32 +1125,6 @@ function drawMapPins(){
   $('mapHint').innerHTML = 'แสดง <b>' + mapPins.length + '</b> จุด · ' +
     '<span style="color:#c62828;">●</span> ระดับ1 <span style="color:#e07b00;">●</span> ระดับ2 ' +
     '<span style="color:#2e7d32;">●</span> ระดับ3 · จางลง=ปิดแล้ว · แตะหมุดเพื่อจัดการ';
-}
-/* แตะหมุดบนแผนที่ = เปิดรายละเอียดของจุดนั้นทันที */
-function bindMapTap(){
-  const el = $('mapBox');
-  let down = null;
-  const mercY = lat => Math.log(Math.tan(Math.PI/4 + lat*Math.PI/360));
-  el.addEventListener('pointerdown', e=>{ down = { x:e.clientX, y:e.clientY }; }, true);
-  el.addEventListener('pointerup', e=>{
-    if(!down) return;
-    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6;
-    down = null;
-    if(moved || !mapPins.length) return;
-    let b;
-    try{ b = map.bound(); }catch(err){ return; }
-    const rect = el.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    const yTop = mercY(b.maxLat), yBot = mercY(b.minLat);
-    let best = null, bestD = 26;
-    mapPins.forEach(p=>{
-      const x = (p.lon - b.minLon) / (b.maxLon - b.minLon) * rect.width;
-      const y = (yTop - mercY(p.lat)) / (yTop - yBot) * rect.height;
-      const d = Math.hypot(x - mx, y - my);
-      if(d < bestD){ bestD = d; best = p; }
-    });
-    if(best) openDetail(best.id);
-  }, true);
 }
 (function bindMapTools(){
   const sel = $('mapFltStatus');
@@ -1156,7 +1192,10 @@ function fillTypes(){
 /* ดาวน์โหลดข้อมูลเสาและอุปกรณ์เก็บไว้ในเครื่อง เพื่อใช้ตอนไม่มีสัญญาณ */
 $('btnCache').onclick = async ()=>{
   $('cacheInfo').textContent = 'กำลังโหลด ...';
+  bootClosed = false; $('bootOverlay').classList.add('show'); startBoot();
+  bootStep('auth','done'); bootStep('types','done'); bootStep('findings','skip','ไม่ต้องโหลดซ้ำ');
   await autoLoadData(true);
+  closeBoot(false);
   if(POLES) toast('โหลดข้อมูลล่าสุดแล้ว', 'ok');
   else $('cacheInfo').textContent = 'โหลดข้อมูลเสาไม่สำเร็จ — ตรวจว่ามีไฟล์ poles.json อยู่โฟลเดอร์เดียวกับหน้านี้';
 };
@@ -1175,6 +1214,48 @@ $('btnSync').onclick = ()=> syncQueue(false);
     if(chk.checked) beep('ok');
   };
 })();
+
+/* ---------- หน้าจอตอนเปิดแอป ---------- */
+const BOOT_STEPS = [
+  { k:'auth',    t:'ตรวจสอบบัญชีผู้ใช้' },
+  { k:'types',   t:'โหลดประเภทปัญหา' },
+  { k:'findings',t:'ดึงจุดที่พบล่าสุด' },
+  { k:'devices', t:'ซิงก์อุปกรณ์จากผัง SLD' },
+  { k:'poles',   t:'ซิงก์ข้อมูลเสาไฟ 71,349 ต้น' }
+];
+const bootState = {};
+let bootTipTimer = null, bootClosed = false;
+function renderBootSteps(){
+  const done = BOOT_STEPS.filter(x=> bootState[x.k] === 'done' || bootState[x.k] === 'skip').length;
+  $('bootBar').style.width = Math.round(done / BOOT_STEPS.length * 100) + '%';
+  $('bootSteps').innerHTML = BOOT_STEPS.map(x=>{
+    const st = bootState[x.k] || '';
+    const ic = st === 'done' ? '✓' : st === 'skip' ? '–' : '';
+    const extra = bootState[x.k + '_note'] ? ' <span style="color:var(--muted);font-size:12px;">' + bootState[x.k+'_note'] + '</span>' : '';
+    return `<div class="boot-step ${st}"><span class="ic">${ic}</span><span>${x.t}${extra}</span></div>`;
+  }).join('');
+}
+function bootStep(k, state, note){
+  bootState[k] = state;
+  if(note != null) bootState[k + '_note'] = note;
+  renderBootSteps();
+}
+function startBoot(){
+  bootState.auth = 'run';
+  renderBootSteps();
+  let i = Math.floor(Math.random() * PATROL_TIPS.length);
+  $('bootTip').textContent = PATROL_TIPS[i];
+  bootTipTimer = setInterval(()=>{ i = (i + 1) % PATROL_TIPS.length; $('bootTip').textContent = PATROL_TIPS[i]; }, 2800);
+  $('btnBootSkip').onclick = ()=> closeBoot(true);
+  setTimeout(()=>{ if(!bootClosed) closeBoot(false); }, 12000);   // กันค้าง ไม่ว่ากรณีใดก็เข้าใช้งานได้ใน 12 วินาที
+}
+function closeBoot(manual){
+  if(bootClosed) return;
+  bootClosed = true;
+  clearInterval(bootTipTimer);
+  $('bootOverlay').classList.remove('show');
+  if(!manual) beep('tap');
+}
 
 /* ---------- หน้าหลัก ---------- */
 function switchTab(name){
@@ -1233,18 +1314,16 @@ $('btnGoList').onclick = ()=> switchTab('list');
 
 /* โหลดข้อมูลเสาและอุปกรณ์ให้เองโดยไม่ต้องกดปุ่ม — ใช้ฐานข้อมูลชุดเดียวกับ Single Line Diagram */
 async function autoLoadData(force){
-  if(!navigator.onLine) return;
+  if(!navigator.onLine){ bootStep('devices','skip','ออฟไลน์'); bootStep('poles','skip','ออฟไลน์'); return; }
   const fresh = 1000 * 60 * 60 * 24 * 7;   // ข้อมูลในเครื่องเก่ากว่า 7 วันจึงโหลดใหม่
-  try{
-    const c = await cGet('poles');
-    if(force || !c || (Date.now() - c.at) > fresh){
-      const pr = await fetch(cfg.poles);
-      if(pr.ok){ POLES = await pr.json(); await cPut('poles', POLES); }
-    }
-  }catch(e){}
+
+  // อุปกรณ์จากผัง SLD
+  bootStep('devices','run');
   try{
     const c2 = await cGet('devices');
-    if(force || !c2 || (Date.now() - c2.at) > fresh){
+    if(!force && c2 && (Date.now() - c2.at) <= fresh){
+      bootStep('devices','done','ใช้ของในเครื่อง ' + c2.value.length.toLocaleString());
+    } else {
       const dr = await fetch(cfg.url);
       const data = await dr.json();
       const arr = [];
@@ -1252,8 +1331,42 @@ async function autoLoadData(force){
         arr.push({ id:d.id, type:d.type, desc:d.desc, lat:d.lat, lon:d.lon, feeder:f.id });
       }));
       if(arr.length){ DEVICES = arr; await cPut('devices', DEVICES); }
+      bootStep('devices','done', DEVICES ? DEVICES.length.toLocaleString() + ' รายการ' : '');
     }
-  }catch(e){}
+  }catch(e){ bootStep('devices','skip','ข้ามไปก่อน'); }
+
+  // เสาไฟ — ไฟล์ใหญ่ที่สุด แสดงเปอร์เซ็นต์ระหว่างโหลด
+  bootStep('poles','run');
+  try{
+    const c = await cGet('poles');
+    if(!force && c && (Date.now() - c.at) <= fresh){
+      POLES = c.value;
+      bootStep('poles','done','ใช้ของในเครื่อง ' + POLES.poles.length.toLocaleString() + ' ต้น');
+    } else {
+      const pr = await fetch(cfg.poles);
+      if(!pr.ok) throw new Error('404');
+      const total = parseInt(pr.headers.get('content-length') || '0', 10);
+      let text = '';
+      if(pr.body && pr.body.getReader && total){
+        const reader = pr.body.getReader(), dec = new TextDecoder();
+        let got = 0;
+        for(;;){
+          const { done, value } = await reader.read();
+          if(done) break;
+          got += value.length;
+          text += dec.decode(value, { stream:true });
+          bootStep('poles','run', Math.round(got / total * 100) + '%');
+        }
+        text += dec.decode();
+      } else {
+        text = await pr.text();
+      }
+      POLES = JSON.parse(text);
+      await cPut('poles', POLES);
+      bootStep('poles','done', POLES.poles.length.toLocaleString() + ' ต้น');
+    }
+  }catch(e){ bootStep('poles','skip','ยังไม่มีไฟล์ poles.json'); }
+
   showCacheInfo();
   renderAnchorPick();
   renderHome();
@@ -1335,6 +1448,7 @@ function renderInstall(){
 /* ---------- เริ่มทำงาน ---------- */
 (async function start(){
   setNet();
+  startBoot();
   await openDb();
   $('cfgUrl').value = cfg.url;
   $('cfgPoles').value = cfg.poles;
@@ -1348,24 +1462,53 @@ function renderInstall(){
   showCacheInfo();
   renderAnchorPick();
   await refreshQueueBadge();
-
   renderHome();
   renderInstall();
 
-  if(navigator.onLine && cfg.url && cfg.name){
-    syncQueue(true);
-    try{
-      const r = await api({ action:'patrolBootstrap' });
-      if(r && r.ok){
-        PROFILE = r.profile; TYPES = r.types || [];
-        localStorage.setItem(LS.prof, JSON.stringify(PROFILE));
-        localStorage.setItem(LS.types, JSON.stringify(TYPES));
-        fillTypes(); renderUser();
-      }
-    }catch(e){}
-    loadList();            // ดึงจุดที่พบมาแสดงในหน้าหลักและแผนที่
-    autoLoadData(false);   // โหลดเสา/อุปกรณ์เองเบื้องหลัง ไม่ต้องกดปุ่ม
+  if(!navigator.onLine || !cfg.url || !cfg.name){
+    bootStep('auth', cfg.name ? 'done' : 'skip', cfg.name ? '' : 'ยังไม่ได้เข้าสู่ระบบ');
+    bootStep('types', TYPES.length ? 'done' : 'skip', TYPES.length ? 'ใช้ของในเครื่อง' : '');
+    bootStep('findings','skip','ออฟไลน์');
+    bootStep('devices','skip','ออฟไลน์');
+    bootStep('poles', POLES ? 'done' : 'skip', POLES ? 'ใช้ของในเครื่อง' : '');
+    setTimeout(()=> closeBoot(false), 900);
+    return;
   }
+
+  syncQueue(true);
+
+  // ขั้นที่จำเป็นก่อนใช้งาน — เร็ว
+  try{
+    const r = await api({ action:'patrolBootstrap' });
+    if(r && r.ok){
+      PROFILE = r.profile; TYPES = r.types || [];
+      localStorage.setItem(LS.prof, JSON.stringify(PROFILE));
+      localStorage.setItem(LS.types, JSON.stringify(TYPES));
+      fillTypes(); renderUser(); renderHome();
+      bootStep('auth','done', PROFILE.name || '');
+      bootStep('types','done', TYPES.length + ' แบบ');
+    } else {
+      bootStep('auth','skip','ตรวจสอบบัญชีไม่ผ่าน');
+      bootStep('types', TYPES.length ? 'done' : 'skip','ใช้ของในเครื่อง');
+    }
+  }catch(e){
+    bootStep('auth','skip','เชื่อมต่อไม่ได้');
+    bootStep('types', TYPES.length ? 'done' : 'skip','');
+  }
+
+  bootStep('findings','run');
+  try{
+    await loadList();
+    bootStep('findings','done', FINDINGS.length + ' รายการ');
+  }catch(e){ bootStep('findings','skip',''); }
+
+  renderHome();
+
+  // ข้อมูลก้อนใหญ่ — ปิดหน้าจอเปิดแอปได้เลย ที่เหลือโหลดต่อเบื้องหลัง
+  const heavy = autoLoadData(false);
+  const cached = POLES && DEVICES;
+  if(cached){ closeBoot(false); await heavy; }
+  else { await heavy; closeBoot(false); }
   renderHome();
 })();
 </script>
