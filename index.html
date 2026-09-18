@@ -3014,13 +3014,15 @@ function openRegroupModal(f){
     if(dataIsFallback){ modalMsg('บันทึกไม่ได้ — กำลังดูข้อมูลสำรองในไฟล์ กรุณารีเฟรชหน้าเว็บก่อน', 'err'); return; }
     if(!(await requireAuth())){ modalMsg('ยังไม่ได้ยืนยันตัวตน จึงยังไม่ได้บันทึก', 'err'); return; }
     setModalBusy(true);
+    const plan = picked.map(x=>({ feeder: f.id, device: Object.assign({}, x.d, { parentId: x.prot.id }),
+      reason: `จัดต้นทาง: ต่อตรงกับ ${x.prot.id} (เดิมต่อพ่วงผ่าน ${x.oldParent.id})`, ref: x }));
+    const { failed } = await persistDevicesBatchQuiet(plan, (done, total)=> modalMsg(`⏳ กำลังบันทึก ${done}/${total}...`, ''));
+    const failSet = new Set(failed);
     let okN = 0; const fails = [];
-    for(const x of picked){
-      modalMsg(`⏳ กำลังบันทึก ${okN + fails.length + 1}/${picked.length}...`, '');
-      const row = Object.assign({}, x.d, { parentId: x.prot.id });
-      const r = await persistDeviceQuiet(f.id, row, `จัดต้นทาง: ต่อตรงกับ ${x.prot.id} (เดิมต่อพ่วงผ่าน ${x.oldParent.id})`);
-      if(r && r.ok){ x.d.parentId = x.prot.id; okN++; } else fails.push(x.d.id);
-    }
+    plan.forEach(pln=>{
+      if(failSet.has(pln.device.id)){ fails.push(pln.device.id); return; }
+      pln.ref.d.parentId = pln.ref.prot.id; okN++;
+    });
     setModalBusy(false);
     refreshAfterDeviceChange(f, null);
     if(mapMode && leafletMap) rebuildMapMarkers();
@@ -3232,16 +3234,20 @@ function openOpsaImportModal(){
     if(dataIsFallback){ modalMsg('บันทึกไม่ได้ — กำลังดูข้อมูลสำรองในไฟล์ กรุณารีเฟรชหน้าเว็บก่อน', 'err'); return; }
     if(!(await requireAuth())){ modalMsg('ยังไม่ได้ยืนยันตัวตน จึงยังไม่ได้บันทึก', 'err'); return; }
     setModalBusy(true);
-    let okN = 0; const fails = [];
-    for(const p of picks){
-      modalMsg(`⏳ กำลังเพิ่ม ${okN + fails.length + 1}/${picks.length}...`, '');
+    const plan = picks.map(p=>{
       const dev = { id: p.x.id, type: 'TRANSFORMER', rating: p.x.kva ? p.x.kva + 'kVA' : '', desc: p.x.desc || '',
         parentId: p.parent.id, parentConfidence: 'estimated', source: 'opsa-import' };
       dev.txType = guessTxType(Object.assign({}, dev, { opsa: { loadPercent: p.x.o[0] } }));
       dev.txTypeSource = 'auto';
-      const r = await persistDeviceQuiet(p.f.id, dev, `เพิ่มจากข้อมูล OPSA (7 ก.ย. 2569) ต่อจาก ${p.parent.id}`);
-      if(r && r.ok){ p.f.devices.push(dev); okN++; } else fails.push(p.x.id);
-    }
+      return { feeder: p.f.id, device: dev, reason: `เพิ่มจากข้อมูล OPSA (7 ก.ย. 2569) ต่อจาก ${p.parent.id}`, ref: p };
+    });
+    const { failed } = await persistDevicesBatchQuiet(plan, (done, total)=> modalMsg(`⏳ กำลังเพิ่ม ${done}/${total}...`, ''));
+    const failSet = new Set(failed);
+    let okN = 0; const fails = [];
+    plan.forEach(pln=>{
+      if(failSet.has(pln.device.id)){ fails.push(pln.device.id); return; }
+      pln.ref.f.devices.push(pln.device); okN++;
+    });
     attachOpsaMissing();
     setModalBusy(false);
     if(selectedFeeder) refreshAfterDeviceChange(DATA.feeders.find(x=>x.id===selectedFeeder), null);
@@ -3282,14 +3288,18 @@ function openTxTypeSeedModal(){
     if(!(await requireAuth())){ modalMsg('ยังไม่ได้ยืนยันตัวตน จึงยังไม่ได้บันทึก', 'err'); return; }
     const restAsPrivate = document.getElementById('txSeedRest').checked;
     setModalBusy(true);
-    let okN = 0; const fails = [];
-    for(const x of pending){
+    const plan = pending.map(x=>{
       const t = (x.guess === 'UNKNOWN' && restAsPrivate) ? 'PRIVATE' : x.guess;
-      modalMsg(`⏳ กำลังบันทึก ${okN + fails.length + 1}/${pending.length}...`, '');
-      const row = Object.assign({}, x.d, { txType: t, txTypeSource: 'auto' });
-      const r = await persistDeviceQuiet(x.f.id, row, `จำแนกชนิดหม้อแปลงอัตโนมัติ: ${TX_TYPES[t].label}`);
-      if(r && r.ok){ x.d.txType = t; x.d.txTypeSource = 'auto'; okN++; } else fails.push(x.d.id);
-    }
+      return { feeder: x.f.id, device: Object.assign({}, x.d, { txType: t, txTypeSource: 'auto' }),
+        reason: `จำแนกชนิดหม้อแปลงอัตโนมัติ: ${TX_TYPES[t].label}`, ref: x, t };
+    });
+    const { failed } = await persistDevicesBatchQuiet(plan, (done, total)=> modalMsg(`⏳ กำลังบันทึก ${done}/${total}...`, ''));
+    const failSet = new Set(failed);
+    let okN = 0; const fails = [];
+    plan.forEach(pln=>{
+      if(failSet.has(pln.device.id)){ fails.push(pln.device.id); return; }
+      pln.ref.d.txType = pln.t; pln.ref.d.txTypeSource = 'auto'; okN++;
+    });
     setModalBusy(false);
     if(selectedFeeder) refreshAfterDeviceChange(DATA.feeders.find(x=>x.id===selectedFeeder), null);
     if(mapMode && leafletMap) rebuildMapMarkers();
@@ -3321,13 +3331,15 @@ function openTypeRepairModal(f){
     if(dataIsFallback){ modalMsg('บันทึกไม่ได้ — กำลังดูข้อมูลสำรองในไฟล์ กรุณารีเฟรชหน้าเว็บก่อน', 'err'); return; }
     if(!(await requireAuth())){ modalMsg('ยังไม่ได้ยืนยันตัวตน จึงยังไม่ได้บันทึก', 'err'); return; }
     setModalBusy(true);
+    const plan = picked.map(x=>({ feeder: f.id, device: Object.assign({}, x.d, { type: x.expected }),
+      reason: `แก้ประเภทกลับเป็น ${x.expected} (ถูกเปลี่ยนเป็น ${x.d.type} จากฟอร์มแก้ไขเดิม)`, ref: x }));
+    const { failed } = await persistDevicesBatchQuiet(plan, (done, total)=> modalMsg(`⏳ กำลังบันทึก ${done}/${total}...`, ''));
+    const failSet = new Set(failed);
     let okN = 0; const fails = [];
-    for(const x of picked){
-      modalMsg(`⏳ กำลังบันทึก ${okN + fails.length + 1}/${picked.length}...`, '');
-      const row = Object.assign({}, x.d, { type: x.expected });
-      const r = await persistDeviceQuiet(f.id, row, `แก้ประเภทกลับเป็น ${x.expected} (ถูกเปลี่ยนเป็น ${x.d.type} จากฟอร์มแก้ไขเดิม)`);
-      if(r && r.ok){ x.d.type = x.expected; okN++; } else fails.push(x.d.id);
-    }
+    plan.forEach(pln=>{
+      if(failSet.has(pln.device.id)){ fails.push(pln.device.id); return; }
+      pln.ref.d.type = pln.ref.expected; okN++;
+    });
     setModalBusy(false);
     refreshAfterDeviceChange(f, null);
     if(leafletMap && mapMode) rebuildMapMarkers();
@@ -4376,6 +4388,51 @@ async function persistDevice(feederId, device, reason, opts){
   }
 }
 /** เหมือน persistDevice แต่ไม่โชว์ toast ของตัวเอง (เอาไว้ใช้ตอนบันทึกหลายรายการติดกันเป็นชุด จะได้ไม่มี toast ซ้อนตีกัน) — ไม่เช็ค auth ซ้ำ (ให้ผู้เรียกเช็คครั้งเดียวก่อนเข้า loop) */
+// บันทึกหลายเครื่องในคำสั่งเดียว (action upsertBatch) — เร็วกว่ายิงทีละเครื่องมาก
+// ถ้า Code.gs ยังเป็นเวอร์ชันเดิมที่ไม่รู้จัก upsertBatch จะถอยไปใช้แบบทีละเครื่องให้อัตโนมัติ
+const BATCH_SIZE = 120;
+let batchUnsupported = false;
+async function persistDevicesBatchQuiet(items, onProgress){
+  const failed = [];
+  let done = 0;
+  for(let i = 0; i < items.length; i += BATCH_SIZE){
+    const chunk = items.slice(i, i + BATCH_SIZE);
+    let usedBatch = false;
+    if(!batchUnsupported){
+      try{
+        const res = await fetch(GAS_URL, {
+          method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+          body: JSON.stringify({ action:'upsertBatch', items: chunk.map(x=>({ feeder:x.feeder, device:x.device, reason:x.reason })),
+            changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password })
+        });
+        const json = await res.json();
+        if(json && json.ok){
+          usedBatch = true;
+          (json.failed || []).forEach(id=>failed.push(id));
+          done += chunk.length;
+          onProgress && onProgress(done, items.length);
+        } else if(json && /action|ไม่รู้จัก|unknown/i.test(String(json.error||''))){
+          batchUnsupported = true;   // Code.gs เวอร์ชันเดิม
+        } else {
+          chunk.forEach(x=>failed.push(x.device.id));
+          done += chunk.length;
+          onProgress && onProgress(done, items.length);
+          usedBatch = true;
+        }
+      }catch(e){ batchUnsupported = true; }
+    }
+    if(!usedBatch){
+      for(const x of chunk){
+        const r = await persistDeviceQuiet(x.feeder, x.device, x.reason);
+        if(!r || !r.ok) failed.push(x.device.id);
+        done++;
+        onProgress && onProgress(done, items.length);
+      }
+    }
+  }
+  return { failed };
+}
+
 async function persistDeviceQuiet(feederId, device, reason, opts){
   if(dataIsFallback){
     return { ok:false, error:'กำลังดูข้อมูลสำรองในไฟล์ (ไม่ได้เชื่อมต่อ Google Sheet) — บันทึกไม่ได้ กรุณารีเฟรชหน้าเว็บก่อน' };
