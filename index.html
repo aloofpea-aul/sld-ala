@@ -778,6 +778,12 @@
             <button class="pf-btn" data-filter-type="other">อื่นๆ</button>
           </div>
           <div class="pf-group">
+            <span class="pf-label" title="แยกหม้อแปลงจำหน่ายของ กฟภ. (ชื่อขึ้นต้น DCC_) ออกจากหม้อแปลงเฉพาะราย">ชนิดหม้อแปลง:</span>
+            <button class="pf-btn active" data-filter-owner="all">ทั้งหมด</button>
+            <button class="pf-btn" data-filter-owner="dcc">จำหน่าย (DCC_)</button>
+            <button class="pf-btn" data-filter-owner="private">เฉพาะราย</button>
+          </div>
+          <div class="pf-group">
             <span class="pf-label" title="กรองเฉพาะหม้อแปลงที่ยังไม่ได้ยืนยันว่าต่อจากอุปกรณ์ตัดตอนตัวใด">ต้นทางหม้อแปลง:</span>
             <button class="pf-btn active" data-filter-parent="all">ทั้งหมด</button>
             <button class="pf-btn" data-filter-parent="unconfirmed">ยังไม่ยืนยัน</button>
@@ -1582,6 +1588,15 @@ function visibleDevices(feeder){
 let panelTypeFilter = 'all'; // 'all' | 'WF' | 'WS' | 'other'
 let panelXfmrFilter = 'all'; // 'all' | 'has' | 'none'
 let panelParentFilter = 'all'; // 'all' | 'unconfirmed' — เลือกดูเฉพาะหม้อแปลงที่ต้นทางยังไม่ยืนยัน
+let panelOwnerFilter = 'all';  // 'all' | 'dcc' | 'private' — ชนิดหม้อแปลง
+// แยกหม้อแปลงจำหน่ายของ กฟภ. ออกจากหม้อแปลงเฉพาะราย โดยดูจากชื่อจุดติดตั้งที่ขึ้นต้นด้วย DCC_
+// (เป็นเกณฑ์จากชื่อในฐานข้อมูล GIS ไม่ใช่ทะเบียนทรัพย์สิน จึงใช้คัดกรองเบื้องต้นเท่านั้น)
+function isDistributionTransformer(d){ return /^\s*DCC/i.test(String(d.desc||'')); }
+function deviceMatchesOwnerFilter(d){
+  if(panelOwnerFilter === 'all') return true;
+  if(d.type !== 'TRANSFORMER') return false;   // กรองชนิดหม้อแปลง = แสดงเฉพาะหม้อแปลง
+  return panelOwnerFilter === 'dcc' ? isDistributionTransformer(d) : !isDistributionTransformer(d);
+}
 function deviceMatchesParentFilter(d){
   if(panelParentFilter === 'all') return true;
   return d.type === 'TRANSFORMER' && d.parentConfidence !== 'confirmed';
@@ -2638,7 +2653,7 @@ document.getElementById('panelHdrToggle').addEventListener('click', ()=>{
 function renderDeviceList(f){
   refreshPanelHdrToggle();
   const list = document.getElementById('deviceList');
-  const devices = visibleDevices(f).filter(d => deviceMatchesTypeFilter(d) && deviceMatchesXfmrFilter(f, d) && deviceMatchesParentFilter(d));
+  const devices = visibleDevices(f).filter(d => deviceMatchesTypeFilter(d) && deviceMatchesXfmrFilter(f, d) && deviceMatchesParentFilter(d) && deviceMatchesOwnerFilter(d));
   let html = devices.map(d => rowOrForm(f, d)).join('');
   if(!devices.length){
     html = '<p class="report-note" style="padding:16px;">ไม่พบอุปกรณ์ที่ตรงกับตัวกรองที่เลือก</p>';
@@ -4318,6 +4333,14 @@ document.querySelectorAll('#panelFilterBar [data-filter-type]').forEach(btn=>{
     if(selectedFeeder) renderDeviceList(DATA.feeders.find(x=>x.id===selectedFeeder));
   });
 });
+document.querySelectorAll('#panelFilterBar [data-filter-owner]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    panelOwnerFilter = btn.dataset.filterOwner;
+    document.querySelectorAll('#panelFilterBar [data-filter-owner]').forEach(b=>b.classList.toggle('active', b===btn));
+    if(panelOwnerFilter !== 'all' && !showLeafAssets) setShowLeafAssets(true);
+    if(selectedFeeder) renderDeviceList(DATA.feeders.find(x=>x.id===selectedFeeder));
+  });
+});
 document.querySelectorAll('#panelFilterBar [data-filter-parent]').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     panelParentFilter = btn.dataset.filterParent;
@@ -4826,6 +4849,10 @@ function buildQualityData(){
       noGps: tx.filter(d=>d.lat == null).length,
       far, farN: far.length,
       phaseBad: tx.filter(opsaPhaseMismatch),
+      nDcc: tx.filter(isDistributionTransformer).length,
+      nPrivate: tx.filter(d=>!isDistributionTransformer(d)).length,
+      noOpsaDcc: tx.filter(d=>isDistributionTransformer(d) && (!d.opsa || d.opsa.loadPercent == null)).length,
+      noOpsaPrivate: tx.filter(d=>!isDistributionTransformer(d) && (!d.opsa || d.opsa.loadPercent == null)).length,
       noOpsa: tx.filter(d=>!d.opsa || d.opsa.loadPercent == null).length
     };
   });
@@ -4851,17 +4878,22 @@ function renderReportTabQuality(){
     });
   });
   document.getElementById('reportBody').innerHTML = `
-    <p class="report-note">ตรวจจากข้อมูลปัจจุบันทุกครั้งที่เปิดรายงาน — แก้ข้อมูลแล้วตัวเลขเปลี่ยนตามทันที</p>
+    <p class="report-note">ตรวจจากข้อมูลปัจจุบันทุกครั้งที่เปิดรายงาน — แก้ข้อมูลแล้วตัวเลขเปลี่ยนตามทันที<br>
+      "จำหน่าย (DCC_)" = หม้อแปลงที่ชื่อจุดติดตั้งขึ้นต้นด้วย DCC_ ในฐานข้อมูล GIS · ที่เหลือจัดเป็น "เฉพาะราย" —
+      เป็นเกณฑ์จากชื่อ ไม่ใช่ทะเบียนทรัพย์สิน จึงใช้คัดกรองเบื้องต้น</p>
     <table class="report-table">
-      <tr><th>วงจร</th><th>หม้อแปลงในผัง</th><th>ประเภทเพี้ยน</th><th>ต่อพ่วงกับหม้อแปลง</th>
-          <th>ต้นทางยังไม่ยืนยัน</th><th>ไม่มีพิกัด</th><th>ห่างต้นทาง &gt; 1 กม.</th><th>เฟสไม่ตรง OPSA</th><th>ไม่มีข้อมูล OPSA</th></tr>
+      <tr><th>วงจร</th><th>หม้อแปลงในผัง</th><th>จำหน่าย (DCC_)</th><th>เฉพาะราย</th><th>ประเภทเพี้ยน</th><th>ต่อพ่วงกับหม้อแปลง</th>
+          <th>ต้นทางยังไม่ยืนยัน</th><th>ไม่มีพิกัด</th><th>ห่างต้นทาง &gt; 1 กม.</th><th>เฟสไม่ตรง OPSA</th>
+          <th>ไม่มีข้อมูล OPSA<br><small>จำหน่าย / เฉพาะราย</small></th></tr>
       ${rows.map(r=>`<tr>
-        <td>${escapeHtml(r.feeder)}</td><td>${r.nTx}</td>
+        <td>${escapeHtml(r.feeder)}</td><td>${r.nTx}</td><td>${r.nDcc}</td><td>${r.nPrivate}</td>
         ${warnCell(r.mistyped, true)}${warnCell(r.chained, true)}
         <td>${r.unconfirmed}</td>${warnCell(r.noGps, true)}
-        ${warnCell(r.farN, true)}${warnCell(r.phaseBad.length, true)}<td>${r.noOpsa}</td></tr>`).join('')}
-      <tr class="total-row"><td>รวมทั้งหมด</td><td>${sum('nTx')}</td><td>${sum('mistyped')}</td><td>${sum('chained')}</td>
-        <td>${sum('unconfirmed')}</td><td>${sum('noGps')}</td><td>${sum('far')}</td><td>${sum('phaseBad')}</td><td>${sum('noOpsa')}</td></tr>
+        ${warnCell(r.farN, true)}${warnCell(r.phaseBad.length, true)}
+        <td>${r.noOpsaDcc} / ${r.noOpsaPrivate}</td></tr>`).join('')}
+      <tr class="total-row"><td>รวมทั้งหมด</td><td>${sum('nTx')}</td><td>${sum('nDcc')}</td><td>${sum('nPrivate')}</td><td>${sum('mistyped')}</td><td>${sum('chained')}</td>
+        <td>${sum('unconfirmed')}</td><td>${sum('noGps')}</td><td>${sum('far')}</td><td>${sum('phaseBad')}</td>
+        <td>${sum('noOpsaDcc')} / ${sum('noOpsaPrivate')}</td></tr>
     </table>
     <h3 style="margin:18px 0 6px;font-size:.95rem;">หม้อแปลงที่ห่างอุปกรณ์ต้นทางเกิน 1 กม. (ควรตรวจต้นทาง)</h3>
     <table class="report-table"><tr><th>วงจร</th><th>เลขหม้อแปลง</th><th>ขนาด</th><th>จุดติดตั้ง</th><th>รายละเอียด</th></tr>
