@@ -190,6 +190,21 @@
   #leafPill button{border:none;background:transparent;border-radius:14px;padding:5px 11px;font-family:inherit;font-size:.76rem;cursor:pointer;color:var(--muted);white-space:nowrap;}
   #leafPill button.on{background:var(--pea-purple);color:#fff;font-weight:700;}
   #leafPill .lp-n{opacity:.8;font-weight:400;}
+  .up-block{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px;}
+  .up-title{font-weight:700;font-size:.9rem;margin-bottom:4px;}
+  .up-path{font-size:.76rem;color:var(--muted);line-height:1.6;margin-top:4px;word-break:break-word;font-family:"Consolas",monospace;}
+  .up-actions{display:flex;gap:8px;margin-top:10px;}
+  .up-actions button{flex:1;border:1px solid var(--pea-purple);background:#fff;color:var(--pea-purple);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:.82rem;font-weight:700;cursor:pointer;}
+  .up-actions button:disabled{opacity:.45;cursor:not-allowed;border-color:var(--line);color:var(--muted);}
+  .cand-list{border:1px solid var(--line);border-radius:8px;margin-top:6px;overflow:hidden;}
+  .cand{display:flex;align-items:center;gap:6px;padding:9px 10px;border-bottom:1px solid #f0efe9;font-size:.84rem;cursor:pointer;background:#fff;}
+  .cand:last-child{border-bottom:none;}
+  .cand.on{background:var(--pea-soft);box-shadow:inset 3px 0 0 var(--pea-purple);}
+  .cand .cid{font-family:"Consolas",monospace;font-weight:700;}
+  .cand .cmeta{color:var(--muted);font-size:.76rem;}
+  .cand .cdist{margin-left:auto;color:#1a73e8;font-weight:700;font-size:.76rem;white-space:nowrap;}
+  .pc-badge{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:9px;margin-left:4px;vertical-align:1px;}
+  .pc-badge.est{background:#fff4e5;color:#b26a00;} .pc-badge.ok{background:#e8f5e9;color:var(--good);}
   #panelTypeWarn{margin-top:8px;padding:8px 10px;border-radius:8px;background:#fff4e5;color:#7a4a00;font-size:.78rem;line-height:1.55;}
   #panelTypeWarn button{margin-left:4px;border:1px solid #b26a00;background:#fff;color:#7a4a00;border-radius:6px;padding:3px 9px;font-family:inherit;font-size:.76rem;font-weight:700;cursor:pointer;}
   #app.is-overview #panelTypeWarn{display:none !important;}
@@ -761,6 +776,11 @@
             <button class="pf-btn" data-filter-type="WF">WF</button>
             <button class="pf-btn" data-filter-type="WS">WS</button>
             <button class="pf-btn" data-filter-type="other">อื่นๆ</button>
+          </div>
+          <div class="pf-group">
+            <span class="pf-label" title="กรองเฉพาะหม้อแปลงที่ยังไม่ได้ยืนยันว่าต่อจากอุปกรณ์ตัดตอนตัวใด">ต้นทางหม้อแปลง:</span>
+            <button class="pf-btn active" data-filter-parent="all">ทั้งหมด</button>
+            <button class="pf-btn" data-filter-parent="unconfirmed">ยังไม่ยืนยัน</button>
           </div>
           <div class="pf-group">
             <span class="pf-label" title="กรองสวิตช์/ฟิวส์ ตามว่ามีหม้อแปลงต่ออยู่ปลายน้ำหรือไม่">มีหม้อแปลงปลายน้ำ:</span>
@@ -1560,6 +1580,11 @@ function visibleDevices(feeder){
 // ============ ตัวกรองรายการอุปกรณ์ในแผงด้านขวา (ประเภท + มีหม้อแปลงต่ออยู่หรือไม่) ============
 let panelTypeFilter = 'all'; // 'all' | 'WF' | 'WS' | 'other'
 let panelXfmrFilter = 'all'; // 'all' | 'has' | 'none'
+let panelParentFilter = 'all'; // 'all' | 'unconfirmed' — เลือกดูเฉพาะหม้อแปลงที่ต้นทางยังไม่ยืนยัน
+function deviceMatchesParentFilter(d){
+  if(panelParentFilter === 'all') return true;
+  return d.type === 'TRANSFORMER' && d.parentConfidence !== 'confirmed';
+}
 function deviceMatchesTypeFilter(d){
   if(panelTypeFilter === 'all') return true;
   if(panelTypeFilter === 'WF') return d.type === 'WF';
@@ -2612,7 +2637,7 @@ document.getElementById('panelHdrToggle').addEventListener('click', ()=>{
 function renderDeviceList(f){
   refreshPanelHdrToggle();
   const list = document.getElementById('deviceList');
-  const devices = visibleDevices(f).filter(d => deviceMatchesTypeFilter(d) && deviceMatchesXfmrFilter(f, d));
+  const devices = visibleDevices(f).filter(d => deviceMatchesTypeFilter(d) && deviceMatchesXfmrFilter(f, d) && deviceMatchesParentFilter(d));
   let html = devices.map(d => rowOrForm(f, d)).join('');
   if(!devices.length){
     html = '<p class="report-note" style="padding:16px;">ไม่พบอุปกรณ์ที่ตรงกับตัวกรองที่เลือก</p>';
@@ -2911,6 +2936,155 @@ function openRegroupModal(f){
     if(fails.length){ modalMsg(`สำเร็จ ${okN} รายการ · ไม่สำเร็จ: ${escapeHtml(fails.join(', '))}`, 'err'); return; }
     closeDeviceModal();
     showToast(`จัดต้นทางหม้อแปลงแล้ว ${okN} เครื่อง`, 'ok');
+  };
+}
+
+// ===== ยืนยัน / เปลี่ยนต้นทางหม้อแปลง จากหน้า SLD =====
+function upstreamChainSld(f, d){
+  const byId = {}; f.devices.forEach(x=>{ byId[x.id] = x; });
+  const chain = []; const seen = new Set([d.id]);
+  let cur = byId[d.parentId];
+  while(cur && !seen.has(cur.id) && chain.length < 200){ chain.push(cur); seen.add(cur.id); cur = byId[cur.parentId]; }
+  return chain;
+}
+function upstreamBlockHtml(f, d){
+  const chain = upstreamChainSld(f, d);
+  const parent = chain[0];
+  const prot = chain.find(x=>PROTECTIVE_TYPES.has(x.type)) || null;
+  const confirmed = d.parentConfidence === 'confirmed';
+  const path = chain.slice(0, 6).map(x=>escapeHtml(x.id)).join(' ‹ ');
+  return `<div class="up-block">
+    <div class="up-title">🔗 ต้นทาง ${confirmed ? '<span class="pc-badge ok">ยืนยันแล้ว</span>' : '<span class="pc-badge est">ประมาณจากพิกัด</span>'}</div>
+    <div class="device-view-row"><span class="k">ในระบบต่อจาก</span><span class="v">${parent ? escapeHtml(parent.id) + ' (' + escapeHtml(DEVICE_TYPE_LABELS[parent.type] || parent.type) + ')' : '(สถานีโดยตรง)'}</span></div>
+    <div class="device-view-row"><span class="k">อุปกรณ์ตัดตอนต้นทาง</span><span class="v">${prot ? escapeHtml(prot.id) + ' ' + escapeHtml(prot.rating||'') : '-'}</span></div>
+    ${chain.length ? `<div class="up-path">เส้นทางไฟ: หม้อแปลงนี้ ‹ ${path}${chain.length > 6 ? ' ‹ …' : ''}</div>` : ''}
+    <div class="up-actions">
+      <button type="button" id="upConfirmBtn" ${prot ? '' : 'disabled'}>✓ ยืนยันต้นทางถูกต้อง</button>
+      <button type="button" id="upChangeBtn">✏ เปลี่ยนต้นทาง</button>
+    </div>
+  </div>`;
+}
+// คำนวณขนาดฟิวส์แนะนำแบบสมมติว่าย้ายต้นทางแล้ว (คำนวณจริงชั่วคราวแล้วคืนค่าเดิม ไม่แตะชีต)
+function fuseEstimateWith(f, d, newParentId, targetId){
+  const old = d.parentId;
+  d.parentId = newParentId;
+  const est = computeDownstreamLoadEstimate(f, targetId);
+  d.parentId = old;
+  return est;
+}
+function fuseImpactHtml(f, d, newProt, oldProt){
+  const lines = [];
+  const show = (dev, before, after)=>{
+    if(!dev) return;
+    const b = before ? `${before.amps} A → ${before.suggestedFuse}K` : 'ไม่มีหม้อแปลงปลายน้ำ';
+    const a = after ? `${after.amps} A → ${after.suggestedFuse}K` : 'ไม่มีหม้อแปลงปลายน้ำ';
+    const same = before && after && before.suggestedFuse === after.suggestedFuse && before.amps === after.amps;
+    const changed = (before && after) ? before.suggestedFuse !== after.suggestedFuse : true;
+    lines.push(`<div class="device-view-row"><span class="k">${escapeHtml(dev.id)} (ปัจจุบัน ${escapeHtml(dev.rating||'-')})</span>
+      <span class="v">${same ? escapeHtml(b) + ' · ไม่เปลี่ยน' : escapeHtml(b) + ' → ' + `<b${changed ? ' style="color:#b26a00"' : ''}>${escapeHtml(a)}</b>`}</span></div>`);
+  };
+  if(oldProt) show(oldProt, computeDownstreamLoadEstimate(f, oldProt.id), fuseEstimateWith(f, d, newProt.id, oldProt.id));
+  show(newProt, computeDownstreamLoadEstimate(f, newProt.id), fuseEstimateWith(f, d, newProt.id, newProt.id));
+  return lines.length
+    ? `<div class="dm-confirm-box warn"><b>ผลต่อขนาดฟิวส์แนะนำ (คำนวณสดจากโหลด)</b>${lines.join('')}
+        <div style="font-size:.74rem;margin-top:4px;">อุปกรณ์ที่อยู่ต้นทางขึ้นไปของทั้งสองจุดจะไม่เปลี่ยน เพราะโหลดยังอยู่ในเขตเดิม</div>
+        <div style="font-size:.74rem;margin-top:4px;">เป็นค่าประมาณเพื่อประกอบการพิจารณา ขนาดฟิวส์ที่ติดตั้งจริงไม่ได้ถูกแก้</div></div>`
+    : '';
+}
+async function saveParentSld(f, d, newParentId, reason, msgTarget){
+  if(dataIsFallback){ modalMsg('บันทึกไม่ได้ — กำลังดูข้อมูลสำรองในไฟล์ กรุณารีเฟรชหน้าเว็บก่อน', 'err'); return false; }
+  if(!(await requireAuth())){ modalMsg('ยังไม่ได้ยืนยันตัวตน จึงยังไม่ได้บันทึก', 'err'); return false; }
+  setModalBusy(true);
+  modalMsg('⏳ กำลังบันทึก...', '');
+  const row = Object.assign({}, d, { parentId: newParentId, parentConfidence: 'confirmed' });
+  const r = await persistDeviceQuiet(f.id, row, reason);
+  setModalBusy(false);
+  if(!r || !r.ok){ modalMsg('⚠ บันทึกไม่สำเร็จ ข้อมูลยังเหมือนเดิม: ' + escapeHtml((r && (r.error||r.message)) || ''), 'err'); return false; }
+  d.parentId = newParentId; d.parentConfidence = 'confirmed';
+  return true;
+}
+function openParentConfirmModal(f, d){
+  const chain = upstreamChainSld(f, d);
+  const prot = chain.find(x=>PROTECTIVE_TYPES.has(x.type));
+  if(!prot) return;
+  const viaChain = d.parentId !== prot.id;
+  document.getElementById('deviceModalTitle').textContent = 'ยืนยันต้นทาง ' + d.id;
+  document.getElementById('deviceBody').innerHTML = `
+    <div class="dm-confirm-box add">ยืนยันว่าหม้อแปลง <b>${escapeHtml(d.id)}</b> รับไฟจาก <b>${escapeHtml(prot.id)}</b> ${escapeHtml(prot.rating||'')} — สถานะต้นทางจะเปลี่ยนเป็น "ยืนยันแล้ว"</div>
+    ${viaChain ? `<div class="dm-confirm-box warn">ในระบบตอนนี้ต่อพ่วงผ่าน ${escapeHtml(d.parentId)} จะปรับให้ต่อกับ <b>${escapeHtml(prot.id)}</b> โดยตรง — โหลดยังอยู่ใต้อุปกรณ์ตัวเดิม ขนาดฟิวส์แนะนำไม่เปลี่ยน</div>` : ''}
+    <div id="dmMsg" class="dm-msg"></div>
+    <div class="device-modal-actions">
+      <button id="upBackBtn">‹ ย้อนกลับ</button>
+      <button class="btn-primary" id="upOkBtn">✓ ยืนยันต้นทาง</button>
+    </div>`;
+  document.getElementById('upBackBtn').onclick = ()=>renderDeviceModalView(f, d);
+  document.getElementById('upOkBtn').onclick = async ()=>{
+    const ok = await saveParentSld(f, d, prot.id, `ยืนยันต้นทาง: ${prot.id}${viaChain ? ' (เดิมต่อพ่วงผ่าน ' + d.parentId + ')' : ''}`);
+    if(!ok) return;
+    refreshAfterDeviceChange(f, d.id);
+    if(mapMode && leafletMap) rebuildMapMarkers();
+    closeDeviceModal();
+    showToast(`ยืนยันต้นทาง ${d.id} แล้ว`, 'ok');
+  };
+}
+function openParentChangeModal(f, d){
+  const chain = upstreamChainSld(f, d);
+  const oldProt = chain.find(x=>PROTECTIVE_TYPES.has(x.type)) || null;
+  const cands = [];
+  DATA.feeders.forEach(ff=>ff.devices.forEach(x=>{
+    if(!PROTECTIVE_TYPES.has(x.type) || x.id === d.id) return;
+    const dist = (d.lat != null && x.lat != null) ? gpsDistanceMeters(d.lat, d.lon, x.lat, x.lon) : null;
+    cands.push({ f: ff, x, dist, same: ff.id === f.id });
+  }));
+  cands.sort((a,b)=>{
+    if(a.dist != null && b.dist != null) return a.dist - b.dist;
+    if(a.dist != null) return -1;
+    if(b.dist != null) return 1;
+    return (b.same - a.same) || a.x.id.localeCompare(b.x.id, undefined, {numeric:true});
+  });
+  let picked = '';
+  document.getElementById('deviceModalTitle').textContent = 'เปลี่ยนต้นทาง ' + d.id;
+  document.getElementById('deviceBody').innerHTML = `
+    <div class="dm-step">เลือกอุปกรณ์ตัดตอนที่หม้อแปลงนี้รับไฟจริง (เรียงตามระยะใกล้)</div>
+    <div class="frow"><input type="text" class="txt" id="upSearch" placeholder="ค้นหารหัส เช่น ALA02WF-118" autocomplete="off"></div>
+    <div class="cand-list" id="upCandList"></div>
+    <div id="upImpact"></div>
+    <div id="dmMsg" class="dm-msg"></div>
+    <div class="device-modal-actions">
+      <button id="upBackBtn2">‹ ย้อนกลับ</button>
+      <button class="btn-primary" id="upSaveBtn" disabled>✓ ยืนยันเปลี่ยนต้นทาง</button>
+    </div>`;
+  function render(){
+    const q = document.getElementById('upSearch').value.trim().toLowerCase();
+    const shown = (q ? cands.filter(c=>c.x.id.toLowerCase().includes(q) || (c.x.desc||'').toLowerCase().includes(q)) : cands).slice(0, 8);
+    document.getElementById('upCandList').innerHTML = shown.length ? shown.map(c=>`<div class="cand ${c.x.id===picked?'on':''}" data-id="${escapeHtml(c.x.id)}">
+        <span class="cid">${escapeHtml(c.x.id)}</span>
+        <span class="cmeta">${escapeHtml(DEVICE_TYPE_LABELS[c.x.type]||c.x.type)} ${escapeHtml(c.x.rating||'')}${c.same?'':` · <b style="color:var(--bad)">${escapeHtml(c.f.id)}</b>`}${oldProt && c.x.id===oldProt.id?' · ในระบบปัจจุบัน':''}</span>
+        <span class="cdist">${c.dist!=null ? (c.dist<1000 ? Math.round(c.dist)+' ม.' : (c.dist/1000).toFixed(1)+' กม.') : ''}</span>
+      </div>`).join('') : '<div class="cand" style="cursor:default;color:var(--muted)">ไม่พบอุปกรณ์ที่ตรงกับคำค้นหา</div>';
+    document.getElementById('upCandList').querySelectorAll('.cand[data-id]').forEach(el=>el.addEventListener('click', ()=>{
+      picked = el.dataset.id;
+      const hit = cands.find(c=>c.x.id === picked);
+      document.getElementById('upImpact').innerHTML = (hit && hit.same)
+        ? fuseImpactHtml(f, d, hit.x, oldProt)
+        : `<div class="dm-confirm-box warn">⚠ อุปกรณ์นี้อยู่วงจร ${escapeHtml(hit.f.id)} — หม้อแปลงจะถูกย้ายไปวงจรนั้นด้วย</div>`;
+      document.getElementById('upSaveBtn').disabled = false;
+      render();
+    }));
+  }
+  document.getElementById('upSearch').addEventListener('input', render);
+  render();
+  document.getElementById('upBackBtn2').onclick = ()=>renderDeviceModalView(f, d);
+  document.getElementById('upSaveBtn').onclick = async ()=>{
+    const hit = cands.find(c=>c.x.id === picked);
+    if(!hit) return;
+    if(!hit.same){ modalMsg('ย้ายข้ามวงจรจากหน้านี้ยังไม่รองรับ — ใช้ปุ่ม "แก้ไข" เพื่อเปลี่ยนวงจรแทน', 'err'); return; }
+    const ok = await saveParentSld(f, d, hit.x.id, `เปลี่ยนต้นทาง: ${oldProt ? oldProt.id : '-'} → ${hit.x.id}`);
+    if(!ok) return;
+    refreshAfterDeviceChange(f, d.id);
+    if(mapMode && leafletMap) rebuildMapMarkers();
+    closeDeviceModal();
+    showToast(`เปลี่ยนต้นทาง ${d.id} เป็น ${hit.x.id} แล้ว`, 'ok');
   };
 }
 
@@ -3733,6 +3907,7 @@ function renderDeviceModalView(f, d){
   }
   const html = `
     <div>${rows.map(([k,v,cls])=>`<div class="device-view-row"><span class="k">${escapeHtml(k)}</span><span${cls||' class="v"'}>${escapeHtml(String(v))}</span></div>`).join('')}</div>
+    ${d.type === 'TRANSFORMER' ? upstreamBlockHtml(f, d) : ''}
     <div class="dm-verify-row">
       <label class="sp-verify-label">
         <input type="checkbox" id="dmVerifyChk" ${d.sequenceVerified?'checked':''}> ✓ ตรวจสอบแล้ว ถูกต้องตรงกับแบบ A0
@@ -3746,6 +3921,9 @@ function renderDeviceModalView(f, d){
       <button class="btn-primary" id="dmEditBtn">✏ แก้ไข</button>
     </div>`;
   document.getElementById('deviceBody').innerHTML = html;
+  const upOk = document.getElementById('upConfirmBtn'), upChg = document.getElementById('upChangeBtn');
+  if(upOk) upOk.addEventListener('click', ()=>openParentConfirmModal(f, d));
+  if(upChg) upChg.addEventListener('click', ()=>openParentChangeModal(f, d));
   document.getElementById('dmEditBtn').addEventListener('click', ()=>renderDeviceModalEdit(f, d));
   document.getElementById('dmCloseBtn2').addEventListener('click', closeDeviceModal);
   document.getElementById('dmFieldBtn').addEventListener('click', ()=>renderDeviceModalFieldVerify(f, d));
@@ -4136,6 +4314,14 @@ document.querySelectorAll('#panelFilterBar [data-filter-type]').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     panelTypeFilter = btn.dataset.filterType;
     document.querySelectorAll('#panelFilterBar [data-filter-type]').forEach(b=>b.classList.toggle('active', b===btn));
+    if(selectedFeeder) renderDeviceList(DATA.feeders.find(x=>x.id===selectedFeeder));
+  });
+});
+document.querySelectorAll('#panelFilterBar [data-filter-parent]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    panelParentFilter = btn.dataset.filterParent;
+    document.querySelectorAll('#panelFilterBar [data-filter-parent]').forEach(b=>b.classList.toggle('active', b===btn));
+    if(panelParentFilter === 'unconfirmed' && !showLeafAssets) setShowLeafAssets(true); // ต้องเปิดแสดงหม้อแปลงก่อนจึงจะเห็น
     if(selectedFeeder) renderDeviceList(DATA.feeders.find(x=>x.id===selectedFeeder));
   });
 });
