@@ -2260,6 +2260,69 @@ function gisCoordMismatches(f){
   }).filter(Boolean).sort((a,b)=>b.dist - a.dist);
 }
 
+// ===== วัดระยะจากอุปกรณ์ถึงแนวสายแรงสูงจริง (ดัชนีตารางกริดเพื่อให้ค้นเร็ว) =====
+const GIS_LINE_TOLERANCE_M = 100;   // ห่างจากแนวสายเกินเท่านี้ = พิกัดหรือวงจรน่าจะผิด (ปกติหม้อแปลงอยู่ห่างสายไม่เกิน 10 ม.)
+const GIS_GRID = 0.003;             // ขนาดช่องกริด (~330 ม.)
+const gisLineIndex = {};
+function gisLineGrid(feederId){
+  if(gisLineIndex[feederId]) return gisLineIndex[feederId];
+  const grid = new Map();
+  (GIS_MV_LINES[feederId] || []).forEach(seg=>{
+    seg.forEach(pt=>{
+      const key = Math.round(pt[0]/GIS_GRID) + ':' + Math.round(pt[1]/GIS_GRID);
+      if(!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(pt);
+    });
+  });
+  gisLineIndex[feederId] = grid;
+  return grid;
+}
+function distanceToGisLine(feederId, lat, lon){
+  const grid = gisLineGrid(feederId);
+  if(!grid.size || lat == null || lon == null) return null;
+  const gy = Math.round(lat/GIS_GRID), gx = Math.round(lon/GIS_GRID);
+  let best = Infinity;
+  for(let r = 1; r <= 4 && best === Infinity; r++){       // ค่อยๆ ขยายวงค้นจนเจอ
+    for(let dy = -r; dy <= r; dy++){
+      for(let dx = -r; dx <= r; dx++){
+        if(r > 1 && Math.max(Math.abs(dy), Math.abs(dx)) < r) continue;
+        (grid.get((gy+dy) + ':' + (gx+dx)) || []).forEach(pt=>{
+          const dist = gpsDistanceMeters(pt[0], pt[1], lat, lon);
+          if(dist < best) best = dist;
+        });
+      }
+    }
+  }
+  return best === Infinity ? null : best;
+}
+function nearestGisLinePoint(feederId, lat, lon){
+  const grid = gisLineGrid(feederId);
+  if(!grid.size) return null;
+  const gy = Math.round(lat/GIS_GRID), gx = Math.round(lon/GIS_GRID);
+  let best = Infinity, bestPt = null;
+  for(let r = 1; r <= 6 && !bestPt; r++){
+    for(let dy = -r; dy <= r; dy++){
+      for(let dx = -r; dx <= r; dx++){
+        (grid.get((gy+dy) + ':' + (gx+dx)) || []).forEach(pt=>{
+          const dist = gpsDistanceMeters(pt[0], pt[1], lat, lon);
+          if(dist < best){ best = dist; bestPt = { lat: pt[0], lon: pt[1] }; }
+        });
+      }
+    }
+  }
+  return bestPt;
+}
+function feederLineOutliers(f){
+  if(!hasGisLines(f.id)) return feederZoneOutliers(f).map(x=>Object.assign({ kind:'zone' }, x));
+  const out = [];
+  f.devices.forEach(d=>{
+    if(d.type !== 'TRANSFORMER' || d.lat == null) return;
+    const dist = distanceToGisLine(f.id, d.lat, d.lon);
+    if(dist != null && dist > GIS_LINE_TOLERANCE_M) out.push({ d, dist, kind:'line' });
+  });
+  return out.sort((a,b)=>b.dist - a.dist);
+}
+
 function gisLineMode(){ return localStorage.getItem('sld_mv_line_source') === 'straight' ? 'straight' : 'gis'; }
 function hasGisLines(feederId){ return !!(GIS_MV_LINES[feederId] && GIS_MV_LINES[feederId].length); }
 
@@ -2473,11 +2536,12 @@ function rebuildMapMarkers(){
     }
     // หม้อแปลงที่พิกัดน่าจะผิดโซน — เส้นประสีส้มชี้ไปยังจุดอ้างอิงที่ใกล้ที่สุดในโซน
     const outlierIds = new Set();
-    feederZoneOutliers(f).forEach(x=>{
+    feederLineOutliers(f).forEach(x=>{
       outlierIds.add(x.d.id);
       const opt = { lineWidth: 2, lineColor: 'rgba(224,123,0,0.9)' };
       if(farDash !== undefined) opt.lineStyle = farDash;
-      addLine([{lon:x.ref.lon, lat:x.ref.lat}, {lon:x.d.lon, lat:x.d.lat}], opt);
+      const ref = x.kind === 'line' ? nearestGisLinePoint(f.id, x.d.lat, x.d.lon) : { lat: x.ref.lat, lon: x.ref.lon };
+      if(ref) addLine([{lon:ref.lon, lat:ref.lat}, {lon:x.d.lon, lat:x.d.lat}], opt);
     });
     shown.forEach(d=>{
       if(d.lat == null || d.lon == null || !d.parentId) return;
@@ -2602,8 +2666,9 @@ function mapHoverTipHtml(f, d){
   if(d.type === 'TRANSFORMER'){
     const g = gisTrDiff(d);
     if(g && g.off) rows.push(`<span style="color:#e07b00;font-weight:700;">⚠ พิกัดต่างจาก GIS ${g.dist < 1000 ? Math.round(g.dist) + ' ม.' : (g.dist/1000).toFixed(1) + ' กม.'}</span>`);
-    const out = feederZoneOutliers(f).find(x=>x.d.id === d.id);
-    if(out) rows.push(`<span style="color:#e07b00;font-weight:700;">⚠ พิกัดน่าจะผิดโซน — ไกลจาก ${escapeHtml(out.ref.id)} ในโซนเดียวกัน ${(out.dist/1000).toFixed(1)} กม.</span>`);
+    const lineDist = hasGisLines(f.id) ? distanceToGisLine(f.id, d.lat, d.lon) : null;
+    if(lineDist != null && lineDist > GIS_LINE_TOLERANCE_M)
+      rows.push(`<span style="color:#e07b00;font-weight:700;">⚠ ห่างจากแนวสาย ${escapeHtml(f.id)} ${lineDist < 1000 ? Math.round(lineDist) + ' ม.' : (lineDist/1000).toFixed(1) + ' กม.'}</span>`);
   }
   if(d.phase) rows.push(`เฟส: ${escapeHtml(d.phase)}`);
   if(d.meterCount != null) rows.push(`ผู้ใช้ไฟ: ${d.meterCount} ราย`);
@@ -5219,7 +5284,7 @@ function buildQualityData(){
   return DATA.feeders.map(f=>{
     const tx = f.devices.filter(d=>d.type === 'TRANSFORMER');
     const chained = findChainedTransformers(f);
-    const far = feederZoneOutliers(f);
+    const far = feederLineOutliers(f);
     return {
       feeder: f.id, f, nTx: tx.length,
       mistyped: findMistypedLeafDevices(f).length,
@@ -5256,9 +5321,11 @@ function renderReportTabQuality(){
   const gisItems = [];
   rows.forEach(r=>{
     r.far.forEach(x=>farItems.push({ f:r.feeder, id:x.d.id, rating:x.d.rating, desc:x.d.desc,
-      note: x.mode === 'neighbor'
-        ? `ไกลจากหม้อแปลงเครื่องใกล้สุดในโซน ${escapeHtml(x.ref.id)} ${(x.dist/1000).toFixed(1)} กม.${x.prot ? ` (โซน ${escapeHtml(x.prot.id)})` : ''}`
-        : `อยู่เครื่องเดียวในโซน ${escapeHtml(x.ref.id)} · ห่าง ${(x.dist/1000).toFixed(1)} กม.` }));
+      note: x.kind === 'line'
+        ? `ห่างจากแนวสาย ${escapeHtml(r.feeder)} ${x.dist < 1000 ? Math.round(x.dist) + ' ม.' : (x.dist/1000).toFixed(1) + ' กม.'}`
+        : (x.mode === 'neighbor'
+            ? `ไกลจากหม้อแปลงเครื่องใกล้สุดในโซน ${escapeHtml(x.ref.id)} ${(x.dist/1000).toFixed(1)} กม.`
+            : `อยู่เครื่องเดียวในโซน ${escapeHtml(x.ref.id)} · ห่าง ${(x.dist/1000).toFixed(1)} กม.`) }));
     r.gisOff.forEach(x=>gisItems.push({ f:r.feeder, id:x.d.id, rating:x.d.rating, desc:x.d.desc,
       note: `ห่างจากพิกัด GIS ${x.dist < 1000 ? Math.round(x.dist) + ' ม.' : (x.dist/1000).toFixed(1) + ' กม.'}` }));
     r.phaseBad.forEach(d=>{
@@ -5274,7 +5341,7 @@ function renderReportTabQuality(){
     <table class="report-table">
       <tr><th>วงจร</th><th>หม้อแปลง<br>ในผัง</th><th>จำหน่าย</th><th>เฉพาะราย</th><th>สาธารณะ</th><th>ชั่วคราว</th><th>รอจำแนก</th>
           <th>ยังไม่บันทึก<br>ชนิด</th><th>ประเภทเพี้ยน</th><th>ต่อพ่วงกับ<br>หม้อแปลง</th>
-          <th>ต้นทางยัง<br>ไม่ยืนยัน</th><th>ไม่มีพิกัด</th><th>พิกัดผิดโซน<br><small>(น่าสงสัย)</small></th><th>พิกัดต่างจาก<br>GIS &gt; 50 ม.</th><th>ไม่มีใน<br>GIS</th><th>เฟสไม่ตรง<br>OPSA</th>
+          <th>ต้นทางยัง<br>ไม่ยืนยัน</th><th>ไม่มีพิกัด</th><th>ห่างแนวสาย<br>&gt; 100 ม.</th><th>พิกัดต่างจาก<br>GIS &gt; 50 ม.</th><th>ไม่มีใน<br>GIS</th><th>เฟสไม่ตรง<br>OPSA</th>
           <th>ไม่มีข้อมูล OPSA<br><small>จำหน่าย / อื่นๆ</small></th></tr>
       ${rows.map(r=>`<tr>
         <td>${escapeHtml(r.feeder)}</td><td>${r.nTx}</td><td>${r.nPEA}</td><td>${r.nPRIVATE}</td><td>${r.nPUBLIC}</td><td>${r.nTEMP}</td>
@@ -5288,9 +5355,9 @@ function renderReportTabQuality(){
         <td>${sum('unconfirmed')}</td><td>${sum('noGps')}</td><td>${sum('far')}</td><td>${sum('gisOff')}</td><td>${sum('notInGis')}</td><td>${sum('phaseBad')}</td>
         <td>${sum('noOpsaDcc')} / ${sum('noOpsaPrivate')}</td></tr>
     </table>
-    <h3 style="margin:18px 0 6px;font-size:.95rem;">หม้อแปลงที่พิกัดน่าจะผิดโซน (ไกลจากเพื่อนบ้านในโซนฟิวส์เดียวกันเกิน 1 กม.)</h3>
+    <h3 style="margin:18px 0 6px;font-size:.95rem;">หม้อแปลงที่อยู่ห่างจากแนวสายแรงสูงจริงเกิน 100 ม. (พิกัดหรือวงจรน่าจะผิด)</h3>
     <table class="report-table"><tr><th>วงจร</th><th>เลขหม้อแปลง</th><th>ขนาด</th><th>จุดติดตั้ง</th><th>รายละเอียด</th></tr>
-      ${detailRows(farItems, 'พิกัดผิดโซน')}</table>
+      ${detailRows(farItems, 'ห่างจากแนวสาย')}</table>
     <h3 style="margin:18px 0 6px;font-size:.95rem;">พิกัดในระบบต่างจากฐานข้อมูล GIS เกิน 50 ม. <button type="button" id="gisFixBtn" style="margin-left:6px;border:1px solid var(--pea-purple);background:#fff;color:var(--pea-purple);border-radius:6px;padding:3px 10px;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;">แก้พิกัดตาม GIS ›</button></h3>
     <table class="report-table"><tr><th>วงจร</th><th>เลขหม้อแปลง</th><th>ขนาด</th><th>จุดติดตั้ง</th><th>รายละเอียด</th></tr>
       ${detailRows(gisItems, 'พิกัดต่างจาก GIS')}</table>
