@@ -63,6 +63,11 @@
   .stat .n{font-size:26px;font-weight:700;line-height:1.1;}
   .stat .t{font-size:12px;color:var(--muted);margin-top:3px;}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:1px;}
+  #authGate{position:fixed;inset:0;background:linear-gradient(170deg,#f6f5f2 0%,#eeeaf5 100%);
+    z-index:500;display:none;align-items:center;justify-content:center;padding:22px;overflow:auto;}
+  #authGate.show{display:flex;}
+  .auth-box{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;
+    max-width:370px;width:100%;box-shadow:0 10px 30px rgba(0,0,0,.09);}
   #bootOverlay{position:fixed;inset:0;background:linear-gradient(170deg,#f6f5f2 0%,#eeeaf5 100%);
     z-index:400;display:none;align-items:center;justify-content:center;padding:24px;}
   #bootOverlay.show{display:flex;}
@@ -113,6 +118,7 @@
   <a href="../index.html" id="btnHub" title="กลับหน้าศูนย์รวมงาน"
      style="color:#fff;text-decoration:none;font-size:20px;padding:2px 6px;line-height:1;">🏢</a>
   <h1>Patrol ระบบจำหน่าย<br><span style="font-weight:400;font-size:11.5px;opacity:.85;">งานป้องกันไฟดับ · กฟส.อ่าวลึก</span></h1>
+  <span class="badge" id="userBadge" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
   <span class="badge" id="netBadge">—</span>
   <span class="badge queue" id="queueBadge" style="display:none;">รอส่ง 0</span>
 </header>
@@ -259,14 +265,17 @@
 <section id="tab-setting" style="display:none;">
   <div class="card">
     <h2>บัญชีผู้ใช้</h2>
-    <p class="hint" style="margin:0 0 8px;">ใช้บัญชีเดียวกับศูนย์รวมงาน — ถ้าเข้าสู่ระบบจากหน้าศูนย์รวมงานแล้ว ตรงนี้จะขึ้นชื่อให้เองโดยไม่ต้องกรอกซ้ำ</p>
     <div id="userBox"></div>
-    <label class="f">ชื่อผู้ใช้</label>
-    <input type="text" id="cfgName" autocomplete="username">
-    <label class="f">รหัสผ่าน</label>
-    <input type="password" id="cfgPass" autocomplete="current-password">
-    <button class="primary" id="btnLogin" style="margin-top:12px;">เข้าสู่ระบบ / ตรวจสอบบัญชี</button>
+    <button class="ghost" id="btnLogout" style="width:100%;margin-top:12px;border-color:var(--sev1);color:var(--sev1);">ออกจากระบบ</button>
+    <p class="hint" style="margin-top:8px;">ระบบจำการเข้าสู่ระบบไว้ในเครื่องนี้ตลอด จนกว่าจะกดออกจากระบบเอง</p>
   </div>
+
+  <div class="card" id="adminCard" style="display:none;">
+    <h2>คำขอสมัครสมาชิก</h2>
+    <div id="pendingBox"><div class="hint">กำลังตรวจสอบ ...</div></div>
+    <button class="ghost small" id="btnPendingReload" style="width:100%;margin-top:9px;">โหลดคำขอใหม่</button>
+  </div>
+
   <div class="card">
     <h2>การเชื่อมต่อ</h2>
     <label class="f">URL ของ Google Apps Script</label>
@@ -307,6 +316,44 @@
 </section>
 
 </main>
+
+<div id="authGate">
+  <div class="auth-box">
+    <div style="text-align:center;margin-bottom:6px;">
+      <img src="patrol-icon-192.png" alt="" style="width:74px;height:74px;border-radius:17px;">
+      <div class="boot-title" style="margin-top:9px;">Patrol ระบบจำหน่าย</div>
+      <div class="boot-sub">งานป้องกันไฟดับ · กฟส.อ่าวลึก</div>
+    </div>
+
+    <div class="seg" id="authSeg" style="margin:16px 0 4px;">
+      <button data-m="login" class="on">เข้าสู่ระบบ</button>
+      <button data-m="register">สมัครสมาชิก</button>
+    </div>
+
+    <div id="authLogin">
+      <label class="f">ชื่อผู้ใช้</label>
+      <input type="text" id="authName" list="memberNames" autocomplete="username" placeholder="พิมพ์ชื่อของคุณ">
+      <datalist id="memberNames"></datalist>
+      <label class="f">รหัสผ่าน</label>
+      <input type="password" id="authPass" autocomplete="current-password">
+      <button class="primary" id="btnDoLogin" style="margin-top:14px;">เข้าสู่ระบบ</button>
+      <p class="hint" style="margin-top:9px;">บัญชีเดียวกับระบบ Single Line Diagram และศูนย์รวมงาน เข้าครั้งเดียวจำไว้ในเครื่องนี้จนกว่าจะกดออกจากระบบ</p>
+    </div>
+
+    <div id="authRegister" style="display:none;">
+      <label class="f">ชื่อ-สกุล (ใช้เป็นชื่อผู้ใช้)</label>
+      <input type="text" id="regName" placeholder="เช่น สมชาย ใจดี">
+      <label class="f">ตั้งรหัสผ่าน</label>
+      <input type="password" id="regPass">
+      <label class="f">ยืนยันรหัสผ่าน</label>
+      <input type="password" id="regPass2">
+      <button class="primary" id="btnDoRegister" style="margin-top:14px;">ส่งคำขอสมัคร</button>
+      <p class="hint" style="margin-top:9px;">คำขอจะเข้าคิวรอผู้ดูแลระบบอนุมัติก่อน จึงจะเข้าใช้งานได้ · ใช้ชื่อจริงเพื่อให้ตรวจสอบย้อนหลังได้</p>
+    </div>
+
+    <div id="authErr" style="color:var(--sev1);font-size:13px;margin-top:10px;text-align:center;"></div>
+  </div>
+</div>
 
 <div id="bootOverlay" class="show">
   <div class="boot-box">
@@ -1301,38 +1348,130 @@ function drawMapPins(){
 })();
 
 /* ---------- ตั้งค่า ---------- */
+let ROLE = null;
 function renderUser(){
+  const badge = $('userBadge');
+  if(PROFILE && PROFILE.name){
+    badge.textContent = PROFILE.name;
+    badge.style.display = '';
+  } else badge.style.display = 'none';
+
   $('userBox').innerHTML = PROFILE && PROFILE.name
     ? `<div class="kv"><span>ชื่อ</span><span><b>${esc(PROFILE.name)}</b></span></div>
        <div class="kv"><span>ตำแหน่ง</span><span>${esc(PROFILE.position || '— ยังไม่ได้กรอกในชีต —')}</span></div>
-       <div class="kv"><span>สังกัด</span><span>${esc(PROFILE.org || '— ยังไม่ได้กรอกในชีต —')}</span></div>`
+       <div class="kv"><span>สังกัด</span><span>${esc(PROFILE.org || '— ยังไม่ได้กรอกในชีต —')}</span></div>
+       <div class="kv"><span>สิทธิ์</span><span>${ROLE === 'admin' ? 'ผู้ดูแลระบบ' : 'สมาชิก'}</span></div>`
     : '<div class="hint">ยังไม่ได้เข้าสู่ระบบ</div>';
+
+  $('adminCard').style.display = ROLE === 'admin' ? '' : 'none';
+  if(ROLE === 'admin') loadPending();
 }
-$('btnSaveCfg').onclick = ()=>{
-  cfg.url = $('cfgUrl').value.trim();
-  cfg.poles = $('cfgPoles').value.trim() || 'poles.json';
-  localStorage.setItem(LS.url, cfg.url);
-  localStorage.setItem(LS.poles, cfg.poles);
-  toast('บันทึกการตั้งค่าแล้ว', 'ok');
-};
-$('btnLogin').onclick = async ()=>{
-  cfg.name = $('cfgName').value.trim();
-  cfg.pass = $('cfgPass').value;
-  cfg.url = $('cfgUrl').value.trim() || cfg.url;
-  localStorage.setItem(LS.url, cfg.url);
-  if(!cfg.url){ toast('กรอก URL ของ Apps Script ก่อน', 'err'); return; }
+
+/* ---------- เข้าสู่ระบบ / สมัครสมาชิก ---------- */
+function showGate(show){
+  $('authGate').classList.toggle('show', !!show);
+  if(show){ closeBoot(true); loadMemberNames(); }
+}
+async function loadMemberNames(){
+  if(!navigator.onLine || !cfg.url) return;
   try{
-    const r = await api({ action:'patrolBootstrap' });
-    if(!r.ok){ toast(r.error || r.message || 'เข้าสู่ระบบไม่สำเร็จ', 'err'); return; }
-    localStorage.setItem(LS.name, cfg.name);
-    localStorage.setItem(LS.pass, cfg.pass);
-    PROFILE = r.profile; TYPES = r.types || [];
-    localStorage.setItem(LS.prof, JSON.stringify(PROFILE));
-    localStorage.setItem(LS.types, JSON.stringify(TYPES));
-    fillTypes(); renderUser();
-    toast('เข้าสู่ระบบแล้ว', 'ok');
-  }catch(e){ toast('เชื่อมต่อไม่ได้ — ตรวจ URL และสัญญาณ', 'err'); }
+    const url = cfg.url + (cfg.url.includes('?') ? '&' : '?') + 'action=getMemberList';
+    const r = await (await fetch(url)).json();
+    $('memberNames').innerHTML = (r.members || []).map(m=> `<option value="${esc(m.name)}">`).join('');
+  }catch(e){}
+}
+document.querySelectorAll('#authSeg button').forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll('#authSeg button').forEach(x=> x.classList.remove('on'));
+    btn.classList.add('on');
+    const login = btn.dataset.m === 'login';
+    $('authLogin').style.display = login ? '' : 'none';
+    $('authRegister').style.display = login ? 'none' : '';
+    $('authErr').textContent = '';
+  };
+});
+$('btnDoLogin').onclick = async ()=>{
+  const name = $('authName').value.trim(), pass = $('authPass').value;
+  if(!name || !pass){ $('authErr').textContent = 'กรอกชื่อและรหัสผ่านให้ครบ'; return; }
+  if(!navigator.onLine){ $('authErr').textContent = 'ต้องมีสัญญาณอินเทอร์เน็ตตอนเข้าสู่ระบบครั้งแรก'; return; }
+  const btn = $('btnDoLogin'); btn.disabled = true; btn.textContent = 'กำลังตรวจสอบ ...';
+  try{
+    const r = await (await fetch(cfg.url, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action:'whoAmI', changedBy:name, changedByPassword:pass }) })).json();
+    if(!r || !r.role){ $('authErr').textContent = 'ชื่อหรือรหัสผ่านไม่ถูกต้อง หรือยังไม่ได้รับอนุมัติ'; beep('err'); }
+    else{
+      cfg.name = name; cfg.pass = pass; ROLE = r.role;
+      localStorage.setItem(LS.name, name);
+      localStorage.setItem(LS.pass, pass);
+      beep('ok');
+      $('authErr').textContent = '';
+      showGate(false);
+      afterLogin();
+    }
+  }catch(e){ $('authErr').textContent = 'เชื่อมต่อระบบไม่ได้ ลองใหม่อีกครั้ง'; }
+  btn.disabled = false; btn.textContent = 'เข้าสู่ระบบ';
 };
+$('btnDoRegister').onclick = async ()=>{
+  const name = $('regName').value.trim(), p1 = $('regPass').value, p2 = $('regPass2').value;
+  if(!name || !p1){ $('authErr').textContent = 'กรอกชื่อและรหัสผ่านให้ครบ'; return; }
+  if(p1 !== p2){ $('authErr').textContent = 'รหัสผ่านสองช่องไม่ตรงกัน'; return; }
+  if(!navigator.onLine){ $('authErr').textContent = 'ต้องมีสัญญาณอินเทอร์เน็ตจึงจะสมัครได้'; return; }
+  const btn = $('btnDoRegister'); btn.disabled = true; btn.textContent = 'กำลังส่ง ...';
+  try{
+    const r = await (await fetch(cfg.url, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action:'register', newName:name, newPassword:p1 }) })).json();
+    if(r && r.ok){
+      beep('ok');
+      $('authErr').innerHTML = '<span style="color:var(--sev3);">ส่งคำขอแล้ว รอผู้ดูแลระบบอนุมัติ แล้วกลับมาเข้าสู่ระบบด้วยชื่อและรหัสผ่านนี้</span>';
+    } else { beep('err'); $('authErr').textContent = (r && r.error) || 'สมัครไม่สำเร็จ'; }
+  }catch(e){ $('authErr').textContent = 'เชื่อมต่อระบบไม่ได้'; }
+  btn.disabled = false; btn.textContent = 'ส่งคำขอสมัคร';
+};
+$('btnLogout').onclick = ()=>{
+  if(!confirm('ออกจากระบบ? ข้อมูลที่ยังไม่ได้ส่งขึ้นระบบจะยังอยู่ในเครื่อง')) return;
+  localStorage.removeItem(LS.name);
+  localStorage.removeItem(LS.pass);
+  localStorage.removeItem(LS.prof);
+  cfg.name = ''; cfg.pass = ''; PROFILE = null; ROLE = null;
+  FINDINGS = [];
+  renderUser(); renderHome(); renderList();
+  showGate(true);
+};
+
+/* ---------- อนุมัติสมาชิก (เฉพาะผู้ดูแลระบบ) ---------- */
+async function loadPending(){
+  const box = $('pendingBox');
+  if(!navigator.onLine){ box.innerHTML = '<div class="hint">ต้องมีสัญญาณจึงจะดูคำขอได้</div>'; return; }
+  try{
+    const r = await api({ action:'getPendingList' });
+    if(!r || !r.ok){ box.innerHTML = '<div class="hint">' + esc((r && r.error) || 'โหลดไม่สำเร็จ') + '</div>'; return; }
+    const list = r.pending || [];
+    if(!list.length){ box.innerHTML = '<div class="hint">ไม่มีคำขอรออนุมัติ</div>'; return; }
+    box.innerHTML = list.map(x=>`
+      <div class="item" style="cursor:default;">
+        <b>${esc(x.name)}</b>
+        <div class="mono">ส่งคำขอ ${esc(x.timestamp)}</div>
+        <div class="row" style="margin-top:8px;">
+          <button class="ghost small" data-act="member" data-n="${esc(x.name)}">อนุมัติเป็นสมาชิก</button>
+          <button class="ghost small" data-act="admin" data-n="${esc(x.name)}">เป็นผู้ดูแล</button>
+          <button class="ghost small" data-act="reject" data-n="${esc(x.name)}"
+            style="border-color:var(--sev1);color:var(--sev1);">ปฏิเสธ</button>
+        </div>
+      </div>`).join('');
+    box.querySelectorAll('button').forEach(b=>{
+      b.onclick = async ()=>{
+        const act = b.dataset.act, n = b.dataset.n;
+        const rr = act === 'reject'
+          ? await api({ action:'rejectPending', targetName:n })
+          : await api({ action:'approvePending', targetName:n, approvedRole:act });
+        if(rr && rr.ok){ beep('ok'); toast(act === 'reject' ? 'ปฏิเสธแล้ว' : 'อนุมัติ ' + n + ' แล้ว', 'ok'); loadPending(); }
+        else { beep('err'); toast((rr && rr.error) || 'ทำรายการไม่สำเร็จ', 'err'); }
+      };
+    });
+  }catch(e){ box.innerHTML = '<div class="hint">โหลดไม่สำเร็จ</div>'; }
+}
+$('btnPendingReload').onclick = loadPending;
+
 function fillTypes(){
   const sel = $('problemType');
   sel.innerHTML = '<option value="">— เลือก —</option>' +
@@ -1608,50 +1747,28 @@ function renderInstall(){
 }
 
 /* ---------- เริ่มทำงาน ---------- */
-(async function start(){
-  setNet();
+/* ทำงานหลังเข้าสู่ระบบสำเร็จ — เรียกทั้งตอนเปิดแอปและตอนเพิ่งล็อกอิน */
+async function afterLogin(){
+  bootClosed = false;
+  $('bootOverlay').classList.add('show');
   startBoot();
-  await openDb();
-  $('cfgUrl').value = cfg.url;
-  $('cfgPoles').value = cfg.poles;
-  $('cfgName').value = cfg.name;
-  $('cfgPass').value = cfg.pass;
-  renderUser();
-  if(TYPES.length) fillTypes();
-
-  const cp = await cGet('poles');  if(cp) POLES = cp.value;
-  const cd = await cGet('devices'); if(cd) DEVICES = cd.value;
-  showCacheInfo();
-  renderAnchorPick();
-  await refreshQueueBadge();
-  renderHome();
-  renderInstall();
-
-  if(!navigator.onLine || !cfg.url || !cfg.name){
-    bootStep('auth', cfg.name ? 'done' : 'skip', cfg.name ? '' : 'ยังไม่ได้เข้าสู่ระบบ');
-    bootStep('types', TYPES.length ? 'done' : 'skip', TYPES.length ? 'ใช้ของในเครื่อง' : '');
-    bootStep('findings','skip','ออฟไลน์');
-    bootStep('devices','skip','ออฟไลน์');
-    bootStep('poles', POLES ? 'done' : 'skip', POLES ? 'ใช้ของในเครื่อง' : '');
-    setTimeout(()=> closeBoot(false), 900);
-    return;
-  }
-
   syncQueue(true);
 
-  // ขั้นที่จำเป็นก่อนใช้งาน — เร็ว
   try{
     const r = await api({ action:'patrolBootstrap' });
     if(r && r.ok){
       PROFILE = r.profile; TYPES = r.types || [];
+      if(r.profile && r.profile.role) ROLE = r.profile.role;
       localStorage.setItem(LS.prof, JSON.stringify(PROFILE));
       localStorage.setItem(LS.types, JSON.stringify(TYPES));
-      fillTypes(); renderUser(); renderHome();
+      fillTypes(); renderUser();
       bootStep('auth','done', PROFILE.name || '');
       bootStep('types','done', TYPES.length + ' แบบ');
     } else {
       bootStep('auth','skip','ตรวจสอบบัญชีไม่ผ่าน');
-      bootStep('types', TYPES.length ? 'done' : 'skip','ใช้ของในเครื่อง');
+      bootStep('types', TYPES.length ? 'done' : 'skip','');
+      showGate(true);
+      return;
     }
   }catch(e){
     bootStep('auth','skip','เชื่อมต่อไม่ได้');
@@ -1663,15 +1780,52 @@ function renderInstall(){
     await loadList();
     bootStep('findings','done', FINDINGS.length + ' รายการ');
   }catch(e){ bootStep('findings','skip',''); }
-
   renderHome();
 
-  // ข้อมูลก้อนใหญ่ — ปิดหน้าจอเปิดแอปได้เลย ที่เหลือโหลดต่อเบื้องหลัง
   const heavy = autoLoadData(false);
-  const cached = POLES && DEVICES;
-  if(cached){ closeBoot(false); await heavy; }
+  if(POLES && DEVICES){ closeBoot(false); await heavy; }
   else { await heavy; closeBoot(false); }
+  loadMvLines();
   renderHome();
+}
+
+(async function start(){
+  setNet();
+  await openDb();
+  $('cfgUrl').value = cfg.url;
+  $('cfgPoles').value = cfg.poles;
+  if(TYPES.length) fillTypes();
+
+  const cp = await cGet('poles');  if(cp) POLES = cp.value;
+  const cd = await cGet('devices'); if(cd) DEVICES = cd.value;
+  const cm = await cGet('mvlines'); if(cm) MVLINES = cm.value;
+  showCacheInfo();
+  renderAnchorPick();
+  await refreshQueueBadge();
+  renderInstall();
+
+  // ยังไม่ได้เข้าสู่ระบบ — แสดงหน้าเข้าสู่ระบบ/สมัครสมาชิก
+  if(!cfg.name || !cfg.pass){
+    renderUser(); renderHome();
+    showGate(true);
+    return;
+  }
+
+  // เคยเข้าสู่ระบบไว้แล้วในเครื่องนี้ — ใช้ต่อได้เลย ไม่ต้องกรอกซ้ำ
+  ROLE = (PROFILE && PROFILE.role) || null;
+  renderUser(); renderHome();
+
+  if(!navigator.onLine){
+    startBoot();
+    bootStep('auth','done', cfg.name);
+    bootStep('types', TYPES.length ? 'done' : 'skip','ใช้ของในเครื่อง');
+    bootStep('findings','skip','ออฟไลน์');
+    bootStep('devices','skip','ออฟไลน์');
+    bootStep('poles', POLES ? 'done' : 'skip', POLES ? 'ใช้ของในเครื่อง' : '');
+    setTimeout(()=> closeBoot(false), 900);
+    return;
+  }
+  await afterLogin();
 })();
 </script>
 </body>
