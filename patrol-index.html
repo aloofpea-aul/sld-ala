@@ -212,6 +212,11 @@
       <button data-s="3" class="sev3">3 · เฝ้าระวัง</button>
     </div>
 
+    <label class="f">หมู่ที่ / ชื่อหมู่บ้าน</label>
+    <input type="text" id="moo" placeholder="เช่น ม.4 บ้านบางหอย">
+    <label class="f">จุดสังเกต</label>
+    <input type="text" id="landmark" placeholder="เช่น ตรงข้ามปั๊ม ปตท. อ่าวลึก">
+
     <label class="f">รายละเอียดเพิ่มเติม</label>
     <textarea id="detail" placeholder="เช่น กิ่งไม้พาดสายเฟส B ยาวประมาณ 3 เมตร"></textarea>
   </div>
@@ -622,6 +627,7 @@ document.querySelectorAll('nav button').forEach(b=>{
 
 /* ---------- GPS ---------- */
 let GPS = null;
+const GEO = { nearPlace:'', address:'' };   // ที่ตั้งที่ระบบหาได้จากพิกัด เก็บไว้บันทึกลงชีต
 function showGps(){
   if(!GPS){ $('gpsInfo').innerHTML = 'ยังไม่ได้จับพิกัด'; return; }
   $('gpsInfo').innerHTML =
@@ -635,10 +641,14 @@ function showGps(){
     `<div class="hint" id="gpAddr">กำลังค้นหาที่ตั้ง ...</div>`;
   const cb = $('gpCopy');
   if(cb) cb.onclick = ()=> copyText(GPS.lat.toFixed(6) + ', ' + GPS.lon.toFixed(6), 'คัดลอกพิกัดแล้ว');
+  const np = nearestPlace(GPS.lat, GPS.lon);
+  GEO.nearPlace = np ? np.name + ' (ห่าง ' + np.dist + ' ม.)' : '';
+  GEO.address = '';
   thaiAddress(GPS.lat, GPS.lon).then(addr=>{
+    GEO.address = addr || '';
     const el = $('gpAddr');
     if(!el) return;
-    el.textContent = addr ? '📍 ' + addr : (navigator.onLine ? 'ไม่พบข้อมูลที่ตั้งของพิกัดนี้' : 'ออฟไลน์ — ดูที่ตั้งไม่ได้');
+    el.textContent = addr ? '📍 ' + addr : (navigator.onLine ? 'ไม่พบข้อมูลที่ตั้งของพิกัดนี้' : 'ออฟไลน์ — เติมที่อยู่ให้ทีหลังเมื่อมีสัญญาณ');
   });
   autoPickNearestPole();
   renderAnchorPick();
@@ -1053,6 +1063,10 @@ $('btnSave').onclick = async ()=>{
     problemType: problemType,
     severity: SEVERITY,
     detail: $('detail').value.trim(),
+    nearPlace: GEO.nearPlace,
+    address: GEO.address,
+    moo: $('moo').value.trim(),
+    landmark: $('landmark').value.trim(),
     source: 'field'
   };
   const item = { id: finding.findingId, finding, photos: PHOTOS.slice(), tries: 0 };
@@ -1089,6 +1103,7 @@ $('btnSave').onclick = async ()=>{
       CreatedBy: (PROFILE && PROFILE.name) || cfg.name, CreatorOrg: (PROFILE && PROFILE.org) || '',
       AnchorType: finding.anchorType, AnchorRef: finding.anchorRef, FeederID: finding.feederId,
       ProblemType: finding.problemType, Severity: finding.severity, Detail: finding.detail,
+      NearPlace: finding.nearPlace, Address: finding.address, Moo: finding.moo, Landmark: finding.landmark,
       Status: 'รอส่ง (ในเครื่อง)', Lat: finding.lat, Lon: finding.lon
     });
     resetForm();
@@ -1100,6 +1115,8 @@ $('btnSave').onclick = async ()=>{
 function resetForm(){
   PHOTOS = []; renderThumbs();
   $('detail').value = '';
+  $('moo').value = '';
+  $('landmark').value = '';
   ANCHOR.ref = ''; renderAnchorPick();
 }
 
@@ -1149,7 +1166,8 @@ function visibleFindings(){
     if((QUICK === 'mine' || QUICK === 'mine_today') && f.CreatedBy !== me) return false;
     if((QUICK === 'today' || QUICK === 'mine_today') && !isToday(f.CreatedAt)) return false;
     if(q){
-      const hay = [f.FindingID, f.AnchorRef, f.Detail, f.CreatedBy, f.FeederID, typeName(f.ProblemType)]
+      const hay = [f.FindingID, f.AnchorRef, f.Detail, f.CreatedBy, f.FeederID, typeName(f.ProblemType),
+                   f.NearPlace, f.Address, f.Moo, f.Landmark]
         .join(' ').toLowerCase();
       if(hay.indexOf(q) < 0) return false;
     }
@@ -1163,7 +1181,9 @@ $('btnExport').onclick = ()=>{
   const cols = [
     ['รหัส','FindingID'], ['วันเวลา','CreatedAt'], ['ผู้บันทึก','CreatedBy'], ['ตำแหน่ง','CreatorRole'],
     ['สังกัด','CreatorOrg'], ['ผูกกับ','AnchorType'], ['รหัสอ้างอิง','AnchorRef'], ['วงจร','FeederID'],
-    ['ประเภทปัญหา','_type'], ['ความรุนแรง','Severity'], ['รายละเอียด','Detail'], ['สถานะ','Status'],
+    ['ประเภทปัญหา','_type'], ['ความรุนแรง','Severity'], ['รายละเอียด','Detail'],
+    ['สถานที่ใกล้เคียง','NearPlace'], ['ที่อยู่','Address'], ['หมู่ที่/หมู่บ้าน','Moo'], ['จุดสังเกต','Landmark'],
+    ['สถานะ','Status'],
     ['lat','Lat'], ['lon','Lon'], ['ปิดเมื่อ','ClosedAt'], ['ผู้ปิด','ClosedBy'], ['เหตุผลที่ปิด','CloseReason']
   ];
   const esc2 = v=> '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
@@ -1200,6 +1220,7 @@ function renderList(){
       <div class="hint" style="margin-top:5px;">
         ${esc(f.AnchorType)}${f.AnchorRef ? ' · ' + esc(f.AnchorRef) : ''}
         ${f.FeederID ? ' · ' + esc(f.FeederID) : ''}<br>
+        ${f.Moo || f.NearPlace ? '🏘 ' + esc(f.Moo || f.NearPlace) + '<br>' : ''}
         ${esc(f.Detail || '')}<br>
         <span class="mono">${esc(f.CreatedAt)} · ${esc(f.CreatedBy)}${f.CreatorOrg ? ' · ' + esc(f.CreatorOrg) : ''}</span>
       </div>
@@ -1225,6 +1246,10 @@ async function openDetail(id){
       <div class="kv"><span>สถานะ</span><span>${esc(f.Status)}</span></div>
       <div class="kv"><span>ผูกกับ</span><span>${esc(f.AnchorType)} ${esc(f.AnchorRef || '')}</span></div>
       ${coordBlock(f.Lat, f.Lon, 'fd')}
+      ${f.NearPlace ? `<div class="kv"><span>สถานที่ใกล้เคียง</span><span>${esc(f.NearPlace)}</span></div>` : ''}
+      ${f.Address ? `<div class="kv"><span>ที่อยู่</span><span style="text-align:right;">${esc(f.Address)}</span></div>` : ''}
+      ${f.Moo ? `<div class="kv"><span>หมู่ที่/หมู่บ้าน</span><span>${esc(f.Moo)}</span></div>` : ''}
+      ${f.Landmark ? `<div class="kv"><span>จุดสังเกต</span><span style="text-align:right;">${esc(f.Landmark)}</span></div>` : ''}
       <div class="kv"><span>ผู้บันทึก</span><span>${esc(f.CreatedBy)}<br><span class="hint">${esc(f.CreatorRole || '')} ${esc(f.CreatorOrg || '')}</span></span></div>
       <div class="kv"><span>เมื่อ</span><span>${esc(f.CreatedAt)}</span></div>
       ${f.Detail ? `<p style="margin:10px 0;">${esc(f.Detail)}</p>` : ''}
@@ -1250,6 +1275,10 @@ async function openDetail(id){
       </select>
       <label class="f">แก้ไขรายละเอียด</label>
       <textarea id="edDetail" style="min-height:58px;">${esc(f.Detail || '')}</textarea>
+      <label class="f">แก้ไขหมู่ที่ / ชื่อหมู่บ้าน</label>
+      <input type="text" id="edMoo" value="${esc(f.Moo || '')}" placeholder="เช่น ม.4 บ้านบางหอย">
+      <label class="f">แก้ไขจุดสังเกต</label>
+      <input type="text" id="edLandmark" value="${esc(f.Landmark || '')}">
 
       <label class="f">เปลี่ยนสถานะ</label>
       <select id="newStatus">
@@ -1294,6 +1323,17 @@ async function openDetail(id){
       if(newType && newType !== f.ProblemType) payload.problemType = newType;
       if(newSev && newSev !== String(f.Severity)) payload.severity = newSev;
       if(newDetail !== String(f.Detail || '')) payload.detail = newDetail;
+      if($('edMoo').value.trim() !== String(f.Moo || '')) payload.moo = $('edMoo').value.trim();
+      if($('edLandmark').value.trim() !== String(f.Landmark || '')) payload.landmark = $('edLandmark').value.trim();
+      // เติมที่ตั้งย้อนหลังให้รายการที่บันทึกตอนไม่มีสัญญาณ
+      if(!f.NearPlace){
+        const np = nearestPlace(f.Lat, f.Lon);
+        if(np) payload.nearPlace = np.name + ' (ห่าง ' + np.dist + ' ม.)';
+      }
+      if(!f.Address && navigator.onLine){
+        const ad = await thaiAddress(f.Lat, f.Lon);
+        if(ad) payload.address = ad;
+      }
       if(Object.keys(payload).length <= 2){ toast('ยังไม่ได้แก้อะไรเลย', 'err'); return; }
       const rr = await api(payload);
       if(rr && rr.ok){ beep('ok'); toast('บันทึกแล้ว', 'ok'); ov.classList.remove('show'); await loadList(); drawMapPins(); }
