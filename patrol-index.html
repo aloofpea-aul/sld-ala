@@ -305,6 +305,7 @@
       <button class="ghost small" id="btnMapReload">โหลดใหม่</button>
       <button class="ghost small" id="btnMapMe">📍 ตำแหน่งฉัน</button>
       <button class="ghost small" id="btnMapLines">แนวสาย: เปิด</button>
+      <button class="ghost small" id="btnMapRisk">จุดเสี่ยง: ปิด</button>
     </div>
     <div class="hint" id="mapHint" style="margin-top:7px;">แตะหมุดบนแผนที่เพื่อดูรายละเอียดและจัดการได้ทันที</div>
   </div>
@@ -977,16 +978,32 @@ function hitTest(mapObj, el, items, clientX, clientY, radius){
 }
 let tapDown = null;
 window.addEventListener('pointerdown', e=>{ tapDown = { x:e.clientX, y:e.clientY, t:Date.now() }; }, true);
-window.addEventListener('pointerup', e=>{
+window.addEventListener('touchstart', e=>{
+  if(!e.touches || !e.touches.length) return;
+  tapDown = { x:e.touches[0].clientX, y:e.touches[0].clientY, t:Date.now() };
+}, true);
+window.addEventListener('touchend', e=>{
+  if(!e.changedTouches || !e.changedTouches.length) return;
+  const t = e.changedTouches[0];
+  handleMapTap({ clientX:t.clientX, clientY:t.clientY, target:e.target });
+}, true);
+window.addEventListener('pointerup', e=>{ handleMapTap(e); }, true);
+function handleMapTap(e){
   const d = tapDown; tapDown = null;
   if(!d) return;
-  if(Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8) return;   // ลากแผนที่ ไม่นับเป็นการแตะ
-  if(e.target && e.target.closest && e.target.closest('button, select, input, a, .ldmap_ui, [class*="ldmap_"]')) return;
+  if(Math.hypot(e.clientX - d.x, e.clientY - d.y) > 14) return;   // ลากแผนที่ ไม่นับเป็นการแตะ (เผื่อนิ้วขยับบนมือถือ)
+  // ไม่นับการแตะที่ปุ่มหรือช่องกรอกของเราเอง (ห้ามกรองคลาส ldmap_ เพราะ Longdo ใช้กับตัวแผนที่ทั้งก้อน)
+  if(e.target && e.target.closest && e.target.closest('button, select, input, textarea, a, label')) return;
+  // แถบสลับ แผนที่/ดาวเทียม ของ Longdo อยู่มุมขวาบน — เว้นพื้นที่นั้นไว้
+  const inTopRight = el=>{
+    const r = el.getBoundingClientRect();
+    return (e.clientX > r.right - 150) && (e.clientY < r.top + 46);
+  };
 
   // แผนที่ช่วยเลือกในข้อ 1
   const pm = $('pickMap');
-  if(pickReady && pm && pm.offsetWidth && pm.contains(e.target) && pickItems.length){
-    const hit = hitTest(pickMap, pm, pickItems, e.clientX, e.clientY, 30);
+  if(pickReady && pm && pm.offsetWidth && pm.contains(e.target) && pickItems.length && !inTopRight(pm)){
+    const hit = hitTest(pickMap, pm, pickItems, e.clientX, e.clientY, 34);
     if(hit){
       if(ANCHOR.type === 'SPAN'){
         let arr = ANCHOR.ref ? ANCHOR.ref.split('~') : [];
@@ -1004,11 +1021,17 @@ window.addEventListener('pointerup', e=>{
 
   // แผนที่หลัก
   const mb = $('mapBox');
-  if(mapReady && mb && mb.offsetWidth && mb.contains(e.target) && mapPins.length){
-    const hit = hitTest(map, mb, mapPins, e.clientX, e.clientY, 28);
-    if(hit){ beep('tap'); openDetail(hit.id); }
+  if(mapReady && mb && mb.offsetWidth && mb.contains(e.target) && !inTopRight(mb)){
+    if(mapPins.length){
+      const hit = hitTest(map, mb, mapPins, e.clientX, e.clientY, 32);
+      if(hit){ beep('tap'); openDetail(hit.id); return; }
+    }
+    if(mapRiskPins.length){
+      const hit = hitTest(map, mb, mapRiskPins, e.clientX, e.clientY, 32);
+      if(hit){ beep('tap'); openRisk(hit.id); }
+    }
   }
-}, true);
+}
 
 $('btnPickMe').onclick = ()=>{ if(pickReady && GPS) pickMap.location({ lon:GPS.lon, lat:GPS.lat }, true); };
 $('btnPickZoomIn').onclick = ()=>{ if(pickReady) pickMap.zoom(pickMap.zoom()+1, true); };
@@ -1762,7 +1785,8 @@ async function bindCoordBlock(lat, lon, idPrefix){
 }
 
 /* ---------- แผนที่ ---------- */
-let map = null, mapReady = false, mapPins = [];
+let map = null, mapReady = false, mapPins = [], mapRiskPins = [];
+let showRisk = localStorage.getItem('patrol_map_risk') === 'on';
 function initMap(){
   if(mapReady) { drawMapPins(); return; }
   if(typeof longdo === 'undefined'){ $('mapHint').textContent = 'โหลดแผนที่ไม่ได้ (ต้องมีสัญญาณ)'; return; }
@@ -1773,7 +1797,7 @@ function initMap(){
     map.Ui.DPad.visible(false);
     mapReady = true;
     if(GPS) map.location({ lon:GPS.lon, lat:GPS.lat }, true);
-    loadMvLines().then(()=>{
+    Promise.all([ loadMvLines(), showRisk && !RISKS ? loadRisks() : Promise.resolve() ]).then(()=>{
       if(!FINDINGS.length && navigator.onLine) loadList(); else drawMapPins();
     });
   }catch(e){ $('mapHint').textContent = 'โหลดแผนที่ไม่ได้ (ต้องมีสัญญาณ)'; }
@@ -1828,8 +1852,24 @@ function drawMapPins(){
              offset:{ x:10, y:10 } } }));
   }
 
+  // จุดเสี่ยงที่ระบบคำนวณให้ — รูปสี่เหลี่ยมข้าวหลามตัด แยกจากหมุดกลมของจุดที่พบ
+  mapRiskPins = [];
+  if(showRisk && RISKS){
+    RISKS.risks.forEach(x=>{
+      if(!x.lat || !x.lon) return;
+      const st = riskStatus(x.id);
+      if(st !== 'ยังไม่ตรวจ') return;          // แสดงเฉพาะที่ยังไม่มีใครจัดการ
+      const col = { 1:'#c62828', 2:'#e07b00', 3:'#2e7d32' }[x.sev] || '#888';
+      mapRiskPins.push({ lat:x.lat, lon:x.lon, id:x.id });
+      map.Overlays.add(new longdo.Marker({ lon:x.lon, lat:x.lat }, {
+        icon:{ html:`<div style="width:15px;height:15px;background:${col};border:2.5px solid #fff;
+          transform:rotate(45deg);box-shadow:0 0 4px rgba(0,0,0,.5);opacity:.9;"></div>`,
+          offset:{ x:10, y:10 } } }));
+    });
+  }
+
   const list = mapVisibleFindings();
-  if(!list.length){
+  if(!list.length && !mapRiskPins.length){
     $('mapHint').textContent = FINDINGS.length ? 'ไม่มีจุดที่ตรงกับตัวกรองนี้' : 'ยังไม่มีข้อมูล — กดโหลดใหม่';
     return;
   }
@@ -1845,11 +1885,24 @@ function drawMapPins(){
         box-shadow:0 0 5px rgba(0,0,0,.55);${done ? 'opacity:.45;' : ''}"></div>`, offset:{ x:12, y:12 } } }));
   });
   $('mapHint').innerHTML = (MVLINES && showLines ? 'เส้นหนา=สายเมน เส้นบาง=สายแยก สีตามวงจร · ' : '') +
-    'แสดง <b>' + mapPins.length + '</b> จุด · ' +
+    (mapRiskPins.length ? '◆ จุดเสี่ยง <b>' + mapRiskPins.length + '</b> · ' : '') +
+    '● จุดที่พบ <b>' + mapPins.length + '</b> · ' +
     '<span style="color:#c62828;">●</span> ระดับ1 <span style="color:#e07b00;">●</span> ระดับ2 ' +
     '<span style="color:#2e7d32;">●</span> ระดับ3 · จางลง=ปิดแล้ว · แตะหมุดเพื่อจัดการ';
 }
 (function bindMapTools(){
+  const br = $('btnMapRisk');
+  if(br){
+    const label = ()=>{ br.textContent = 'จุดเสี่ยง: ' + (showRisk ? 'เปิด' : 'ปิด'); };
+    label();
+    br.onclick = async ()=>{
+      showRisk = !showRisk;
+      localStorage.setItem('patrol_map_risk', showRisk ? 'on' : 'off');
+      label();
+      if(showRisk && !RISKS){ $('mapHint').textContent = 'กำลังโหลดจุดเสี่ยง ...'; await loadRisks(); }
+      drawMapPins();
+    };
+  }
   const bl = $('btnMapLines');
   if(bl){
     const label = ()=>{ bl.textContent = 'แนวสาย: ' + (showLines ? 'เปิด' : 'ปิด'); };
