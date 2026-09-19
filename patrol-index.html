@@ -257,6 +257,7 @@
       <button data-s="all">ทั้งหมด</button>
     </div>
     <div class="hint" id="riskCount" style="margin-top:7px;"></div>
+    <button class="ghost small" id="btnRiskReload" style="width:100%;margin-top:9px;">ดึงจุดเสี่ยงชุดล่าสุด</button>
   </div>
   <div id="riskBox"></div>
 </section>
@@ -1490,6 +1491,8 @@ function fillRiskTypes(){
   $('riskType').innerHTML = '<option value="">ทุกประเภท</option>' +
     codes.map(c=> `<option value="${esc(c)}">${esc(RISK_LABEL[c] || c)}</option>`).join('');
   $('riskType').onchange = renderRisks;
+  const rr = $('btnRiskReload');
+  if(rr) rr.onclick = async ()=>{ RISKS = null; await loadRisks(); };
   $('riskSearch').oninput = renderRisks;
   document.querySelectorAll('#riskStateSeg button').forEach(b=>{
     b.onclick = ()=>{
@@ -1602,7 +1605,14 @@ function openRisk(id){
     <div class="kv"><span>วงจร</span><span>${esc(x.feeder || '-')}</span></div>
 
     <h2 style="margin:16px 0 6px;font-size:14px;">ข้อมูลสำหรับวิเคราะห์</h2>
-    ${analysis || '<div class="hint">ไม่มีข้อมูลเชิงลึกสำหรับรายการนี้</div>'}
+    ${analysis || `<div class="kv"><span>ค่าที่ตรวจพบ</span><span style="text-align:right;">${esc(x.detail)}</span></div>
+      ${x.cust ? `<div class="kv"><span>ผู้ใช้ไฟที่กระทบ</span><span>${x.cust} ราย</span></div>` : ''}
+      <div class="hint" style="background:#fdf3e6;border:1px solid #f0d9b5;border-radius:8px;padding:9px;margin-top:9px;line-height:1.7;">
+        <b style="color:var(--sev2);">ชุดข้อมูลที่ใช้อยู่เป็นรุ่นเก่า</b><br>
+        ชุดวันที่ ${esc(RISKS.generated || '-')} · ${RISKS.risks.length} รายการ<br>
+        รุ่นที่มีข้อมูลเชิงลึกคือ <b>2026-09-19 · 584 รายการ</b><br>
+        อัปโหลดไฟล์ risks.json ตัวใหม่ลงโฟลเดอร์ sld-ala แล้วกด "โหลดข้อมูลใหม่จากระบบ" ในแท็บตั้งค่า
+      </div>`}
 
     <h2 style="margin:16px 0 6px;font-size:14px;">ตำแหน่ง</h2>
     ${coordBlock(x.lat, x.lon, 'rk')}
