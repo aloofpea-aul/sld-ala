@@ -66,6 +66,16 @@
   #denyGate{position:fixed;inset:0;background:linear-gradient(170deg,#f6f5f2 0%,#eeeaf5 100%);
     z-index:520;display:none;align-items:center;justify-content:center;padding:22px;}
   #denyGate.show{display:flex;}
+  .perm-row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:9px;
+    padding:10px 11px;margin-bottom:7px;background:#fff;cursor:pointer;}
+  .perm-row .nm{flex:1;min-width:0;}
+  .perm-row .nm b{display:block;font-size:14.5px;}
+  .perm-row .nm span{font-size:12px;color:var(--muted);}
+  .perm-dots{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap;}
+  .pd{font-size:10.5px;padding:2px 6px;border-radius:9px;border:1px solid var(--line);color:var(--muted);}
+  .pd.on{background:#efeaf7;border-color:var(--pea-purple);color:var(--pea-purple);font-weight:700;}
+  .perm-count{font-size:12.5px;color:var(--muted);white-space:nowrap;}
+  .perm-warn{color:var(--sev2);font-weight:700;font-size:11.5px;}
   .app-chk{display:flex;align-items:center;gap:8px;font-size:13.5px;padding:3px 0;}
   .app-chk input{width:18px;height:18px;}
   #authGate{position:fixed;inset:0;background:linear-gradient(170deg,#f6f5f2 0%,#eeeaf5 100%);
@@ -283,10 +293,37 @@
 
   <div class="card" id="usersCard" style="display:none;">
     <h2>สิทธิ์การใช้โปรแกรม</h2>
-    <p class="hint" style="margin:0 0 10px;">กำหนดว่าแต่ละคนเข้าโปรแกรมไหนได้บ้าง · ผู้ดูแลระบบใช้ได้ทุกโปรแกรมเสมอ</p>
-    <input type="text" id="userSearch" placeholder="ค้นหาชื่อ" style="margin-bottom:9px;">
-    <div id="usersBox"><div class="hint">กำลังโหลด ...</div></div>
-    <button class="ghost small" id="btnUsersReload" style="width:100%;margin-top:9px;">โหลดรายชื่อใหม่</button>
+    <div class="hint" id="usersSummary" style="margin-bottom:9px;"></div>
+
+    <div class="seg" id="permViewSeg">
+      <button data-v="person" class="on">ตามคน</button>
+      <button data-v="app">ตามโปรแกรม</button>
+    </div>
+
+    <div id="permPerson" style="margin-top:10px;">
+      <input type="text" id="userSearch" placeholder="🔍 ค้นหาชื่อ หรือ ตำแหน่ง">
+      <div class="seg" id="permFilterSeg" style="margin-top:8px;">
+        <button data-f="all" class="on">ทั้งหมด</button>
+        <button data-f="unset">ยังไม่กำหนด</button>
+        <button data-f="blocked">ถูกระงับ</button>
+      </div>
+      <select id="permAppFilter" style="margin-top:8px;"></select>
+      <div id="usersBox" style="margin-top:10px;"><div class="hint">กำลังโหลด ...</div></div>
+    </div>
+
+    <div id="permApp" style="display:none;margin-top:10px;">
+      <select id="bulkApp"></select>
+      <div class="hint" id="bulkSummary" style="margin-top:7px;"></div>
+      <input type="text" id="bulkSearch" placeholder="🔍 ค้นหาชื่อ" style="margin-top:8px;">
+      <div class="row" style="margin-top:8px;">
+        <button class="ghost small" id="btnBulkAll">เลือกทั้งหมด</button>
+        <button class="ghost small" id="btnBulkNone">ไม่เลือกเลย</button>
+      </div>
+      <div id="bulkBox" style="margin-top:9px;"></div>
+      <button class="primary" id="btnBulkSave" style="margin-top:10px;">บันทึกทั้งหมด</button>
+    </div>
+
+    <button class="ghost small" id="btnUsersReload" style="width:100%;margin-top:10px;">โหลดรายชื่อใหม่</button>
   </div>
 
   <div class="card">
@@ -431,6 +468,7 @@
 </div>
 <div id="toast"></div>
 <div class="overlay" id="detailOverlay"><div class="sheet" id="detailSheet"></div></div>
+<div class="overlay" id="permOverlay"><div class="sheet" id="permSheet"></div></div>
 
 <script>
 /* ==========================================================================
@@ -1541,11 +1579,12 @@ async function loadPending(){
   }catch(e){ box.innerHTML = '<div class="hint">โหลดไม่สำเร็จ</div>'; }
 }
 
-/* ---------- จัดการสิทธิ์รายโปรแกรมของสมาชิกที่มีอยู่แล้ว ---------- */
-let USERS = [];
+/* ---------- จัดการสิทธิ์รายโปรแกรม ---------- */
+let USERS = [], PERM_VIEW = 'person', PERM_FILTER = 'all';
+
 async function loadUsers(){
-  const box = $('usersBox');
   if(ROLE !== 'admin' || !navigator.onLine) return;
+  const box = $('usersBox');
   try{
     const r = await api({ action:'patrolListUsers' });
     if(!r || !r.ok){ box.innerHTML = '<div class="hint">' + esc((r && r.error) || 'โหลดไม่สำเร็จ') + '</div>'; return; }
@@ -1554,41 +1593,155 @@ async function loadUsers(){
       localStorage.setItem('patrol_applist', JSON.stringify(APP_LIST));
     }
     USERS = r.users || [];
-    renderUsers();
+    fillAppSelects();
+    renderUsers(); renderBulk();
   }catch(e){ box.innerHTML = '<div class="hint">โหลดไม่สำเร็จ</div>'; }
+}
+function fillAppSelects(){
+  const opts = APP_LIST.map(a=> `<option value="${esc(a.code)}">${esc(a.name)}</option>`).join('');
+  $('permAppFilter').innerHTML = '<option value="">ทุกโปรแกรม</option>' +
+    APP_LIST.map(a=> `<option value="${esc(a.code)}">เฉพาะคนที่ใช้ ${esc(a.name)} ได้</option>`).join('');
+  if(!$('bulkApp').innerHTML) $('bulkApp').innerHTML = opts;
+}
+function appShort(code){
+  const map = { 'sld':'SLD', 'tx-survey':'TX', 'patrol':'PAT', 'construction':'CON' };
+  return map[code] || code.slice(0, 3).toUpperCase();
+}
+/* เรียงคนที่ยังไม่กำหนดขึ้นก่อน เพราะเป็นกลุ่มที่ต้องจัดการ แล้วตามด้วยคนที่แก้ล่าสุด */
+function sortedUsers(){
+  return USERS.slice().sort((a, b)=>{
+    const ua = (a.role !== 'admin' && !a.appsRaw) ? 0 : 1;
+    const ub = (b.role !== 'admin' && !b.appsRaw) ? 0 : 1;
+    if(ua !== ub) return ua - ub;
+    if(a.appsUpdated !== b.appsUpdated) return (b.appsUpdated || '').localeCompare(a.appsUpdated || '');
+    return a.name.localeCompare(b.name, 'th');
+  });
 }
 function renderUsers(){
   const q = ($('userSearch').value || '').trim().toLowerCase();
-  const list = USERS.filter(u=> !q || u.name.toLowerCase().indexOf(q) >= 0);
-  if(!list.length){ $('usersBox').innerHTML = '<div class="hint">ไม่พบรายชื่อ</div>'; return; }
-  $('usersBox').innerHTML = list.map((u, i)=>{
+  const onlyApp = $('permAppFilter').value;
+  const list = sortedUsers().filter(u=>{
+    if(q && (u.name + ' ' + (u.position || '')).toLowerCase().indexOf(q) < 0) return false;
+    if(PERM_FILTER === 'unset' && (u.role === 'admin' || u.appsRaw)) return false;
+    if(PERM_FILTER === 'blocked' && u.appsRaw !== '-') return false;
+    if(onlyApp && (u.apps || []).indexOf(onlyApp) < 0) return false;
+    return true;
+  });
+
+  const members = USERS.filter(u=> u.role !== 'admin');
+  $('usersSummary').innerHTML =
+    'ทั้งหมด <b>' + USERS.length + '</b> คน · สมาชิก ' + members.length +
+    ' · <span class="perm-warn">ยังไม่กำหนด ' + members.filter(u=> !u.appsRaw).length + '</span>' +
+    ' · ถูกระงับ ' + members.filter(u=> u.appsRaw === '-').length;
+
+  if(!list.length){ $('usersBox').innerHTML = '<div class="hint">ไม่พบรายชื่อที่ตรงเงื่อนไข</div>'; return; }
+  $('usersBox').innerHTML = list.map(u=>{
     if(u.role === 'admin'){
-      return `<div class="item" style="cursor:default;">
-        <div class="top"><b style="flex:1;">${esc(u.name)}</b><span class="pill" style="background:var(--pea-purple);">ผู้ดูแลระบบ</span></div>
-        <div class="hint" style="margin-top:4px;">ใช้ได้ทุกโปรแกรม</div></div>`;
+      return `<div class="perm-row" data-admin="1" style="cursor:default;">
+        <div class="nm"><b>${esc(u.name)}</b><span>${esc(u.position || '')}</span>
+          <div class="perm-dots"><span class="pd on">ผู้ดูแลระบบ · ใช้ได้ทุกโปรแกรม</span></div></div></div>`;
     }
-    const note = u.appsRaw ? '' : '<div class="hint" style="color:var(--sev2);margin-top:3px;">ยังไม่ได้กำหนด — ตอนนี้ใช้ได้ทุกโปรแกรม</div>';
-    return `<div class="item" style="cursor:default;">
-      <div class="top"><b style="flex:1;">${esc(u.name)}</b>
-        <span class="mono">${esc(u.position || '')}</span></div>
-      ${note}
-      <div id="usr${i}" style="margin-top:7px;">${appChecks('usr' + i, u.apps || [])}</div>
-      <button class="ghost small" data-save="${i}" data-n="${esc(u.name)}" style="width:100%;margin-top:7px;">บันทึกสิทธิ์</button>
+    const dots = APP_LIST.map(a=>
+      `<span class="pd${(u.apps || []).indexOf(a.code) >= 0 ? ' on' : ''}">${esc(appShort(a.code))}</span>`).join('');
+    const warn = !u.appsRaw ? '<span class="perm-warn">⚠ ยังไม่กำหนด</span>'
+               : u.appsRaw === '-' ? '<span class="perm-warn">⛔ ถูกระงับ</span>' : '';
+    return `<div class="perm-row" data-name="${esc(u.name)}">
+      <div class="nm"><b>${esc(u.name)} ${warn}</b><span>${esc(u.position || '')}${u.org ? ' · ' + esc(u.org) : ''}</span>
+        <div class="perm-dots">${dots}</div></div>
+      <div class="perm-count">${(u.apps || []).length}/${APP_LIST.length} ›</div>
     </div>`;
   }).join('');
-  $('usersBox').querySelectorAll('button[data-save]').forEach(b=>{
-    b.onclick = async ()=>{
-      const i = b.dataset.save, n = b.dataset.n;
-      const apps = Array.from(document.querySelectorAll('#usr' + i + ' input:checked')).map(c=> c.dataset.app);
-      b.disabled = true; b.textContent = 'กำลังบันทึก ...';
-      const rr = await api({ action:'patrolSetApps', targetName:n, apps:apps });
-      b.disabled = false; b.textContent = 'บันทึกสิทธิ์';
-      if(rr && rr.ok){ beep('ok'); toast('บันทึกสิทธิ์ของ ' + n + ' แล้ว', 'ok'); loadUsers(); }
-      else { beep('err'); toast((rr && rr.error) || 'บันทึกไม่สำเร็จ', 'err'); }
-    };
+  $('usersBox').querySelectorAll('.perm-row[data-name]').forEach(el=>{
+    el.onclick = ()=> openPermSheet(el.dataset.name);
   });
 }
+
+/* แผ่นแก้สิทธิ์รายคน */
+function openPermSheet(name){
+  const u = USERS.find(x=> x.name === name);
+  if(!u) return;
+  const ov = $('permOverlay');
+  $('permSheet').innerHTML = `
+    <h2 style="margin:0 0 3px;color:var(--pea-purple);font-size:17px;">${esc(u.name)}</h2>
+    <div class="hint" style="margin-bottom:12px;">${esc(u.position || '—')}${u.org ? ' · ' + esc(u.org) : ''} · สมาชิก</div>
+    <div class="row">
+      <button class="ghost small" id="permAll">ให้ทุกโปรแกรม</button>
+      <button class="ghost small" id="permNone" style="border-color:var(--sev1);color:var(--sev1);">ระงับทั้งหมด</button>
+    </div>
+    <div id="permChecks" style="margin-top:12px;">${appChecks('perm', u.apps || [])}</div>
+    <label class="f">เหตุผลที่เปลี่ยน (ไม่บังคับ)</label>
+    <input type="text" id="permReason" placeholder="เช่น ย้ายมาแผนกปฏิบัติการ">
+    <div class="hint" style="margin-top:10px;">${u.appsUpdated ? 'แก้ล่าสุด ' + esc(u.appsUpdated) : 'ยังไม่เคยกำหนดสิทธิ์'}</div>
+    <button class="primary" id="permSave" style="margin-top:12px;">บันทึก</button>
+    <button class="ghost" id="permCancel" style="width:100%;margin-top:8px;">ยกเลิก</button>`;
+  ov.classList.add('show');
+  const setAll = on=> document.querySelectorAll('#permChecks input').forEach(c=> c.checked = on);
+  $('permAll').onclick = ()=> setAll(true);
+  $('permNone').onclick = ()=> setAll(false);
+  $('permCancel').onclick = ()=> ov.classList.remove('show');
+  $('permSave').onclick = async ()=>{
+    const apps = Array.from(document.querySelectorAll('#permChecks input:checked')).map(c=> c.dataset.app);
+    const btn = $('permSave'); btn.disabled = true; btn.textContent = 'กำลังบันทึก ...';
+    const rr = await api({ action:'patrolSetApps', targetName:name, apps:apps, reason:$('permReason').value.trim() });
+    btn.disabled = false; btn.textContent = 'บันทึก';
+    if(rr && rr.ok){ beep('ok'); toast('บันทึกสิทธิ์ของ ' + name + ' แล้ว', 'ok'); ov.classList.remove('show'); loadUsers(); }
+    else { beep('err'); toast((rr && rr.error) || 'บันทึกไม่สำเร็จ', 'err'); }
+  };
+}
+$('permOverlay').onclick = e=>{ if(e.target.id === 'permOverlay') e.currentTarget.classList.remove('show'); };
+
+/* มุมมองตามโปรแกรม — เปิด/ปิดให้หลายคนพร้อมกัน */
+function renderBulk(){
+  const app = $('bulkApp').value || (APP_LIST[0] && APP_LIST[0].code);
+  const q = ($('bulkSearch').value || '').trim().toLowerCase();
+  const members = USERS.filter(u=> u.role !== 'admin');
+  const has = members.filter(u=> (u.apps || []).indexOf(app) >= 0).length;
+  const appName = (APP_LIST.find(a=> a.code === app) || {}).name || app;
+  $('bulkSummary').innerHTML = 'มีสิทธิ์ <b>' + has + '</b> คน จากสมาชิก ' + members.length + ' คน';
+  const list = members.filter(u=> !q || (u.name + ' ' + (u.position || '')).toLowerCase().indexOf(q) >= 0);
+  if(!list.length){ $('bulkBox').innerHTML = '<div class="hint">ไม่พบรายชื่อ</div>'; return; }
+  $('bulkBox').innerHTML = list.map(u=>`
+    <label class="app-chk" style="border-bottom:1px solid var(--line);padding:8px 0;">
+      <input type="checkbox" data-n="${esc(u.name)}" ${(u.apps || []).indexOf(app) >= 0 ? 'checked' : ''}>
+      <span style="flex:1;">${esc(u.name)}<br><span class="hint">${esc(u.position || '')}</span></span>
+    </label>`).join('');
+}
+$('bulkApp').onchange = renderBulk;
+$('bulkSearch').oninput = renderBulk;
+$('btnBulkAll').onclick = ()=> document.querySelectorAll('#bulkBox input').forEach(c=> c.checked = true);
+$('btnBulkNone').onclick = ()=> document.querySelectorAll('#bulkBox input').forEach(c=> c.checked = false);
+$('btnBulkSave').onclick = async ()=>{
+  const app = $('bulkApp').value;
+  const enable = [], disable = [];
+  document.querySelectorAll('#bulkBox input').forEach(c=>{
+    (c.checked ? enable : disable).push(c.dataset.n);
+  });
+  const reason = prompt('เหตุผลที่เปลี่ยนสิทธิ์ (กด OK เพื่อข้ามได้)') || '';
+  const btn = $('btnBulkSave'); btn.disabled = true; btn.textContent = 'กำลังบันทึก ...';
+  const rr = await api({ action:'patrolSetAppBulk', app:app, enable:enable, disable:disable, reason:reason.trim() });
+  btn.disabled = false; btn.textContent = 'บันทึกทั้งหมด';
+  if(rr && rr.ok){ beep('ok'); toast('เปลี่ยนสิทธิ์ ' + rr.changed + ' คน', 'ok'); loadUsers(); }
+  else { beep('err'); toast((rr && rr.error) || 'บันทึกไม่สำเร็จ', 'err'); }
+};
+
+document.querySelectorAll('#permViewSeg button').forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll('#permViewSeg button').forEach(x=> x.classList.remove('on'));
+    btn.classList.add('on');
+    PERM_VIEW = btn.dataset.v;
+    $('permPerson').style.display = PERM_VIEW === 'person' ? '' : 'none';
+    $('permApp').style.display = PERM_VIEW === 'app' ? '' : 'none';
+    if(PERM_VIEW === 'app') renderBulk();
+  };
+});
+document.querySelectorAll('#permFilterSeg button').forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll('#permFilterSeg button').forEach(x=> x.classList.remove('on'));
+    btn.classList.add('on'); PERM_FILTER = btn.dataset.f; renderUsers();
+  };
+});
 $('userSearch').oninput = renderUsers;
+$('permAppFilter').onchange = renderUsers;
 $('btnUsersReload').onclick = loadUsers;
 
 $('btnPendingReload').onclick = loadPending;
