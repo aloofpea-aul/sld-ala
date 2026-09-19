@@ -104,6 +104,14 @@
   .boot-bar-go{height:100%;width:0;background:var(--pea-purple);transition:width .35s ease;}
   .boot-tip{margin-top:16px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px;
     font-size:13.5px;line-height:1.75;color:#333;min-height:78px;display:flex;align-items:center;justify-content:center;}
+  .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:26px 14px;gap:10px;color:var(--muted);font-size:13.5px;text-align:center;}
+  .spin{width:34px;height:34px;border-radius:50%;border:3.5px solid #e3e0da;
+    border-top-color:var(--pea-purple);animation:spin .85s linear infinite;}
+  .skel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px;}
+  .sk{height:11px;border-radius:6px;background:linear-gradient(90deg,#eeece8 25%,#f7f6f4 37%,#eeece8 63%);
+    background-size:400% 100%;animation:shimmer 1.3s ease infinite;}
+  @keyframes shimmer{0%{background-position:100% 0;}100%{background-position:0 0;}}
   #savingOverlay{position:fixed;inset:0;background:rgba(246,245,242,.96);z-index:300;
     display:none;align-items:center;justify-content:center;padding:24px;}
   #savingOverlay.show{display:flex;}
@@ -550,6 +558,24 @@ const qAll   = () => idb('queue','readonly',  s=> s.getAll());
 const qDel   = id => idb('queue','readwrite', s=> s.delete(id));
 const cPut   = (key,value) => idb('cache','readwrite', s=> s.put({ key, value, at: Date.now() }));
 const cGet   = key => idb('cache','readonly', s=> s.get(key));
+
+/* ---------- กราฟิกรอโหลดข้อมูล ใช้ร่วมทุกหน้าจอ ---------- */
+function loadingBox(msg){
+  return '<div class="loading"><div class="spin"></div><div>' + (msg || 'กำลังโหลดข้อมูล ...') + '</div></div>';
+}
+function skeletonRows(n, msg){
+  let html = msg ? '<div class="hint" style="text-align:center;margin-bottom:9px;">' + msg + '</div>' : '';
+  for(let i = 0; i < (n || 3); i++){
+    html += '<div class="skel"><div class="sk" style="width:55%;"></div>' +
+            '<div class="sk" style="width:85%;margin-top:8px;height:9px;"></div>' +
+            '<div class="sk" style="width:40%;margin-top:7px;height:9px;"></div></div>';
+  }
+  return html;
+}
+function showLoading(id, kind, msg){
+  const el = $(id);
+  if(el) el.innerHTML = kind === 'skeleton' ? skeletonRows(3, msg) : loadingBox(msg);
+}
 
 /* ---------- เครื่องมือทั่วไป ---------- */
 const $ = id => document.getElementById(id);
@@ -1179,7 +1205,7 @@ function resetForm(){
 /* ดึงจุดที่พบจากระบบ แล้วรีเฟรชทุกหน้าจอที่ใช้ข้อมูลชุดนี้ */
 async function loadList(){
   if(!navigator.onLine){ toast('ต้องมีสัญญาณจึงจะโหลดรายการได้', 'err'); return; }
-  if($('listBox').innerHTML === '') $('listBox').innerHTML = '<div class="hint">กำลังโหลด ...</div>';
+  showLoading('listBox', 'skeleton', 'กำลังดึงจุดที่พบจากระบบ');
   try{
     const r = await api({ action:'patrolList', limit:400 });
     if(!r || !r.ok){
@@ -1287,7 +1313,7 @@ function renderList(){
 
 async function openDetail(id){
   const ov = $('detailOverlay'), sh = $('detailSheet');
-  sh.innerHTML = '<div class="hint">กำลังโหลด ...</div>';
+  sh.innerHTML = loadingBox('กำลังเปิดรายละเอียดและรูปภาพ');
   ov.classList.add('show');
   try{
     const r = await api({ action:'patrolDetail', findingId:id });
@@ -1423,6 +1449,8 @@ const RISK_TO_TYPE = { OVERLOAD:'OVERLOAD', LOWVOLT:'LOWVOLT', UNBALANCE:'OVERLO
   LONGLV:'LOWVOLT', FUSE:'FUSE', TRPOS:'OBSTACLE', TRNEW:'OBSTACLE' };
 
 async function loadRisks(){
+  if(!RISKS) showLoading('riskBox', 'skeleton', 'กำลังคำนวณจุดเสี่ยงจากข้อมูล OPSA และ GIS');
+  else showLoading('riskBox', 'plain', 'กำลังปรับข้อมูลล่าสุด');
   if(!RISKS){
     try{
       const c = await cGet('risks');
@@ -1895,6 +1923,7 @@ function appChecks(prefix, checked){
 }
 async function loadPending(){
   const box = $('pendingBox');
+  showLoading('pendingBox', 'plain', 'กำลังตรวจคำขอสมัคร');
   if(!navigator.onLine){ box.innerHTML = '<div class="hint">ต้องมีสัญญาณจึงจะดูคำขอได้</div>'; return; }
   try{
     const r = await api({ action:'getPendingList' });
@@ -1941,6 +1970,7 @@ let USERS = [], PERM_VIEW = 'person', PERM_FILTER = 'all';
 async function loadUsers(){
   if(ROLE !== 'admin' || !navigator.onLine) return;
   const box = $('usersBox');
+  showLoading('usersBox', 'skeleton', 'กำลังโหลดรายชื่อและสิทธิ์');
   try{
     const r = await api({ action:'patrolListUsers' });
     if(!r || !r.ok){ box.innerHTML = '<div class="hint">' + esc((r && r.error) || 'โหลดไม่สำเร็จ') + '</div>'; return; }
