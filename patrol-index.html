@@ -274,6 +274,7 @@
 
   <div class="card" id="checklist" style="padding:11px;"></div>
   <button class="primary" id="btnSave">บันทึกจุดที่พบ</button>
+  <button class="ghost" id="btnClear" style="width:100%;margin-top:9px;border-color:var(--sev1);color:var(--sev1);">ล้างข้อมูลทั้งหมด เริ่มกรอกใหม่</button>
   <p class="hint" style="text-align:center;margin-top:9px;">ไม่มีสัญญาณก็บันทึกได้ ระบบจะเก็บไว้ในเครื่องแล้วส่งให้อัตโนมัติเมื่อมีสัญญาณ</p>
 </section>
 
@@ -1389,6 +1390,7 @@ $('btnSave').onclick = async ()=>{
   }
   refreshQueueBadge();
 };
+/* ล้างหลังบันทึกสำเร็จ — เก็บพิกัดไว้ เพราะมักบันทึกหลายจุดในบริเวณเดียวกัน */
 function resetForm(){
   PHOTOS = []; renderThumbs();
   $('pasteCoord').value = '';
@@ -1397,6 +1399,38 @@ function resetForm(){
   $('landmark').value = '';
   ANCHOR.ref = ''; renderAnchorPick();
 }
+
+/* ล้างทั้งหมดจริงๆ รวมพิกัด ประเภทปัญหา และความรุนแรง */
+function clearForm(){
+  GPS = null;
+  GEO.nearPlace = ''; GEO.address = '';
+  ANCHOR = { type:'POLE', ref:'', feeder:'', scope:'one' };
+  document.querySelectorAll('#anchorSeg button').forEach(x=> x.classList.toggle('on', x.dataset.a === 'POLE'));
+  document.querySelectorAll('#scopeSeg button').forEach(x=> x.classList.toggle('on', x.dataset.k === 'one'));
+  PHOTOS = []; renderThumbs();
+  SEVERITY = 2;
+  document.querySelectorAll('#sevSeg button').forEach(x=> x.classList.toggle('on', x.dataset.s === '2'));
+  $('problemType').value = '';
+  $('pasteCoord').value = '';
+  $('detail').value = '';
+  $('moo').value = '';
+  $('landmark').value = '';
+  const wrap = $('pickMapWrap');
+  if(wrap) wrap.style.display = 'none';
+  showGps();
+  renderAnchorPick();
+  updateSteps();
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+$('btnClear').onclick = ()=>{
+  const hasData = GPS || PHOTOS.length || $('problemType').value || $('detail').value.trim() ||
+                  $('moo').value.trim() || $('landmark').value.trim() || ANCHOR.ref;
+  if(!hasData){ toast('ยังไม่ได้กรอกอะไร', 'err'); return; }
+  if(!confirm('ล้างข้อมูลที่กรอกไว้ทั้งหมด?' + (PHOTOS.length ? '\nรูป ' + PHOTOS.length + ' รูปที่ถ่ายไว้จะหายด้วย' : ''))) return;
+  clearForm();
+  beep('tap');
+  toast('ล้างข้อมูลแล้ว', 'ok');
+};
 
 /* ---------- รายการ ---------- */
 /* ดึงจุดที่พบจากระบบ แล้วรีเฟรชทุกหน้าจอที่ใช้ข้อมูลชุดนี้ */
