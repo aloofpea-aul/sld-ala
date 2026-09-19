@@ -141,6 +141,7 @@
 <nav>
   <button data-tab="home" class="active">หน้าหลัก</button>
   <button data-tab="new">บันทึกใหม่</button>
+  <button data-tab="risk">จุดเสี่ยง</button>
   <button data-tab="list">รายการ</button>
   <button data-tab="map">แผนที่</button>
   <button data-tab="setting">ตั้งค่า</button>
@@ -230,6 +231,25 @@
 
   <button class="primary" id="btnSave">บันทึกจุดที่พบ</button>
   <p class="hint" style="text-align:center;margin-top:9px;">ไม่มีสัญญาณก็บันทึกได้ ระบบจะเก็บไว้ในเครื่องแล้วส่งให้อัตโนมัติเมื่อมีสัญญาณ</p>
+</section>
+
+<!-- ========== จุดเสี่ยงที่ระบบคำนวณให้ ========== -->
+<section id="tab-risk" style="display:none;">
+  <div class="card">
+    <h2>จุดเสี่ยงที่ระบบชี้ให้</h2>
+    <p class="hint" style="margin:0 0 9px;">คำนวณจากข้อมูล OPSA และผลเทียบกับ GIS — ไปยืนยันหน้างานว่าเป็นปัญหาจริงหรือไม่</p>
+    <div class="stat-grid" id="riskStats" style="margin-bottom:10px;"></div>
+    <input type="text" id="riskSearch" placeholder="🔍 ค้นหา เลขหม้อแปลง ชื่อจุด วงจร">
+    <select id="riskType" style="margin-top:8px;"></select>
+    <div class="seg" id="riskStateSeg" style="margin-top:8px;">
+      <button data-s="todo" class="on">ยังไม่ตรวจ</button>
+      <button data-s="done">รับเรื่องแล้ว</button>
+      <button data-s="skip">ปัดทิ้ง</button>
+      <button data-s="all">ทั้งหมด</button>
+    </div>
+    <div class="hint" id="riskCount" style="margin-top:7px;"></div>
+  </div>
+  <div id="riskBox"></div>
 </section>
 
 <!-- ========== รายการ ========== -->
@@ -474,6 +494,7 @@
 <div id="toast"></div>
 <div class="overlay" id="detailOverlay"><div class="sheet" id="detailSheet"></div></div>
 <div class="overlay" id="permOverlay"><div class="sheet" id="permSheet"></div></div>
+<div class="overlay" id="riskOverlay"><div class="sheet" id="riskSheet"></div></div>
 
 <script>
 /* ==========================================================================
@@ -618,9 +639,10 @@ document.querySelectorAll('nav button').forEach(b=>{
   b.addEventListener('click', ()=>{
     document.querySelectorAll('nav button').forEach(x=> x.classList.remove('active'));
     b.classList.add('active');
-    ['home','new','list','map','setting'].forEach(t=>{ $('tab-'+t).style.display = (t === b.dataset.tab) ? '' : 'none'; });
+    ['home','new','risk','list','map','setting'].forEach(t=>{ $('tab-'+t).style.display = (t === b.dataset.tab) ? '' : 'none'; });
     if(b.dataset.tab === 'map') initMap();
     if(b.dataset.tab === 'home') renderHome();
+    if(b.dataset.tab === 'risk') loadRisks();
     if(b.dataset.tab === 'new') setTimeout(()=>{ initPickMap(); drawPickMap(); }, 80);
   });
 });
@@ -1356,6 +1378,160 @@ async function openDetail(id){
 }
 $('detailOverlay').onclick = e=>{ if(e.target.id === 'detailOverlay') e.currentTarget.classList.remove('show'); };
 
+/* ---------- จุดเสี่ยงที่ระบบคำนวณให้ (ไฟล์ risks.json) ---------- */
+let RISKS = null, RISK_STATE = {}, RISK_FILTER = 'todo';
+const RISK_LABEL = {
+  OVERLOAD:'โหลดเกินพิกัด', LOWVOLT:'แรงดันปลายทางต่ำ', UNBALANCE:'กระแสไม่สมดุล',
+  LONGLV:'สายแรงต่ำยาวเกิน', FUSE:'ฟิวส์ไม่ตรง GIS', TRPOS:'พิกัดหม้อแปลงไม่ตรง',
+  TRNEW:'หม้อแปลงไม่มีในผัง'
+};
+/* จับคู่ประเภทจุดเสี่ยงกับประเภทปัญหาในระบบ เพื่อสร้างเป็นจุดที่พบได้ทันที */
+const RISK_TO_TYPE = { OVERLOAD:'OVERLOAD', LOWVOLT:'LOWVOLT', UNBALANCE:'OVERLOAD',
+  LONGLV:'LOWVOLT', FUSE:'FUSE', TRPOS:'OBSTACLE', TRNEW:'OBSTACLE' };
+
+async function loadRisks(){
+  if(!RISKS){
+    try{
+      const c = await cGet('risks');
+      if(c) RISKS = c.value;
+    }catch(e){}
+  }
+  if(!RISKS && navigator.onLine){
+    try{
+      const r = await fetch('risks.json');
+      if(r.ok){ RISKS = await r.json(); await cPut('risks', RISKS); }
+    }catch(e){}
+  }
+  if(!RISKS){
+    $('riskBox').innerHTML = '<div class="card"><div class="hint">ยังไม่มีไฟล์ risks.json ในโฟลเดอร์เดียวกับหน้านี้</div></div>';
+    return;
+  }
+  if(navigator.onLine){
+    try{
+      const r = await api({ action:'patrolRiskStates' });
+      if(r && r.ok) RISK_STATE = r.states || {};
+    }catch(e){}
+  }
+  fillRiskTypes();
+  renderRisks();
+}
+function fillRiskTypes(){
+  if($('riskType').innerHTML) return;
+  const codes = Array.from(new Set(RISKS.risks.map(x=> x.code)));
+  $('riskType').innerHTML = '<option value="">ทุกประเภท</option>' +
+    codes.map(c=> `<option value="${esc(c)}">${esc(RISK_LABEL[c] || c)}</option>`).join('');
+  $('riskType').onchange = renderRisks;
+  $('riskSearch').oninput = renderRisks;
+  document.querySelectorAll('#riskStateSeg button').forEach(b=>{
+    b.onclick = ()=>{
+      document.querySelectorAll('#riskStateSeg button').forEach(x=> x.classList.remove('on'));
+      b.classList.add('on'); RISK_FILTER = b.dataset.s; renderRisks();
+    };
+  });
+}
+function riskStatus(id){ return (RISK_STATE[id] && RISK_STATE[id].status) || 'ยังไม่ตรวจ'; }
+function visibleRisks(){
+  const q = ($('riskSearch').value || '').trim().toLowerCase();
+  const code = $('riskType').value;
+  return RISKS.risks.filter(x=>{
+    const st = riskStatus(x.id);
+    if(RISK_FILTER === 'todo' && st !== 'ยังไม่ตรวจ') return false;
+    if(RISK_FILTER === 'done' && st !== 'รับเรื่อง') return false;
+    if(RISK_FILTER === 'skip' && st !== 'ปัดทิ้ง') return false;
+    if(code && x.code !== code) return false;
+    if(q && (x.dev + ' ' + x.name + ' ' + x.feeder + ' ' + x.title).toLowerCase().indexOf(q) < 0) return false;
+    return true;
+  });
+}
+function renderRisks(){
+  const all = RISKS.risks;
+  const todo = all.filter(x=> riskStatus(x.id) === 'ยังไม่ตรวจ');
+  const sev1 = todo.filter(x=> x.sev === 1);
+  $('riskStats').innerHTML = [
+    { n: sev1.length, t:'ระดับ 1 ยังไม่ตรวจ', c:'var(--sev1)' },
+    { n: todo.length, t:'ยังไม่ตรวจทั้งหมด', c:'var(--sev2)' },
+    { n: all.filter(x=> riskStatus(x.id) === 'รับเรื่อง').length, t:'รับเรื่องแล้ว', c:'var(--sev3)' },
+    { n: all.length, t:'จุดเสี่ยงทั้งหมด', c:'var(--pea-purple)' }
+  ].map(x=> `<div class="stat"><div class="n" style="color:${x.c}">${x.n}</div><div class="t">${x.t}</div></div>`).join('');
+
+  const list = visibleRisks().slice(0, 200);
+  $('riskCount').innerHTML = 'แสดง <b>' + list.length + '</b> จาก ' + visibleRisks().length + ' รายการ' +
+    (visibleRisks().length > 200 ? ' (แสดงสูงสุด 200 ใช้ตัวกรองช่วย)' : '');
+  if(!list.length){ $('riskBox').innerHTML = '<div class="hint" style="padding:12px;">ไม่มีรายการที่ตรงเงื่อนไข</div>'; return; }
+  $('riskBox').innerHTML = list.map(x=>{
+    const st = riskStatus(x.id);
+    const pill = st === 'รับเรื่อง' ? '<span class="pill" style="background:var(--sev3)">รับเรื่องแล้ว</span>'
+               : st === 'ปัดทิ้ง' ? '<span class="pill" style="background:#9e9e9e">ปัดทิ้ง</span>' : '';
+    return `<div class="item" data-id="${esc(x.id)}">
+      <div class="top">
+        <span class="pill" style="background:${SEV_COLOR[x.sev]}">ระดับ ${x.sev}</span>
+        <b style="flex:1;">${esc(x.title)}</b>${pill}
+      </div>
+      <div class="hint" style="margin-top:5px;">
+        ${esc(x.detail)}<br>
+        <span class="mono">${esc(x.dev)}</span> · ${esc(x.name || '')} · ${esc(x.feeder || '')}
+        ${x.cust ? ' · ผู้ใช้ไฟ ' + x.cust + ' ราย' : ''}
+      </div>
+    </div>`;
+  }).join('');
+  $('riskBox').querySelectorAll('.item').forEach(el=> el.onclick = ()=> openRisk(el.dataset.id));
+}
+function openRisk(id){
+  const x = RISKS.risks.find(r=> r.id === id);
+  if(!x) return;
+  const st = RISK_STATE[id];
+  const ov = $('riskOverlay');
+  $('riskSheet').innerHTML = `
+    <h2 style="margin:0 0 3px;color:var(--pea-purple);font-size:17px;">${esc(x.title)}</h2>
+    <div class="hint" style="margin-bottom:10px;">${esc(RISK_LABEL[x.code] || x.code)} · ระดับ ${x.sev}</div>
+    <div class="kv"><span>อุปกรณ์</span><span class="mono">${esc(x.dev)}</span></div>
+    <div class="kv"><span>จุดติดตั้ง</span><span style="text-align:right;">${esc(x.name || '-')}</span></div>
+    <div class="kv"><span>วงจร</span><span>${esc(x.feeder || '-')}</span></div>
+    <div class="kv"><span>ข้อมูล</span><span style="text-align:right;">${esc(x.detail)}</span></div>
+    ${x.cust ? `<div class="kv"><span>ผู้ใช้ไฟที่กระทบ</span><span>${x.cust} ราย</span></div>` : ''}
+    ${coordBlock(x.lat, x.lon, 'rk')}
+    ${st ? `<div class="hint" style="margin-top:8px;">สถานะ <b>${esc(st.status)}</b>${st.note ? ' — ' + esc(st.note) : ''}<br>
+      <span class="mono">${esc(st.at)} · ${esc(st.by)}</span></div>` : ''}
+    <button class="primary" id="riskTake" style="margin-top:14px;">รับเรื่อง — สร้างเป็นจุดที่พบ</button>
+    <button class="ghost" id="riskSkip" style="width:100%;margin-top:8px;">ปัดทิ้ง — ไม่ใช่ปัญหา</button>
+    <button class="ghost" id="riskClose" style="width:100%;margin-top:8px;">ปิดหน้าต่าง</button>`;
+  ov.classList.add('show');
+  bindCoordBlock(x.lat, x.lon, 'rk');
+  $('riskClose').onclick = ()=> ov.classList.remove('show');
+  $('riskSkip').onclick = async ()=>{
+    const note = prompt('เหตุผลที่ปัดทิ้ง เช่น ตรวจแล้วปกติ / ข้อมูลผิด');
+    if(note === null) return;
+    if(!note.trim()){ toast('ต้องระบุเหตุผล', 'err'); return; }
+    const r = await api({ action:'patrolRiskSet', riskId:id, status:'ปัดทิ้ง', note:note.trim() });
+    if(r && r.ok){ beep('ok'); toast('ปัดทิ้งแล้ว', 'ok'); ov.classList.remove('show'); loadRisks(); }
+    else { beep('err'); toast((r && r.error) || 'ทำรายการไม่สำเร็จ', 'err'); }
+  };
+  $('riskTake').onclick = async ()=>{
+    const btn = $('riskTake'); btn.disabled = true; btn.textContent = 'กำลังสร้าง ...';
+    const finding = {
+      findingId: newId('F'),
+      createdAt: new Date().toISOString(),
+      anchorType: 'DEVICE', anchorRef: x.dev,
+      lat: x.lat, lon: x.lon, gpsAccuracy: '',
+      feederId: x.feeder || '',
+      problemType: RISK_TO_TYPE[x.code] || 'OBSTACLE',
+      severity: x.sev,
+      detail: x.title + ' — ' + x.detail + (x.name ? ' · ' + x.name : ''),
+      nearPlace: x.name || '', address: '', moo: '', landmark: '',
+      source: 'system'
+    };
+    const r = await api({ action:'patrolCreate', finding, photos: [] });
+    btn.disabled = false; btn.textContent = 'รับเรื่อง — สร้างเป็นจุดที่พบ';
+    if(r && r.ok){
+      await api({ action:'patrolRiskSet', riskId:id, status:'รับเรื่อง', findingId:finding.findingId, note:'' });
+      beep('ok'); toast('สร้างเป็นจุดที่พบแล้ว ' + finding.findingId, 'ok');
+      ov.classList.remove('show');
+      await loadList(); loadRisks();
+    } else { beep('err'); toast((r && r.error) || 'สร้างไม่สำเร็จ', 'err'); }
+  };
+}
+$('riskOverlay').onclick = e=>{ if(e.target.id === 'riskOverlay') e.currentTarget.classList.remove('show'); };
+
 /* ---------- พิกัด: คัดลอก · เปิดแผนที่ · นำทาง · แปลงเป็นที่อยู่ภาษาไทย ---------- */
 const LONGDO_KEY = 'f61a87ff70c39e610385809783d5a1b3';
 
@@ -1982,9 +2158,10 @@ function closeBoot(manual){
 /* ---------- หน้าหลัก ---------- */
 function switchTab(name){
   document.querySelectorAll('nav button').forEach(x=> x.classList.toggle('active', x.dataset.tab === name));
-  ['home','new','list','map','setting'].forEach(t=>{ $('tab-'+t).style.display = (t === name) ? '' : 'none'; });
+  ['home','new','risk','list','map','setting'].forEach(t=>{ $('tab-'+t).style.display = (t === name) ? '' : 'none'; });
   if(name === 'map') initMap();
   if(name === 'home') renderHome();
+  if(name === 'risk') loadRisks();
   if(name === 'new') setTimeout(()=>{ initPickMap(); drawPickMap(); }, 80);
   window.scrollTo(0, 0);
 }
