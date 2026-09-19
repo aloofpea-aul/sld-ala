@@ -1449,22 +1449,30 @@ const RISK_TO_TYPE = { OVERLOAD:'OVERLOAD', LOWVOLT:'LOWVOLT', UNBALANCE:'OVERLO
   LONGLV:'LOWVOLT', FUSE:'FUSE', TRPOS:'OBSTACLE', TRNEW:'OBSTACLE' };
 
 async function loadRisks(){
-  if(!RISKS) showLoading('riskBox', 'skeleton', 'กำลังคำนวณจุดเสี่ยงจากข้อมูล OPSA และ GIS');
+  if(!RISKS) showLoading('riskBox', 'skeleton', 'กำลังโหลดจุดเสี่ยงจากข้อมูล OPSA และ GIS');
   else showLoading('riskBox', 'plain', 'กำลังปรับข้อมูลล่าสุด');
+
+  // ดึงไฟล์ใหม่เสมอเมื่อมีสัญญาณ (ไฟล์เล็ก) แล้วค่อยใช้ของในเครื่องเป็นตัวสำรอง
+  if(navigator.onLine){
+    try{
+      const r = await fetch('risks.json', { cache:'no-cache' });
+      if(r.ok){
+        const fresh = await r.json();
+        const changed = !RISKS || RISKS.generated !== fresh.generated || RISKS.risks.length !== fresh.risks.length;
+        RISKS = fresh;
+        await cPut('risks', RISKS);
+        if(changed) toast('อัปเดตจุดเสี่ยงเป็นชุดวันที่ ' + (fresh.generated || '-'), 'ok');
+      }
+    }catch(e){}
+  }
   if(!RISKS){
     try{
       const c = await cGet('risks');
       if(c) RISKS = c.value;
     }catch(e){}
   }
-  if(!RISKS && navigator.onLine){
-    try{
-      const r = await fetch('risks.json');
-      if(r.ok){ RISKS = await r.json(); await cPut('risks', RISKS); }
-    }catch(e){}
-  }
   if(!RISKS){
-    $('riskBox').innerHTML = '<div class="card"><div class="hint">ยังไม่มีไฟล์ risks.json ในโฟลเดอร์เดียวกับหน้านี้</div></div>';
+    $('riskBox').innerHTML = '<div class="card"><div class="hint">ยังไม่มีไฟล์ risks.json ในโฟลเดอร์เดียวกับหน้านี้ — ต้องอัปโหลดไฟล์นี้ขึ้น GitHub Pages ก่อน</div></div>';
     return;
   }
   if(navigator.onLine){
@@ -1516,7 +1524,8 @@ function renderRisks(){
   ].map(x=> `<div class="stat"><div class="n" style="color:${x.c}">${x.n}</div><div class="t">${x.t}</div></div>`).join('');
 
   const list = visibleRisks().slice(0, 200);
-  $('riskCount').innerHTML = 'แสดง <b>' + list.length + '</b> จาก ' + visibleRisks().length + ' รายการ' +
+  $('riskCount').innerHTML = 'ชุดข้อมูลวันที่ <b>' + esc(RISKS.generated || '-') + '</b> · ' +
+    'แสดง <b>' + list.length + '</b> จาก ' + visibleRisks().length + ' รายการ' +
     (visibleRisks().length > 200 ? ' (แสดงสูงสุด 200 ใช้ตัวกรองช่วย)' : '');
   if(!list.length){ $('riskBox').innerHTML = '<div class="hint" style="padding:12px;">ไม่มีรายการที่ตรงเงื่อนไข</div>'; return; }
   $('riskBox').innerHTML = list.map(x=>{
@@ -2218,7 +2227,7 @@ $('btnCache').onclick = async ()=>{
   else $('cacheInfo').textContent = 'โหลดข้อมูลเสาไม่สำเร็จ — ตรวจว่ามีไฟล์ poles.json อยู่โฟลเดอร์เดียวกับหน้านี้';
 };
 function showCacheInfo(){
-  $('cacheInfo').innerHTML =
+  $('cacheInfo').innerHTML = (RISKS ? 'จุดเสี่ยง: <b>' + RISKS.risks.length + '</b> รายการ (ชุดวันที่ ' + esc(RISKS.generated || '-') + ') · ' : '') +
     'เสาในเครื่อง: <b>' + (POLES && POLES.poles ? POLES.poles.length.toLocaleString() : 0) + '</b> ต้น · ' +
     'อุปกรณ์: <b>' + (DEVICES ? DEVICES.length.toLocaleString() : 0) + '</b> รายการ';
 }
@@ -2386,6 +2395,17 @@ async function autoLoadData(force){
     }
   }catch(e){ bootStep('poles','skip','ยังไม่มีไฟล์ poles.json'); }
 
+  // จุดเสี่ยงและแนวสาย — ดึงใหม่ตอนสั่งโหลดข้อมูลใหม่
+  if(force && navigator.onLine){
+    try{
+      const rr = await fetch('risks.json', { cache:'no-cache' });
+      if(rr.ok){ RISKS = await rr.json(); await cPut('risks', RISKS); }
+    }catch(e){}
+    try{
+      const rm = await fetch('mv-lines.json', { cache:'no-cache' });
+      if(rm.ok){ MVLINES = await rm.json(); await cPut('mvlines', MVLINES); }
+    }catch(e){}
+  }
   showCacheInfo();
   renderAnchorPick();
   renderHome();
