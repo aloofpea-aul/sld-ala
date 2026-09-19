@@ -104,6 +104,26 @@
   .boot-bar-go{height:100%;width:0;background:var(--pea-purple);transition:width .35s ease;}
   .boot-tip{margin-top:16px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px;
     font-size:13.5px;line-height:1.75;color:#333;min-height:78px;display:flex;align-items:center;justify-content:center;}
+  .req{font-size:10.5px;background:#fdecea;color:var(--sev1);padding:2px 7px;border-radius:9px;font-weight:700;vertical-align:2px;}
+  .stepstate{float:right;font-size:11px;padding:2px 9px;border-radius:10px;background:#fdecea;color:var(--sev1);font-weight:700;}
+  .stepstate.ok{background:#eaf4eb;color:var(--sev3);}
+  .card.needed{border-color:#f3c9c4;box-shadow:0 0 0 2px #fdecea inset;}
+  .card.done{border-color:#cfe6d0;}
+  .chk{display:flex;align-items:center;gap:9px;font-size:13.5px;padding:4px 0;}
+  .chk .mk{width:20px;height:20px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;
+    justify-content:center;font-size:12px;color:#fff;background:var(--sev1);}
+  .chk.ok .mk{background:var(--sev3);}
+  .chk.ok{color:#333;} .chk{color:var(--muted);}
+  #bigMapWrap{position:fixed;inset:0;z-index:260;background:var(--bg);display:none;flex-direction:column;}
+  #bigMapWrap.show{display:flex;}
+  #bigMapBar{display:flex;align-items:center;gap:8px;padding:9px 10px;background:var(--pea-purple);color:#fff;
+    padding-top:calc(9px + env(safe-area-inset-top));}
+  #bigMapBar button{background:rgba(255,255,255,.15);border:0;color:#fff;padding:7px 11px;border-radius:8px;
+    font:inherit;font-size:13px;cursor:pointer;}
+  #bigMapTitle{flex:1;font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #bigMap{flex:1;}
+  #bigMapFoot{padding:9px 12px calc(9px + env(safe-area-inset-bottom));background:var(--card);
+    border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.7;}
   .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;
     padding:26px 14px;gap:10px;color:var(--muted);font-size:13.5px;text-align:center;}
   .spin{width:34px;height:34px;border-radius:50%;border:3.5px solid #e3e0da;
@@ -180,12 +200,18 @@
 
 <!-- ========== บันทึกใหม่ ========== -->
 <section id="tab-new" style="display:none;">
-  <div class="card">
-    <h2>1. ตำแหน่งที่พบ</h2>
+  <div class="card" id="card1">
+    <h2>1. ตำแหน่งที่พบ <span class="req">จำเป็น</span> <span class="stepstate" id="st1">ยังไม่ครบ</span></h2>
     <div class="row">
       <button class="ghost" id="btnGps">📍 จับพิกัด GPS</button>
       <button class="ghost" id="btnGpsAvg">🎯 จับแบบละเอียด (5 ครั้ง)</button>
     </div>
+    <label class="f">หรือวางพิกัดที่คัดลอกมา</label>
+    <div class="row">
+      <input type="text" id="pasteCoord" placeholder="8.380369, 98.741945 หรือวางลิงก์แผนที่">
+      <button class="ghost small" id="btnPasteCoord" style="flex:0 0 78px;">ใช้พิกัดนี้</button>
+    </div>
+    <div class="hint" style="margin-top:4px;">รองรับทั้ง "lat, lon" · ลิงก์ Google Maps · ลิงก์ Longdo</div>
     <div class="hint" id="gpsInfo" style="margin-top:8px;">ยังไม่ได้จับพิกัด</div>
 
     <label class="f">ผูกจุดที่พบกับ</label>
@@ -194,6 +220,14 @@
       <button data-a="SPAN">ช่วงสาย</button>
       <button data-a="DEVICE">อุปกรณ์</button>
       <button data-a="POINT">หมุดอิสระ</button>
+    </div>
+    <div id="deviceScope" style="display:none;margin-top:8px;">
+      <div class="hint" style="margin-bottom:5px;">ขอบเขตของปัญหา</div>
+      <div class="seg" id="scopeSeg">
+        <button data-k="one" class="on">ที่ตัวอุปกรณ์</button>
+        <button data-k="between">ระหว่างอุปกรณ์</button>
+        <button data-k="downstream">ยาวถึงปลายสาย</button>
+      </div>
     </div>
     <div id="anchorState" class="hint" style="margin-top:8px;"></div>
 
@@ -210,8 +244,8 @@
     <div id="anchorPick" style="margin-top:9px;"></div>
   </div>
 
-  <div class="card">
-    <h2>2. ปัญหาที่พบ</h2>
+  <div class="card" id="card2">
+    <h2>2. ปัญหาที่พบ <span class="req">จำเป็น</span> <span class="stepstate" id="st2">ยังไม่ครบ</span></h2>
     <label class="f">ประเภทปัญหา</label>
     <select id="problemType"><option value="">— เลือก —</option></select>
 
@@ -231,13 +265,14 @@
     <textarea id="detail" placeholder="เช่น กิ่งไม้พาดสายเฟส B ยาวประมาณ 3 เมตร"></textarea>
   </div>
 
-  <div class="card">
-    <h2>3. รูปก่อนปรับปรุง <span style="color:var(--sev1);">*จำเป็น</span></h2>
+  <div class="card" id="card3">
+    <h2>3. รูปก่อนปรับปรุง <span class="req">จำเป็น</span> <span class="stepstate" id="st3">ยังไม่ครบ</span></h2>
     <input type="file" accept="image/*" capture="environment" id="photoInput" multiple style="display:none;">
     <button class="ghost" id="btnPhoto" style="width:100%;">📷 ถ่ายรูป / เลือกรูป (เพิ่มได้ไม่จำกัด)</button>
     <div class="thumbs" id="thumbs"></div>
   </div>
 
+  <div class="card" id="checklist" style="padding:11px;"></div>
   <button class="primary" id="btnSave">บันทึกจุดที่พบ</button>
   <p class="hint" style="text-align:center;margin-top:9px;">ไม่มีสัญญาณก็บันทึกได้ ระบบจะเก็บไว้ในเครื่องแล้วส่งให้อัตโนมัติเมื่อมีสัญญาณ</p>
 </section>
@@ -506,6 +541,15 @@
 <div class="overlay" id="detailOverlay"><div class="sheet" id="detailSheet"></div></div>
 <div class="overlay" id="permOverlay"><div class="sheet" id="permSheet"></div></div>
 <div class="overlay" id="riskOverlay"><div class="sheet" id="riskSheet"></div></div>
+<div id="bigMapWrap">
+  <div id="bigMapBar">
+    <button class="ghost small" id="bigMapClose">✕ ปิด</button>
+    <div id="bigMapTitle"></div>
+    <button class="ghost small" id="bigMapNav">🧭 นำทาง</button>
+  </div>
+  <div id="bigMap"></div>
+  <div id="bigMapFoot"></div>
+</div>
 
 <script>
 /* ==========================================================================
@@ -685,13 +729,15 @@ function showGps(){
     `<div>พิกัด <b>${GPS.lat.toFixed(6)}, ${GPS.lon.toFixed(6)}</b> · ความแม่นยำ ±${Math.round(GPS.acc)} ม.</div>` +
     `<div class="row" style="margin:7px 0 4px;">
        <button class="ghost small" id="gpCopy">📋 คัดลอกพิกัด</button>
-       <a class="ghost small" href="${longdoLink(GPS.lat, GPS.lon)}" target="_blank" rel="noopener"
-          style="text-align:center;text-decoration:none;padding:6px 10px;border-radius:8px;border:1.5px solid var(--pea-purple);color:var(--pea-purple);">🗺 เปิดใน Longdo</a>
+       <button class="ghost small" id="gpMap">🗺 ดูบนแผนที่</button>
      </div>` +
     `<div class="hint" id="gpPlace">${placeLine(GPS.lat, GPS.lon)}</div>` +
     `<div class="hint" id="gpAddr">กำลังค้นหาที่ตั้ง ...</div>`;
   const cb = $('gpCopy');
   if(cb) cb.onclick = ()=> copyText(GPS.lat.toFixed(6) + ', ' + GPS.lon.toFixed(6), 'คัดลอกพิกัดแล้ว');
+  const gm = $('gpMap');
+  if(gm) gm.onclick = ()=> openMapAt(GPS.lat, GPS.lon, 'ตำแหน่งปัจจุบัน');
+  updateSteps();
   const np = nearestPlace(GPS.lat, GPS.lon);
   GEO.nearPlace = np ? np.name + ' (ห่าง ' + np.dist + ' ม.)' : '';
   GEO.address = '';
@@ -743,6 +789,54 @@ $('btnGpsAvg').onclick = async ()=>{
   showGps(); toast('เฉลี่ยพิกัดจาก ' + best.length + ' ครั้งแล้ว', 'ok');
 };
 
+/* ---------- วางพิกัดจากที่อื่น ---------- */
+/* รองรับ "8.38, 98.74" · ลิงก์ Google Maps (@lat,lon หรือ q=lat,lon) · ลิงก์ Longdo (lat=..&long=..) */
+function parseCoord(text){
+  const t = String(text || '').trim();
+  if(!t) return null;
+  let m = t.match(/[?&]lat=(-?\d+\.?\d*)[^]*?[?&](?:long|lon|lng)=(-?\d+\.?\d*)/i);
+  if(m) return { lat:parseFloat(m[1]), lon:parseFloat(m[2]) };
+  m = t.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if(m) return { lat:parseFloat(m[1]), lon:parseFloat(m[2]) };
+  m = t.match(/(-?\d{1,2}\.\d{3,})\s*[, ]\s*(-?\d{2,3}\.\d{3,})/);
+  if(m) return { lat:parseFloat(m[1]), lon:parseFloat(m[2]) };
+  return null;
+}
+$('btnPasteCoord').onclick = ()=>{
+  const c = parseCoord($('pasteCoord').value);
+  if(!c){ beep('err'); toast('อ่านพิกัดไม่ออก — ใส่แบบ 8.380369, 98.741945', 'err'); return; }
+  if(c.lat < 5 || c.lat > 21 || c.lon < 96 || c.lon > 106){
+    beep('err'); toast('พิกัดอยู่นอกประเทศไทย ตรวจว่าสลับ lat กับ lon หรือเปล่า', 'err'); return;
+  }
+  GPS = { lat:c.lat, lon:c.lon, acc:0 };
+  beep('ok'); toast('ใช้พิกัดที่วางแล้ว', 'ok');
+  showGps();
+};
+$('pasteCoord').addEventListener('keydown', e=>{ if(e.key === 'Enter'){ e.preventDefault(); $('btnPasteCoord').click(); } });
+
+/* ---------- บอกผู้ใช้ว่ายังขาดอะไร ---------- */
+function updateSteps(){
+  const okLoc = !!GPS && (ANCHOR.type === 'POINT' || !!ANCHOR.ref);
+  const okType = !!$('problemType').value;
+  const okPhoto = PHOTOS.length > 0;
+  [['st1','card1',okLoc], ['st2','card2',okType], ['st3','card3',okPhoto]].forEach(([id, card, ok])=>{
+    const el = $(id), cd = $(card);
+    if(el){ el.textContent = ok ? 'ครบแล้ว' : 'ยังไม่ครบ'; el.classList.toggle('ok', ok); }
+    if(cd){ cd.classList.toggle('needed', !ok); cd.classList.toggle('done', ok); }
+  });
+  const items = [
+    [okLoc, GPS ? (ANCHOR.type === 'POINT' ? 'ระบุตำแหน่งแล้ว (หมุดอิสระ)' : (ANCHOR.ref ? 'ผูกกับ ' + ANCHOR.ref : 'เลือกสิ่งที่จะผูกในข้อ 1')) : 'จับพิกัดหรือวางพิกัดในข้อ 1'],
+    [okType, okType ? 'เลือกประเภทปัญหาแล้ว' : 'เลือกประเภทปัญหาในข้อ 2'],
+    [okPhoto, okPhoto ? 'มีรูปก่อนปรับปรุง ' + PHOTOS.length + ' รูป' : 'ถ่ายรูปก่อนปรับปรุงในข้อ 3']
+  ];
+  $('checklist').innerHTML = items.map(([ok, txt])=>
+    `<div class="chk ${ok ? 'ok' : ''}"><span class="mk">${ok ? '✓' : '!'}</span><span>${esc(txt)}</span></div>`).join('');
+  const btn = $('btnSave');
+  const all = okLoc && okType && okPhoto;
+  btn.textContent = all ? 'บันทึกจุดที่พบ' : 'ยังกรอกไม่ครบ — ดูรายการด้านบน';
+  btn.style.opacity = all ? '1' : '.6';
+}
+
 /* ---------- การผูกจุดที่พบ ---------- */
 let ANCHOR = { type:'POLE', ref:'', feeder:'' };
 let POLES = null, DEVICES = null;
@@ -751,7 +845,10 @@ document.querySelectorAll('#anchorSeg button').forEach(b=>{
   b.onclick = ()=>{
     document.querySelectorAll('#anchorSeg button').forEach(x=> x.classList.remove('on'));
     b.classList.add('on');
-    ANCHOR = { type:b.dataset.a, ref:'', feeder:'' };
+    ANCHOR = { type:b.dataset.a, ref:'', feeder:'', scope:'one' };
+    if(b.dataset.a === 'DEVICE'){
+      document.querySelectorAll('#scopeSeg button').forEach(x=> x.classList.toggle('on', x.dataset.k === 'one'));
+    }
     renderAnchorPick();
   };
 });
@@ -769,11 +866,21 @@ function poleTag(p){
 function anchorSummary(){
   const el = $('anchorState');
   if(!el) return;
-  const names = { POLE:'เสาไฟ', SPAN:'ช่วงสาย', DEVICE:'อุปกรณ์', POINT:'หมุดอิสระ' };
+  const ds = $('deviceScope');
+  if(ds) ds.style.display = ANCHOR.type.indexOf('DEVICE') === 0 ? '' : 'none';
+  const names = { POLE:'เสาไฟ', SPAN:'ช่วงสาย', DEVICE:'อุปกรณ์', DEVICE2:'อุปกรณ์', DEVICE_DS:'อุปกรณ์', POINT:'หมุดอิสระ' };
   if(ANCHOR.type === 'POINT'){
     el.innerHTML = '<span style="color:var(--sev3);font-weight:700;">✓ พร้อม — ใช้หมุดอิสระ ไม่ต้องเลือกอะไรเพิ่ม</span>';
   } else if(ANCHOR.ref){
-    el.innerHTML = '<span style="color:var(--sev3);font-weight:700;">✓ ผูกกับ' + names[ANCHOR.type] + ': ' + esc(ANCHOR.ref) + '</span>';
+    let extra = '';
+    if(ANCHOR.type === 'DEVICE_DS'){
+      const n = downstreamDevices(ANCHOR.ref.split('~')[0]).length;
+      extra = ' · ครอบคลุมปลายน้ำ ' + n + ' รายการ';
+    } else if(ANCHOR.type === 'DEVICE2'){
+      extra = ANCHOR.ref.indexOf('~') >= 0 ? '' : ' · เลือกอุปกรณ์ตัวที่ 2 ด้วย';
+    }
+    el.innerHTML = '<span style="color:var(--sev3);font-weight:700;">✓ ผูกกับ' + names[ANCHOR.type] + ': ' +
+      esc(ANCHOR.ref) + '</span><br><span class="hint">' + esc(SCOPE_LABEL[scopeOf()] || '') + extra + '</span>';
   } else {
     el.innerHTML = '<span style="color:var(--sev1);font-weight:700;">⚠ ยังไม่ได้เลือก' + names[ANCHOR.type] +
       ' — เลือกจากรายการด้านล่าง หรือกดปุ่ม "หมุดอิสระ" ถ้าไม่ต้องการผูกกับอะไร</span>';
@@ -782,6 +889,7 @@ function anchorSummary(){
 function renderAnchorPick(){
   const box = $('anchorPick');
   anchorSummary();
+  updateSteps();
   // แผนที่ประกอบ — แสดงเมื่อจับพิกัดแล้วและไม่ได้เลือกหมุดอิสระ
   const wrap = $('pickMapWrap');
   if(wrap){
@@ -837,7 +945,7 @@ function renderAnchorPick(){
     });
     return;
   }
-  if(ANCHOR.type === 'DEVICE'){
+  if(ANCHOR.type.indexOf('DEVICE') === 0){
     if(!DEVICES){ box.innerHTML = '<div class="hint">ยังไม่มีข้อมูลอุปกรณ์ในเครื่อง — ไปที่แท็บตั้งค่า แล้วกด "ดาวน์โหลดข้อมูลไว้ใช้ออฟไลน์"</div>'; return; }
     const list = GPS
       ? DEVICES.filter(d=> d.lat != null).map(d=>({ d, m: metres(GPS.lat, GPS.lon, d.lat, d.lon) }))
@@ -849,7 +957,18 @@ function renderAnchorPick(){
             ${esc(x.d.id)} · ${esc(x.d.desc || x.d.type)} · ห่าง ${Math.round(x.m)} ม.</button>`).join('')
         : '<div class="hint">จับพิกัดก่อน หรือพิมพ์ค้นหารหัสอุปกรณ์</div>') + '</div>';
     const bind = ()=> box.querySelectorAll('#devList button').forEach(b=>{
-      b.onclick = ()=>{ ANCHOR.ref = b.dataset.id; ANCHOR.feeder = b.dataset.f; renderAnchorPick(); };
+      b.onclick = ()=>{
+        if(ANCHOR.type === 'DEVICE2'){
+          let arr = ANCHOR.ref ? ANCHOR.ref.split('~') : [];
+          const i = arr.indexOf(b.dataset.id);
+          if(i >= 0) arr.splice(i, 1); else arr.push(b.dataset.id);
+          ANCHOR.ref = arr.slice(-2).join('~');
+        } else {
+          ANCHOR.ref = b.dataset.id;
+        }
+        ANCHOR.feeder = b.dataset.f;
+        renderAnchorPick();
+      };
     });
     bind();
     $('devSearch').oninput = e=>{
@@ -898,7 +1017,7 @@ function drawPickMap(){
 
   const picked = ANCHOR.ref ? ANCHOR.ref.split('~') : [];
 
-  if(ANCHOR.type === 'DEVICE'){
+  if(ANCHOR.type.indexOf('DEVICE') === 0){
     if(!DEVICES) return;
     DEVICES.filter(d=> d.lat != null && metres(GPS.lat, GPS.lon, d.lat, d.lon) < 400)
       .slice(0, 60).forEach(d=>{
@@ -1037,6 +1156,44 @@ $('btnPickMe').onclick = ()=>{ if(pickReady && GPS) pickMap.location({ lon:GPS.l
 $('btnPickZoomIn').onclick = ()=>{ if(pickReady) pickMap.zoom(pickMap.zoom()+1, true); };
 $('btnPickZoomOut').onclick = ()=>{ if(pickReady) pickMap.zoom(pickMap.zoom()-1, true); };
 
+/* ---------- ขอบเขตของปัญหาเมื่อผูกกับอุปกรณ์ ---------- */
+const SCOPE_LABEL = { one:'ที่ตัวอุปกรณ์', between:'ระหว่างอุปกรณ์ 2 ตัว', downstream:'ตั้งแต่อุปกรณ์นี้ไปจนสุดปลายสาย' };
+const SCOPE_TYPE  = { one:'DEVICE', between:'DEVICE2', downstream:'DEVICE_DS' };
+function scopeOf(){ return ANCHOR.scope || 'one'; }
+function applyScopeType(){
+  if(ANCHOR.type.indexOf('DEVICE') !== 0) return;
+  ANCHOR.type = SCOPE_TYPE[scopeOf()];
+}
+/* อุปกรณ์ทั้งหมดที่อยู่ปลายน้ำของอุปกรณ์ตัวนี้ (ไล่ตาม ParentID ในผัง) */
+function downstreamDevices(rootId, limit){
+  if(!DEVICES) return [];
+  const kids = {};
+  DEVICES.forEach(d=>{
+    if(!d.parentId) return;
+    (kids[d.parentId] = kids[d.parentId] || []).push(d);
+  });
+  const out = [], queue = [rootId];
+  const seen = { [rootId]: 1 };
+  while(queue.length && out.length < (limit || 400)){
+    const cur = queue.shift();
+    (kids[cur] || []).forEach(d=>{
+      if(seen[d.id]) return;
+      seen[d.id] = 1; out.push(d); queue.push(d.id);
+    });
+  }
+  return out;
+}
+document.querySelectorAll('#scopeSeg button').forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll('#scopeSeg button').forEach(x=> x.classList.remove('on'));
+    b.classList.add('on');
+    ANCHOR.scope = b.dataset.k;
+    if(b.dataset.k !== 'between' && ANCHOR.ref.indexOf('~') >= 0) ANCHOR.ref = ANCHOR.ref.split('~')[0];
+    applyScopeType();
+    renderAnchorPick();
+  };
+});
+
 /* ---------- ความรุนแรง ---------- */
 let SEVERITY = 2;
 document.querySelectorAll('#sevSeg button').forEach(b=>{
@@ -1081,6 +1238,7 @@ function compress(file, maxSide, quality){
   });
 }
 function renderThumbs(){
+  setTimeout(updateSteps, 0);
   $('thumbs').innerHTML = PHOTOS.map((p, i)=>
     `<div class="thumb"><img src="data:image/jpeg;base64,${p.base64}"><button data-i="${i}">✕</button></div>`).join('');
   $('thumbs').querySelectorAll('button').forEach(b=>{
@@ -1151,8 +1309,14 @@ $('btnSave').onclick = async ()=>{
   const problemType = $('problemType').value;
   if(!problemType){ toast('ยังไม่ได้เลือกประเภทปัญหา', 'err'); return; }
   if(!PHOTOS.length){ toast('ต้องมีรูปก่อนปรับปรุงอย่างน้อย 1 รูป', 'err'); return; }
+  if(ANCHOR.type === 'DEVICE2' && ANCHOR.ref.split('~').length < 2){
+    toast('โหมดระหว่างอุปกรณ์ ต้องเลือกอุปกรณ์ 2 ตัว', 'err');
+    $('anchorSeg').scrollIntoView({ behavior:'smooth', block:'center' });
+    return;
+  }
   if(ANCHOR.type !== 'POINT' && !ANCHOR.ref){
-    const names = { POLE:'เสาไฟ', SPAN:'ช่วงสาย (ต้องเลือก 2 ต้น)', DEVICE:'อุปกรณ์' };
+    const names = { POLE:'เสาไฟ', SPAN:'ช่วงสาย (ต้องเลือก 2 ต้น)', DEVICE:'อุปกรณ์',
+                    DEVICE2:'อุปกรณ์ 2 ตัว', DEVICE_DS:'อุปกรณ์ต้นทาง' };
     toast('ข้อ 1 ยังไม่ได้เลือก' + names[ANCHOR.type] + ' — หรือกด "หมุดอิสระ" ถ้าไม่ต้องผูกกับอะไร', 'err');
     $('anchorSeg').scrollIntoView({ behavior:'smooth', block:'center' });
     return;
@@ -1219,6 +1383,7 @@ $('btnSave').onclick = async ()=>{
 };
 function resetForm(){
   PHOTOS = []; renderThumbs();
+  $('pasteCoord').value = '';
   $('detail').value = '';
   $('moo').value = '';
   $('landmark').value = '';
@@ -1307,6 +1472,9 @@ $('btnExport').onclick = ()=>{
 
 let FINDINGS = [];
 const SEV_COLOR = { 1:'var(--sev1)', 2:'var(--sev2)', 3:'var(--sev3)' };
+const ANCHOR_TEXT = { POLE:'เสาไฟ', SPAN:'ช่วงสายระหว่างเสา', DEVICE:'ที่ตัวอุปกรณ์',
+  DEVICE2:'ระหว่างอุปกรณ์ 2 ตัว', DEVICE_DS:'ตั้งแต่อุปกรณ์นี้ถึงปลายสาย', POINT:'หมุดอิสระ' };
+function anchorText(t){ return ANCHOR_TEXT[t] || t || '-'; }
 function typeName(code){
   const t = TYPES.find(x=> x.code === code);
   return t ? t.name : code;
@@ -1323,7 +1491,7 @@ function renderList(){
         <span class="mono">${esc(f.Status)}</span>
       </div>
       <div class="hint" style="margin-top:5px;">
-        ${esc(f.AnchorType)}${f.AnchorRef ? ' · ' + esc(f.AnchorRef) : ''}
+        ${esc(anchorText(f.AnchorType))}${f.AnchorRef ? ' · ' + esc(f.AnchorRef) : ''}
         ${f.FeederID ? ' · ' + esc(f.FeederID) : ''}<br>
         ${f.Moo || f.NearPlace ? '🏘 ' + esc(f.Moo || f.NearPlace) + '<br>' : ''}
         ${esc(f.Detail || '')}<br>
@@ -1349,7 +1517,8 @@ async function openDetail(id){
       <div class="mono" style="margin-bottom:10px;">${esc(f.FindingID)}</div>
       <div class="kv"><span>ความรุนแรง</span><span style="color:${SEV_COLOR[f.Severity]};font-weight:700;">ระดับ ${esc(f.Severity)}</span></div>
       <div class="kv"><span>สถานะ</span><span>${esc(f.Status)}</span></div>
-      <div class="kv"><span>ผูกกับ</span><span>${esc(f.AnchorType)} ${esc(f.AnchorRef || '')}</span></div>
+      <div class="kv"><span>ผูกกับ</span><span style="text-align:right;">${esc(anchorText(f.AnchorType))}<br>
+        <span class="mono">${esc(f.AnchorRef || '-')}</span></span></div>
       ${coordBlock(f.Lat, f.Lon, 'fd')}
       ${f.NearPlace ? `<div class="kv"><span>สถานที่ใกล้เคียง</span><span>${esc(f.NearPlace)}</span></div>` : ''}
       ${f.Address ? `<div class="kv"><span>ที่อยู่</span><span style="text-align:right;">${esc(f.Address)}</span></div>` : ''}
@@ -1380,6 +1549,18 @@ async function openDetail(id){
       </select>
       <label class="f">แก้ไขรายละเอียด</label>
       <textarea id="edDetail" style="min-height:58px;">${esc(f.Detail || '')}</textarea>
+      <label class="f">แก้ไขขอบเขตที่ผูก</label>
+      <select id="edAnchor">
+        <option value="">— ไม่เปลี่ยน (${esc(f.AnchorType)}) —</option>
+        <option value="DEVICE">ที่ตัวอุปกรณ์</option>
+        <option value="DEVICE2">ระหว่างอุปกรณ์ 2 ตัว</option>
+        <option value="DEVICE_DS">ตั้งแต่อุปกรณ์นี้ไปจนสุดปลายสาย</option>
+        <option value="POLE">ที่เสาไฟ</option>
+        <option value="SPAN">ช่วงสายระหว่างเสา</option>
+        <option value="POINT">หมุดอิสระ</option>
+      </select>
+      <label class="f">รหัสอ้างอิง (คั่นด้วย ~ ถ้ามี 2 ตัว)</label>
+      <input type="text" id="edAnchorRef" value="${esc(f.AnchorRef || '')}" placeholder="เช่น ALA02WF-104~ALA02WF-110">
       <label class="f">แก้ไขหมู่ที่ / ชื่อหมู่บ้าน</label>
       <input type="text" id="edMoo" value="${esc(f.Moo || '')}" placeholder="เช่น ม.4 บ้านบางหอย">
       <label class="f">แก้ไขจุดสังเกต</label>
@@ -1428,6 +1609,11 @@ async function openDetail(id){
       if(newType && newType !== f.ProblemType) payload.problemType = newType;
       if(newSev && newSev !== String(f.Severity)) payload.severity = newSev;
       if(newDetail !== String(f.Detail || '')) payload.detail = newDetail;
+      const newAnchor = $('edAnchor').value, newRef = $('edAnchorRef').value.trim();
+      if(newAnchor || newRef !== String(f.AnchorRef || '')){
+        payload.anchorType = newAnchor || f.AnchorType;
+        payload.anchorRef = newRef;
+      }
       if($('edMoo').value.trim() !== String(f.Moo || '')) payload.moo = $('edMoo').value.trim();
       if($('edLandmark').value.trim() !== String(f.Landmark || '')) payload.landmark = $('edLandmark').value.trim();
       // เติมที่ตั้งย้อนหลังให้รายการที่บันทึกตอนไม่มีสัญญาณ
@@ -1756,8 +1942,7 @@ function coordBlock(lat, lon, idPrefix){
       </span></div>
     <div class="row" style="margin:7px 0 4px;">
       <button class="ghost small" id="${idPrefix}Copy">📋 คัดลอกพิกัด</button>
-      <a class="ghost small" href="${longdoLink(lat, lon)}" target="_blank" rel="noopener"
-         style="text-align:center;text-decoration:none;padding:6px 10px;border-radius:8px;border:1.5px solid var(--pea-purple);color:var(--pea-purple);">🗺 เปิดใน Longdo</a>
+      <button class="ghost small" id="${idPrefix}Map">🗺 ดูบนแผนที่</button>
       <a class="ghost small" href="${navLink(lat, lon)}" target="_blank" rel="noopener"
          style="text-align:center;text-decoration:none;padding:6px 10px;border-radius:8px;border:1.5px solid var(--sev3);color:var(--sev3);">🧭 นำทาง</a>
     </div>
@@ -1768,6 +1953,11 @@ function coordBlock(lat, lon, idPrefix){
 async function bindCoordBlock(lat, lon, idPrefix){
   const btn = $(idPrefix + 'Copy');
   if(btn) btn.onclick = ()=> copyText(Number(lat).toFixed(6) + ', ' + Number(lon).toFixed(6), 'คัดลอกพิกัดแล้ว');
+  const mb = $(idPrefix + 'Map');
+  if(mb) mb.onclick = ()=>{
+    const p = nearestPlace(lat, lon);
+    openMapAt(lat, lon, 'ตำแหน่งจุดนี้', p ? 'ใกล้ ' + p.name + ' (ห่าง ' + p.dist + ' ม.)' : '');
+  };
   const box = $(idPrefix + 'Addr');
   if(!box) return;
   const addr = await thaiAddress(lat, lon);
@@ -1783,6 +1973,98 @@ async function bindCoordBlock(lat, lon, idPrefix){
     $(idPrefix + 'Addr').textContent = navigator.onLine ? 'ไม่พบข้อมูลที่ตั้งของพิกัดนี้' : 'ออฟไลน์ — ดูที่ตั้งไม่ได้';
   }
 }
+
+/* ---------- แผนที่เต็มจอในแอป — แสดงทุกชั้นข้อมูลที่เรามี ---------- */
+let bigMap = null, bigReady = false, bigTarget = null;
+function openMapAt(lat, lon, title, sub){
+  lat = Number(lat); lon = Number(lon);
+  if(isNaN(lat) || isNaN(lon)){ toast('ไม่มีพิกัดของรายการนี้', 'err'); return; }
+  bigTarget = { lat, lon };
+  $('bigMapTitle').textContent = title || 'ตำแหน่งบนแผนที่';
+  $('bigMapWrap').classList.add('show');
+  $('bigMapFoot').innerHTML = '<div class="mono">' + lat.toFixed(6) + ', ' + lon.toFixed(6) + '</div>' +
+    (sub ? '<div>' + esc(sub) + '</div>' : '') + '<div id="bigAddr">กำลังค้นหาที่ตั้ง ...</div>';
+  thaiAddress(lat, lon).then(a=>{ const el = $('bigAddr'); if(el) el.textContent = a ? '📍 ' + a : ''; });
+
+  setTimeout(async ()=>{
+    if(!bigReady){
+      try{
+        bigMap = new longdo.Map({ placeholder: $('bigMap'), zoom: 17, lastView: false, location:{ lon, lat } });
+        bigMap.Ui.DPad.visible(false);
+        bigReady = true;
+      }catch(e){ $('bigMapFoot').innerHTML = 'โหลดแผนที่ไม่ได้ (ต้องมีสัญญาณ)'; return; }
+    }
+    bigMap.location({ lon, lat }, true);
+    bigMap.zoom(17, true);
+    await loadMvLines();
+    drawBigMap();
+  }, 80);
+}
+function drawBigMap(){
+  if(!bigReady || !bigTarget) return;
+  bigMap.Overlays.clear();
+  const { lat, lon } = bigTarget;
+
+  // แนวสายแรงสูง
+  if(MVLINES){
+    Object.keys(MVLINES.lines).forEach(fid=>{
+      const col = MVLINES.colors[fid] || '#888';
+      MVLINES.lines[fid].forEach(seg=>{
+        if(!seg.v.some(p=> Math.abs(p[0]-lat) < 0.02 && Math.abs(p[1]-lon) < 0.02)) return;
+        try{
+          bigMap.Overlays.add(new longdo.Polyline(seg.v.map(p=>({ lat:p[0], lon:p[1] })),
+            { lineWidth: seg.m ? 4 : 1.6, lineColor: col, weight: longdo.OverlayWeight.Bottom }));
+        }catch(e){}
+      });
+    });
+  }
+  // เสาไฟรอบจุดนั้น
+  if(POLES){
+    nearestPoles(lat, lon, 80).forEach(x=>{
+      const col = POLE_MAP_COLOR[x.p[2]] || '#9e9e9e';
+      bigMap.Overlays.add(new longdo.Marker({ lon:x.p[1], lat:x.p[0] }, {
+        icon:{ html:`<div style="width:9px;height:9px;background:${col};border:1.5px solid #fff;opacity:.85;"></div>`,
+               offset:{ x:6, y:6 } } }));
+    });
+  }
+  // อุปกรณ์ในผังใกล้เคียง
+  if(DEVICES){
+    DEVICES.filter(d=> d.lat != null && metres(lat, lon, d.lat, d.lon) < 600).slice(0, 40).forEach(d=>{
+      bigMap.Overlays.add(new longdo.Marker({ lon:d.lon, lat:d.lat }, {
+        title: d.id, detail: d.desc || d.type,
+        icon:{ html:'<div style="width:10px;height:10px;border-radius:50%;background:#e07b00;border:2px solid #fff;"></div>',
+               offset:{ x:7, y:7 } } }));
+    });
+  }
+  // จุดที่พบอื่นๆ ในละแวก
+  FINDINGS.forEach(f=>{
+    const fl = parseFloat(f.Lat), fo = parseFloat(f.Lon);
+    if(isNaN(fl) || metres(lat, lon, fl, fo) > 800) return;
+    const col = SEV_COLOR[f.Severity] || '#888';
+    bigMap.Overlays.add(new longdo.Marker({ lon:fo, lat:fl }, {
+      title: typeName(f.ProblemType), detail: f.Status,
+      icon:{ html:`<div style="width:14px;height:14px;border-radius:50%;background:${col};border:2px solid #fff;opacity:.85;"></div>`,
+             offset:{ x:9, y:9 } } }));
+  });
+  // ตำแหน่งปัจจุบัน
+  if(GPS){
+    bigMap.Overlays.add(new longdo.Marker({ lon:GPS.lon, lat:GPS.lat }, {
+      icon:{ html:'<div style="width:14px;height:14px;border-radius:50%;background:#1565c0;border:3px solid #fff;"></div>',
+             offset:{ x:10, y:10 } } }));
+  }
+  // จุดเป้าหมาย — เด่นที่สุด
+  bigMap.Overlays.add(new longdo.Marker({ lon, lat }, {
+    icon:{ html:`<div style="position:relative;width:38px;height:38px;">
+      <div style="position:absolute;inset:0;border-radius:50%;background:rgba(198,40,40,.2);border:2px solid #c62828;
+        animation:pulse 1.4s ease-in-out infinite;"></div>
+      <div style="position:absolute;left:11px;top:11px;width:16px;height:16px;border-radius:50%;background:#c62828;
+        border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.5);"></div></div>`,
+      offset:{ x:19, y:19 } } }));
+}
+$('bigMapClose').onclick = ()=> $('bigMapWrap').classList.remove('show');
+$('bigMapNav').onclick = ()=>{
+  if(bigTarget) window.open(navLink(bigTarget.lat, bigTarget.lon), '_blank');
+};
 
 /* ---------- แผนที่ ---------- */
 let map = null, mapReady = false, mapPins = [], mapRiskPins = [];
@@ -2270,6 +2552,7 @@ function fillTypes(){
         g.map(t=> `<option value="${esc(t.code)}" data-sev="${t.defaultSeverity}">${esc(t.name)}</option>`).join('') + '</optgroup>' : '';
     }).join('');
   sel.onchange = ()=>{
+    updateSteps();
     const o = sel.selectedOptions[0];
     if(o && o.dataset.sev){
       const s = o.dataset.sev;
@@ -2419,7 +2702,7 @@ async function autoLoadData(force){
       const data = await dr.json();
       const arr = [];
       (data.feeders || []).forEach(f=> (f.devices || []).forEach(d=>{
-        arr.push({ id:d.id, type:d.type, desc:d.desc, lat:d.lat, lon:d.lon, feeder:f.id });
+        arr.push({ id:d.id, type:d.type, desc:d.desc, lat:d.lat, lon:d.lon, feeder:f.id, parentId:d.parentId });
       }));
       if(arr.length){ DEVICES = arr; await cPut('devices', DEVICES); }
       bootStep('devices','done', DEVICES ? DEVICES.length.toLocaleString() + ' รายการ' : '');
