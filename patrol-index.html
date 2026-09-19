@@ -623,10 +623,22 @@ document.querySelectorAll('nav button').forEach(b=>{
 /* ---------- GPS ---------- */
 let GPS = null;
 function showGps(){
-  $('gpsInfo').innerHTML = GPS
-    ? `พิกัด <b>${GPS.lat.toFixed(6)}, ${GPS.lon.toFixed(6)}</b> · ความแม่นยำ ±${Math.round(GPS.acc)} ม.`
-    : 'ยังไม่ได้จับพิกัด';
-  if(!GPS) return;
+  if(!GPS){ $('gpsInfo').innerHTML = 'ยังไม่ได้จับพิกัด'; return; }
+  $('gpsInfo').innerHTML =
+    `<div>พิกัด <b>${GPS.lat.toFixed(6)}, ${GPS.lon.toFixed(6)}</b> · ความแม่นยำ ±${Math.round(GPS.acc)} ม.</div>` +
+    `<div class="row" style="margin:7px 0 4px;">
+       <button class="ghost small" id="gpCopy">📋 คัดลอกพิกัด</button>
+       <a class="ghost small" href="${longdoLink(GPS.lat, GPS.lon)}" target="_blank" rel="noopener"
+          style="text-align:center;text-decoration:none;padding:6px 10px;border-radius:8px;border:1.5px solid var(--pea-purple);color:var(--pea-purple);">🗺 เปิดใน Longdo</a>
+     </div>` +
+    `<div class="hint" id="gpAddr">กำลังค้นหาที่ตั้ง ...</div>`;
+  const cb = $('gpCopy');
+  if(cb) cb.onclick = ()=> copyText(GPS.lat.toFixed(6) + ', ' + GPS.lon.toFixed(6), 'คัดลอกพิกัดแล้ว');
+  thaiAddress(GPS.lat, GPS.lon).then(addr=>{
+    const el = $('gpAddr');
+    if(!el) return;
+    el.textContent = addr ? '📍 ' + addr : (navigator.onLine ? 'ไม่พบข้อมูลที่ตั้งของพิกัดนี้' : 'ออฟไลน์ — ดูที่ตั้งไม่ได้');
+  });
   autoPickNearestPole();
   renderAnchorPick();
 }
@@ -1211,7 +1223,7 @@ async function openDetail(id){
       <div class="kv"><span>ความรุนแรง</span><span style="color:${SEV_COLOR[f.Severity]};font-weight:700;">ระดับ ${esc(f.Severity)}</span></div>
       <div class="kv"><span>สถานะ</span><span>${esc(f.Status)}</span></div>
       <div class="kv"><span>ผูกกับ</span><span>${esc(f.AnchorType)} ${esc(f.AnchorRef || '')}</span></div>
-      <div class="kv"><span>พิกัด</span><span>${esc(f.Lat)}, ${esc(f.Lon)}</span></div>
+      ${coordBlock(f.Lat, f.Lon, 'fd')}
       <div class="kv"><span>ผู้บันทึก</span><span>${esc(f.CreatedBy)}<br><span class="hint">${esc(f.CreatorRole || '')} ${esc(f.CreatorOrg || '')}</span></span></div>
       <div class="kv"><span>เมื่อ</span><span>${esc(f.CreatedAt)}</span></div>
       ${f.Detail ? `<p style="margin:10px 0;">${esc(f.Detail)}</p>` : ''}
@@ -1248,6 +1260,8 @@ async function openDetail(id){
       <button class="primary" id="btnUpdate" style="margin-top:12px;">บันทึกการเปลี่ยนแปลง</button>
       <button class="ghost" id="btnDelete" style="width:100%;margin-top:8px;border-color:var(--sev1);color:var(--sev1);">ลบรายการนี้</button>
       <button class="ghost" id="btnCloseSheet" style="width:100%;margin-top:8px;">ปิดหน้าต่าง</button>`;
+
+    bindCoordBlock(f.Lat, f.Lon, 'fd');
 
     let addKind = 'after';
     $('btnAddAfter').onclick  = ()=>{ addKind = 'after';  $('addPhotoInput').click(); };
@@ -1300,6 +1314,77 @@ async function openDetail(id){
   }catch(e){ sh.innerHTML = '<div class="hint">โหลดไม่สำเร็จ</div>'; }
 }
 $('detailOverlay').onclick = e=>{ if(e.target.id === 'detailOverlay') e.currentTarget.classList.remove('show'); };
+
+/* ---------- พิกัด: คัดลอก · เปิดแผนที่ · นำทาง · แปลงเป็นที่อยู่ภาษาไทย ---------- */
+const LONGDO_KEY = 'f61a87ff70c39e610385809783d5a1b3';
+
+/* แปลงพิกัดเป็นที่อยู่ภาษาไทยด้วยบริการของ Longdo แล้วจำไว้ในเครื่อง
+   ปัดพิกัดเหลือ 4 ตำแหน่ง (~11 ม.) เพื่อให้จุดใกล้กันใช้ผลเดิมร่วมกัน ไม่ต้องยิงซ้ำ */
+async function thaiAddress(lat, lon){
+  const key = 'geo_' + Number(lat).toFixed(4) + '_' + Number(lon).toFixed(4);
+  const hit = localStorage.getItem(key);
+  if(hit) return hit;
+  if(!navigator.onLine) return '';
+  try{
+    const url = 'https://api.longdo.com/map/services/address?lon=' + lon + '&lat=' + lat +
+                '&noelevation=1&key=' + LONGDO_KEY;
+    const r = await (await fetch(url)).json();
+    const parts = [r.aoi, r.road, r.subdistrict, r.district, r.province, r.postcode]
+      .map(x=> (x || '').toString().trim()).filter(x=> x);
+    const text = parts.join(' ');
+    if(text) localStorage.setItem(key, text);
+    return text;
+  }catch(e){ return ''; }
+}
+function longdoLink(lat, lon){
+  return 'https://map.longdo.com/main?lat=' + lat + '&long=' + lon + '&zoom=18';
+}
+function navLink(lat, lon){
+  return 'https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lon;
+}
+async function copyText(text, label){
+  try{ await navigator.clipboard.writeText(text); }
+  catch(e){
+    const t = document.createElement('textarea');
+    t.value = text; document.body.appendChild(t); t.select();
+    try{ document.execCommand('copy'); }catch(err){}
+    document.body.removeChild(t);
+  }
+  beep('tap');
+  toast((label || 'คัดลอกแล้ว') + ' — ' + text, 'ok');
+}
+/* แถวพิกัดพร้อมปุ่ม ใช้ได้ทั้งในแผ่นรายละเอียดและที่อื่น */
+function coordBlock(lat, lon, idPrefix){
+  return `<div class="kv"><span>พิกัด</span>
+      <span style="text-align:right;">
+        <b class="mono" style="font-size:13px;">${esc(Number(lat).toFixed(6))}, ${esc(Number(lon).toFixed(6))}</b>
+      </span></div>
+    <div class="row" style="margin:7px 0 4px;">
+      <button class="ghost small" id="${idPrefix}Copy">📋 คัดลอกพิกัด</button>
+      <a class="ghost small" href="${longdoLink(lat, lon)}" target="_blank" rel="noopener"
+         style="text-align:center;text-decoration:none;padding:6px 10px;border-radius:8px;border:1.5px solid var(--pea-purple);color:var(--pea-purple);">🗺 เปิดใน Longdo</a>
+      <a class="ghost small" href="${navLink(lat, lon)}" target="_blank" rel="noopener"
+         style="text-align:center;text-decoration:none;padding:6px 10px;border-radius:8px;border:1.5px solid var(--sev3);color:var(--sev3);">🧭 นำทาง</a>
+    </div>
+    <div class="hint" id="${idPrefix}Addr" style="margin-bottom:6px;">กำลังค้นหาที่ตั้ง ...</div>`;
+}
+/* ผูกปุ่มและเติมที่อยู่ภาษาไทยให้บล็อกพิกัดที่เพิ่งวาดไป */
+async function bindCoordBlock(lat, lon, idPrefix){
+  const btn = $(idPrefix + 'Copy');
+  if(btn) btn.onclick = ()=> copyText(Number(lat).toFixed(6) + ', ' + Number(lon).toFixed(6), 'คัดลอกพิกัดแล้ว');
+  const box = $(idPrefix + 'Addr');
+  if(!box) return;
+  const addr = await thaiAddress(lat, lon);
+  if(!$(idPrefix + 'Addr')) return;   // ผู้ใช้ปิดหน้าต่างไปก่อน
+  if(addr){
+    $(idPrefix + 'Addr').innerHTML = '📍 ' + esc(addr) +
+      ` <button class="ghost small" id="${idPrefix}CopyAddr" style="padding:2px 8px;font-size:11.5px;margin-left:4px;">คัดลอก</button>`;
+    const ab = $(idPrefix + 'CopyAddr');
+    if(ab) ab.onclick = ()=> copyText(addr, 'คัดลอกที่ตั้งแล้ว');
+  } else {
+    $(idPrefix + 'Addr').textContent = navigator.onLine ? 'ไม่พบข้อมูลที่ตั้งของพิกัดนี้' : 'ออฟไลน์ — ดูที่ตั้งไม่ได้';
+  }
+}
 
 /* ---------- แผนที่ ---------- */
 let map = null, mapReady = false, mapPins = [];
