@@ -978,6 +978,23 @@ function resetForm(){
 }
 
 /* ---------- รายการ ---------- */
+/* ดึงจุดที่พบจากระบบ แล้วรีเฟรชทุกหน้าจอที่ใช้ข้อมูลชุดนี้ */
+async function loadList(){
+  if(!navigator.onLine){ toast('ต้องมีสัญญาณจึงจะโหลดรายการได้', 'err'); return; }
+  if($('listBox').innerHTML === '') $('listBox').innerHTML = '<div class="hint">กำลังโหลด ...</div>';
+  try{
+    const r = await api({ action:'patrolList', limit:400 });
+    if(!r || !r.ok){
+      $('listBox').innerHTML = '<div class="hint">' + esc((r && r.error) || 'โหลดไม่สำเร็จ') + '</div>';
+      return;
+    }
+    FINDINGS = r.findings || [];
+    renderList(); renderHome();
+    if(mapReady) drawMapPins();
+  }catch(e){
+    $('listBox').innerHTML = '<div class="hint">โหลดไม่สำเร็จ — ตรวจสัญญาณแล้วลองใหม่</div>';
+  }
+}
 $('btnReload').onclick = loadList;
 let QUICK = 'all';
 document.querySelectorAll('#quickSeg button').forEach(btn=>{
