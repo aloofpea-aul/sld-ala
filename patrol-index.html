@@ -1541,31 +1541,90 @@ function openRisk(id){
   const x = RISKS.risks.find(r=> r.id === id);
   if(!x) return;
   const st = RISK_STATE[id];
+  const i = x.info || {};
+  const n = (v, dec)=> v == null ? '-' : Number(v).toFixed(dec == null ? 1 : dec);
+  const row = (k, v, warn)=> v == null || v === '' || v === '-' ? '' :
+    `<div class="kv"><span>${k}</span><span style="text-align:right;${warn ? 'color:' + warn + ';font-weight:700;' : ''}">${v}</span></div>`;
+
+  // ตารางวิเคราะห์ — แสดงเฉพาะค่าที่มีจริง และไฮไลต์ค่าที่เกินเกณฑ์
+  let analysis = '';
+  analysis += row('ขนาดหม้อแปลง', i.kva);
+  analysis += row('เฟส', i.phase);
+  analysis += row('จำนวนมิเตอร์', i.meter ? i.meter + ' ราย' : null);
+  analysis += row('ต่อจากอุปกรณ์', i.parent);
+  if(i.load != null) analysis += row('โหลดเฉลี่ย', n(i.load) + '%', i.load >= 100 ? 'var(--sev1)' : i.load >= 80 ? 'var(--sev2)' : '');
+  if(i.peak != null) analysis += row('พีครายเดือน', n(i.peak) + '%' + (i.peakMonth ? ' (' + esc(i.peakMonth) + ')' : ''),
+                                      i.peak >= 100 ? 'var(--sev1)' : '');
+  if(i.kvaA != null) analysis += row('กระแสพิกัด', n(i.kvaA) + ' A');
+  if(i.ia != null || i.ib != null || i.ic != null){
+    analysis += row('กระแสแต่ละเฟส', ['A ' + n(i.ia), i.ib != null ? 'B ' + n(i.ib) : '', i.ic != null ? 'C ' + n(i.ic) : '']
+      .filter(v=> v).join(' · '));
+  }
+  if(i.inN != null) analysis += row('กระแสสายนิวทรัล', n(i.inN) + ' A', i.inN > (i.kvaA || 1e9) * 0.5 ? 'var(--sev2)' : '');
+  if(i.unbal != null) analysis += row('ความไม่สมดุลเฟส', n(i.unbal) + '%', i.unbal > 50 ? 'var(--sev2)' : '');
+  if(i.vmin != null) analysis += row('แรงดันปลายทางต่ำสุด', n(i.vmin) + ' V',
+                                      i.vmin < 190 ? 'var(--sev1)' : i.vmin < 200 ? 'var(--sev2)' : '');
+  if(i.reach != null) analysis += row('ระยะสายแรงต่ำไกลสุด', Math.round(i.reach) + ' ม.', i.reach > 1000 ? 'var(--sev2)' : '');
+  if(i.cuLoss != null || i.feLoss != null || i.lineLoss != null){
+    const tot = (i.cuLoss || 0) + (i.feLoss || 0) + (i.lineLoss || 0);
+    analysis += row('กำลังสูญเสียต่อเดือน', Math.round(tot).toLocaleString() + ' kWh');
+    analysis += row('— แยกเป็น', 'ขดลวด ' + Math.round(i.cuLoss || 0) + ' · แกนเหล็ก ' + Math.round(i.feLoss || 0) +
+                    ' · สาย ' + Math.round(i.lineLoss || 0) + ' kWh');
+  }
+  analysis += row('ขนาดฟิวส์ในผัง', i.fuseSld);
+  analysis += row('ขนาดฟิวส์ใน GIS', i.fuseGis ? i.fuseGis + ' A' : null, 'var(--sev2)');
+  analysis += row('ความเชื่อมั่นค่าในผัง', i.conf);
+  analysis += row('ระยะพิกัดต่างจาก GIS', i.distGis ? i.distGis + ' ม.' : null, 'var(--sev2)');
+  analysis += row('พิกัดตาม GIS', i.latGis ? i.latGis + ', ' + i.lonGis : null);
+  analysis += row('เจ้าของ', i.owner);
+  analysis += row('แก้ไขล่าสุดใน GIS', i.gisUpdated);
+
+  const hist = (st && st.history && st.history.length)
+    ? st.history.map(h=> '<div class="mono" style="font-size:11.5px;padding:3px 0;border-bottom:1px dashed var(--line);">' + esc(h) + '</div>').join('')
+    : '<div class="hint">ยังไม่มีการดำเนินการ</div>';
+
   const ov = $('riskOverlay');
   $('riskSheet').innerHTML = `
     <h2 style="margin:0 0 3px;color:var(--pea-purple);font-size:17px;">${esc(x.title)}</h2>
-    <div class="hint" style="margin-bottom:10px;">${esc(RISK_LABEL[x.code] || x.code)} · ระดับ ${x.sev}</div>
+    <div class="hint" style="margin-bottom:10px;">${esc(RISK_LABEL[x.code] || x.code)} · ระดับ ${x.sev} · ${esc(x.id)}</div>
+
     <div class="kv"><span>อุปกรณ์</span><span class="mono">${esc(x.dev)}</span></div>
     <div class="kv"><span>จุดติดตั้ง</span><span style="text-align:right;">${esc(x.name || '-')}</span></div>
     <div class="kv"><span>วงจร</span><span>${esc(x.feeder || '-')}</span></div>
-    <div class="kv"><span>ข้อมูล</span><span style="text-align:right;">${esc(x.detail)}</span></div>
-    ${x.cust ? `<div class="kv"><span>ผู้ใช้ไฟที่กระทบ</span><span>${x.cust} ราย</span></div>` : ''}
+
+    <h2 style="margin:16px 0 6px;font-size:14px;">ข้อมูลสำหรับวิเคราะห์</h2>
+    ${analysis || '<div class="hint">ไม่มีข้อมูลเชิงลึกสำหรับรายการนี้</div>'}
+
+    <h2 style="margin:16px 0 6px;font-size:14px;">ตำแหน่ง</h2>
     ${coordBlock(x.lat, x.lon, 'rk')}
-    ${st ? `<div class="hint" style="margin-top:8px;">สถานะ <b>${esc(st.status)}</b>${st.note ? ' — ' + esc(st.note) : ''}<br>
-      <span class="mono">${esc(st.at)} · ${esc(st.by)}</span></div>` : ''}
+
+    <h2 style="margin:16px 0 6px;font-size:14px;">ประวัติการดำเนินการ</h2>
+    ${hist}
+
     <button class="primary" id="riskTake" style="margin-top:14px;">รับเรื่อง — สร้างเป็นจุดที่พบ</button>
     <button class="ghost" id="riskSkip" style="width:100%;margin-top:8px;">ปัดทิ้ง — ไม่ใช่ปัญหา</button>
+    ${st && st.status === 'ปัดทิ้ง' ? '<button class="ghost" id="riskUndo" style="width:100%;margin-top:8px;">นำกลับมาตรวจใหม่</button>' : ''}
     <button class="ghost" id="riskClose" style="width:100%;margin-top:8px;">ปิดหน้าต่าง</button>`;
   ov.classList.add('show');
   bindCoordBlock(x.lat, x.lon, 'rk');
   $('riskClose').onclick = ()=> ov.classList.remove('show');
+
+  const setState = async (status, note, findingId)=>{
+    const r = await api({ action:'patrolRiskSet', riskId:id, status:status, note:note || '', findingId:findingId || '' });
+    if(r && r.ok){ beep('ok'); ov.classList.remove('show'); await loadRisks(); return true; }
+    beep('err'); toast((r && r.error) || 'ทำรายการไม่สำเร็จ', 'err');
+    return false;
+  };
   $('riskSkip').onclick = async ()=>{
     const note = prompt('เหตุผลที่ปัดทิ้ง เช่น ตรวจแล้วปกติ / ข้อมูลผิด');
     if(note === null) return;
     if(!note.trim()){ toast('ต้องระบุเหตุผล', 'err'); return; }
-    const r = await api({ action:'patrolRiskSet', riskId:id, status:'ปัดทิ้ง', note:note.trim() });
-    if(r && r.ok){ beep('ok'); toast('ปัดทิ้งแล้ว', 'ok'); ov.classList.remove('show'); loadRisks(); }
-    else { beep('err'); toast((r && r.error) || 'ทำรายการไม่สำเร็จ', 'err'); }
+    if(await setState('ปัดทิ้ง', note.trim())) toast('ปัดทิ้งแล้ว — บันทึกชื่อและเวลาไว้แล้ว', 'ok');
+  };
+  const undo = $('riskUndo');
+  if(undo) undo.onclick = async ()=>{
+    const note = prompt('เหตุผลที่นำกลับมาตรวจใหม่') || '';
+    if(await setState('ยังไม่ตรวจ', note.trim())) toast('นำกลับมาตรวจใหม่แล้ว', 'ok');
   };
   $('riskTake').onclick = async ()=>{
     const btn = $('riskTake'); btn.disabled = true; btn.textContent = 'กำลังสร้าง ...';
@@ -1583,12 +1642,10 @@ function openRisk(id){
     };
     const r = await api({ action:'patrolCreate', finding, photos: [] });
     btn.disabled = false; btn.textContent = 'รับเรื่อง — สร้างเป็นจุดที่พบ';
-    if(r && r.ok){
-      await api({ action:'patrolRiskSet', riskId:id, status:'รับเรื่อง', findingId:finding.findingId, note:'' });
-      beep('ok'); toast('สร้างเป็นจุดที่พบแล้ว ' + finding.findingId, 'ok');
-      ov.classList.remove('show');
-      await loadList(); loadRisks();
-    } else { beep('err'); toast((r && r.error) || 'สร้างไม่สำเร็จ', 'err'); }
+    if(!r || !r.ok){ beep('err'); toast((r && r.error) || 'สร้างไม่สำเร็จ', 'err'); return; }
+    await setState('รับเรื่อง', 'สร้างเป็นจุดที่พบ', finding.findingId);
+    toast('รับเรื่องแล้ว ' + finding.findingId, 'ok');
+    await loadList();
   };
 }
 $('riskOverlay').onclick = e=>{ if(e.target.id === 'riskOverlay') e.currentTarget.classList.remove('show'); };
