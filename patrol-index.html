@@ -631,6 +631,7 @@ function showGps(){
        <a class="ghost small" href="${longdoLink(GPS.lat, GPS.lon)}" target="_blank" rel="noopener"
           style="text-align:center;text-decoration:none;padding:6px 10px;border-radius:8px;border:1.5px solid var(--pea-purple);color:var(--pea-purple);">🗺 เปิดใน Longdo</a>
      </div>` +
+    `<div class="hint" id="gpPlace">${placeLine(GPS.lat, GPS.lon)}</div>` +
     `<div class="hint" id="gpAddr">กำลังค้นหาที่ตั้ง ...</div>`;
   const cb = $('gpCopy');
   if(cb) cb.onclick = ()=> copyText(GPS.lat.toFixed(6) + ', ' + GPS.lon.toFixed(6), 'คัดลอกพิกัดแล้ว');
@@ -1336,6 +1337,24 @@ async function thaiAddress(lat, lon){
     return text;
   }catch(e){ return ''; }
 }
+/* หาสถานที่อ้างอิงที่ใกล้ที่สุดจากฐานข้อมูลของเราเอง (ชื่อจุดติดตั้งหม้อแปลง/อุปกรณ์)
+   ชื่อพวกนี้เป็นชื่อหมู่บ้านและสถานที่จริงที่ใช้กันหน้างาน และอ่านจากข้อมูลในเครื่อง จึงใช้ได้ตอนไม่มีสัญญาณ */
+function nearestPlace(lat, lon){
+  if(!DEVICES || !DEVICES.length) return null;
+  let best = null, bestD = 2000;
+  for(const d of DEVICES){
+    if(d.lat == null || !d.desc) continue;
+    const m = metres(lat, lon, d.lat, d.lon);
+    if(m < bestD){ bestD = m; best = d; }
+  }
+  return best ? { name: best.desc, id: best.id, feeder: best.feeder, dist: Math.round(bestD) } : null;
+}
+function placeLine(lat, lon){
+  const p = nearestPlace(lat, lon);
+  if(!p) return '';
+  return '🏘 ใกล้ <b>' + esc(p.name) + '</b> · ห่าง ' + p.dist + ' ม.' +
+         (p.feeder ? ' · ' + esc(p.feeder) : '');
+}
 function longdoLink(lat, lon){
   return 'https://map.longdo.com/main?lat=' + lat + '&long=' + lon + '&zoom=18';
 }
@@ -1366,6 +1385,7 @@ function coordBlock(lat, lon, idPrefix){
       <a class="ghost small" href="${navLink(lat, lon)}" target="_blank" rel="noopener"
          style="text-align:center;text-decoration:none;padding:6px 10px;border-radius:8px;border:1.5px solid var(--sev3);color:var(--sev3);">🧭 นำทาง</a>
     </div>
+    <div class="hint" id="${idPrefix}Place" style="margin-bottom:3px;">${placeLine(lat, lon)}</div>
     <div class="hint" id="${idPrefix}Addr" style="margin-bottom:6px;">กำลังค้นหาที่ตั้ง ...</div>`;
 }
 /* ผูกปุ่มและเติมที่อยู่ภาษาไทยให้บล็อกพิกัดที่เพิ่งวาดไป */
@@ -1380,7 +1400,9 @@ async function bindCoordBlock(lat, lon, idPrefix){
     $(idPrefix + 'Addr').innerHTML = '📍 ' + esc(addr) +
       ` <button class="ghost small" id="${idPrefix}CopyAddr" style="padding:2px 8px;font-size:11.5px;margin-left:4px;">คัดลอก</button>`;
     const ab = $(idPrefix + 'CopyAddr');
-    if(ab) ab.onclick = ()=> copyText(addr, 'คัดลอกที่ตั้งแล้ว');
+    const place = nearestPlace(lat, lon);
+    const full = (place ? 'ใกล้ ' + place.name + ' (ห่าง ' + place.dist + ' ม.) · ' : '') + addr;
+    if(ab) ab.onclick = ()=> copyText(full, 'คัดลอกที่ตั้งแล้ว');
   } else {
     $(idPrefix + 'Addr').textContent = navigator.onLine ? 'ไม่พบข้อมูลที่ตั้งของพิกัดนี้' : 'ออฟไลน์ — ดูที่ตั้งไม่ได้';
   }
