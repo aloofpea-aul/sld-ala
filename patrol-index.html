@@ -104,6 +104,9 @@
   .boot-bar-go{height:100%;width:0;background:var(--pea-purple);transition:width .35s ease;}
   .boot-tip{margin-top:16px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px;
     font-size:13.5px;line-height:1.75;color:#333;min-height:78px;display:flex;align-items:center;justify-content:center;}
+  .item.picked{border-color:var(--pea-purple);background:#f6f2fc;box-shadow:0 0 0 1.5px var(--pea-purple) inset;}
+  .mk2{width:21px;height:21px;border-radius:50%;border:2px solid var(--pea-purple);flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;background:var(--pea-purple);}
   .req{font-size:10.5px;background:#fdecea;color:var(--sev1);padding:2px 7px;border-radius:9px;font-weight:700;vertical-align:2px;}
   .stepstate{float:right;font-size:11px;padding:2px 9px;border-radius:10px;background:#fdecea;color:var(--sev1);font-weight:700;}
   .stepstate.ok{background:#eaf4eb;color:var(--sev3);}
@@ -305,7 +308,8 @@
       <select id="fltStatus">
         <option value="">ทุกสถานะ</option>
         <option>ใหม่</option><option>รับเรื่องแล้ว</option><option>เข้าแผนแล้ว</option>
-        <option>แก้ไขเสร็จ</option><option>ปิด</option>
+        <option>แก้ไขเสร็จ</option><option>ปิด</option><option>ปิด (ไม่ใช่ปัญหา)</option>
+        <option value="__noorder">ปิดแล้วแต่ไม่มีเลขใบสั่งงาน</option>
       </select>
       <select id="fltSeverity">
         <option value="">ทุกความรุนแรง</option>
@@ -322,6 +326,14 @@
     <div class="row" style="margin-top:9px;">
       <button class="ghost small" id="btnReload">โหลดใหม่</button>
       <button class="ghost small" id="btnExport">ส่งออก CSV</button>
+      <button class="ghost small" id="btnSelectMode">เลือกหลายรายการ</button>
+    </div>
+    <div id="bulkBar" style="display:none;margin-top:9px;padding:10px;background:#efeaf7;border-radius:9px;">
+      <div class="hint" id="bulkCount" style="margin-bottom:7px;"></div>
+      <div class="row">
+        <button class="ghost small" id="btnBulkClose" style="border-color:var(--sev3);color:var(--sev3);">ปิดงานด้วยใบสั่งงานเดียวกัน</button>
+        <button class="ghost small" id="btnBulkCancel">ยกเลิก</button>
+      </div>
     </div>
     <div class="hint" id="listCount" style="margin-top:7px;"></div>
   </div>
@@ -542,6 +554,7 @@
 <div class="overlay" id="detailOverlay"><div class="sheet" id="detailSheet"></div></div>
 <div class="overlay" id="permOverlay"><div class="sheet" id="permSheet"></div></div>
 <div class="overlay" id="riskOverlay"><div class="sheet" id="riskSheet"></div></div>
+<div class="overlay" id="closeOverlay"><div class="sheet" id="closeSheet"></div></div>
 <div id="bigMapWrap">
   <div id="bigMapBar">
     <button class="ghost small" id="bigMapClose">✕ ปิด</button>
@@ -1473,7 +1486,8 @@ function visibleFindings(){
   const st = $('fltStatus').value, sv = $('fltSeverity').value;
   const me = (PROFILE && PROFILE.name) || cfg.name;
   return FINDINGS.filter(f=>{
-    if(st && f.Status !== st) return false;
+    if(st === '__noorder'){ if(f.Status !== 'ปิด' || String(f.OrderNo || '').trim()) return false; }
+    else if(st && f.Status !== st) return false;
     if(sv && String(f.Severity) !== sv) return false;
     if((QUICK === 'mine' || QUICK === 'mine_today') && f.CreatedBy !== me) return false;
     if((QUICK === 'today' || QUICK === 'mine_today') && !isToday(f.CreatedAt)) return false;
@@ -1495,7 +1509,8 @@ $('btnExport').onclick = ()=>{
     ['สังกัด','CreatorOrg'], ['ผูกกับ','AnchorType'], ['รหัสอ้างอิง','AnchorRef'], ['วงจร','FeederID'],
     ['ประเภทปัญหา','_type'], ['ความรุนแรง','Severity'], ['รายละเอียด','Detail'],
     ['สถานที่ใกล้เคียง','NearPlace'], ['ที่อยู่','Address'], ['หมู่ที่/หมู่บ้าน','Moo'], ['จุดสังเกต','Landmark'],
-    ['สถานะ','Status'],
+    ['สถานะ','Status'], ['เลขใบสั่งงาน','OrderNo'], ['วันที่ใบสั่งงาน','OrderDate'],
+    ['วันที่ดำเนินการ','FixedDate'], ['ผู้ปฏิบัติงาน','FixedBy'], ['สิ่งที่ดำเนินการ','FixedDetail'],
     ['lat','Lat'], ['lon','Lon'], ['ปิดเมื่อ','ClosedAt'], ['ผู้ปิด','ClosedBy'], ['เหตุผลที่ปิด','CloseReason']
   ];
   const esc2 = v=> '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
@@ -1521,13 +1536,37 @@ function typeName(code){
   const t = TYPES.find(x=> x.code === code);
   return t ? t.name : code;
 }
+let SELECT_MODE = false;
+const SELECTED = new Set();
+$('btnSelectMode').onclick = ()=>{
+  SELECT_MODE = !SELECT_MODE;
+  if(!SELECT_MODE) SELECTED.clear();
+  $('btnSelectMode').textContent = SELECT_MODE ? 'ออกจากโหมดเลือก' : 'เลือกหลายรายการ';
+  $('bulkBar').style.display = SELECT_MODE ? '' : 'none';
+  renderList();
+};
+$('btnBulkCancel').onclick = ()=>{
+  SELECT_MODE = false; SELECTED.clear();
+  $('btnSelectMode').textContent = 'เลือกหลายรายการ';
+  $('bulkBar').style.display = 'none';
+  renderList();
+};
+$('btnBulkClose').onclick = ()=>{
+  if(!SELECTED.size){ toast('ยังไม่ได้เลือกรายการ', 'err'); return; }
+  openCloseForm({ ids: Array.from(SELECTED), bulk:true,
+                  subtitle:'ปิดพร้อมกัน ' + SELECTED.size + ' รายการ ด้วยใบสั่งงานใบเดียว' });
+};
+function updateBulkBar(){
+  $('bulkCount').innerHTML = 'เลือกแล้ว <b>' + SELECTED.size + '</b> รายการ — แตะที่รายการเพื่อเลือกหรือยกเลิก';
+}
 function renderList(){
   const rows = visibleFindings();
   $('listCount').innerHTML = 'แสดง <b>' + rows.length + '</b> จาก ' + FINDINGS.length + ' รายการ';
   if(!rows.length){ $('listBox').innerHTML = '<div class="hint">ไม่มีรายการที่ตรงกับเงื่อนไข</div>'; return; }
   $('listBox').innerHTML = rows.map(f=>`
-    <div class="item" data-id="${esc(f.FindingID)}">
+    <div class="item${SELECT_MODE && SELECTED.has(f.FindingID) ? ' picked' : ''}" data-id="${esc(f.FindingID)}">
       <div class="top">
+        ${SELECT_MODE ? `<span class="mk2">${SELECTED.has(f.FindingID) ? '✓' : ''}</span>` : ''}
         <span class="pill" style="background:${SEV_COLOR[f.Severity] || '#888'}">ระดับ ${esc(f.Severity)}</span>
         <b style="flex:1;">${esc(typeName(f.ProblemType))}</b>
         <span class="mono">${esc(f.Status)}</span>
@@ -1538,11 +1577,18 @@ function renderList(){
         ${f.Moo || f.NearPlace ? '🏘 ' + esc(f.Moo || f.NearPlace) + '<br>' : ''}
         ${esc(f.Detail || '')}<br>
         <span class="mono">${esc(f.CreatedAt)} · ${esc(f.CreatedBy)}${f.CreatorOrg ? ' · ' + esc(f.CreatorOrg) : ''}</span>
+        ${f.OrderNo ? `<br><span style="color:var(--sev3);font-weight:700;">ใบสั่งงาน ${esc(f.OrderNo)} · ${esc(thDate(f.FixedDate))}</span>` : ''}
       </div>
     </div>`).join('');
   $('listBox').querySelectorAll('.item').forEach(el=>{
-    el.onclick = ()=> openDetail(el.dataset.id);
+    el.onclick = ()=>{
+      if(!SELECT_MODE){ openDetail(el.dataset.id); return; }
+      const id = el.dataset.id;
+      if(SELECTED.has(id)) SELECTED.delete(id); else SELECTED.add(id);
+      beep('tap'); renderList();
+    };
   });
+  if(SELECT_MODE) updateBulkBar();
 }
 
 async function openDetail(id){
@@ -1569,6 +1615,18 @@ async function openDetail(id){
       <div class="kv"><span>ผู้บันทึก</span><span>${esc(f.CreatedBy)}<br><span class="hint">${esc(f.CreatorRole || '')} ${esc(f.CreatorOrg || '')}</span></span></div>
       <div class="kv"><span>เมื่อ</span><span>${esc(f.CreatedAt)}</span></div>
       ${f.Detail ? `<p style="margin:10px 0;">${esc(f.Detail)}</p>` : ''}
+      ${f.OrderNo || f.Status === 'ปิด' || f.Status === 'ปิด (ไม่ใช่ปัญหา)' ? `
+        <div style="background:#eaf4eb;border:1px solid #cfe6d0;border-radius:9px;padding:11px;margin:12px 0;">
+          <div style="font-weight:700;color:var(--sev3);margin-bottom:6px;">ข้อมูลการปิดงาน</div>
+          ${f.OrderNo ? `<div class="kv"><span>เลขใบสั่งงาน</span><span class="mono"><b>${esc(f.OrderNo)}</b></span></div>` : ''}
+          ${f.OrderDate ? `<div class="kv"><span>วันที่ใบสั่งงาน</span><span>${esc(thDate(f.OrderDate))}</span></div>` : ''}
+          ${f.FixedDate ? `<div class="kv"><span>วันที่ดำเนินการ</span><span>${esc(thDate(f.FixedDate))}</span></div>` : ''}
+          ${f.FixedBy ? `<div class="kv"><span>ผู้ปฏิบัติงาน</span><span>${esc(f.FixedBy)}</span></div>` : ''}
+          ${f.FixedDetail ? `<div class="kv"><span>สิ่งที่ดำเนินการ</span><span style="text-align:right;">${esc(f.FixedDetail)}</span></div>` : ''}
+          ${f.CloseReason && !f.FixedDetail ? `<div class="kv"><span>เหตุผล</span><span style="text-align:right;">${esc(f.CloseReason)}</span></div>` : ''}
+          <div class="kv"><span>ผู้กดปิดในระบบ</span><span>${esc(f.ClosedBy || '-')}<br><span class="mono">${esc(f.ClosedAt || '')}</span></span></div>
+          <button class="ghost small" id="btnEditClose" style="width:100%;margin-top:9px;">แก้ไขข้อมูลการปิดงาน</button>
+        </div>` : ''}
       <h2 style="margin:14px 0 6px;">รูป (${photos.length})</h2>
       <div class="thumbs">${photos.map(p=>
         `<a class="thumb" href="${esc(p.DriveUrl)}" target="_blank" style="display:block;">
@@ -1611,11 +1669,13 @@ async function openDetail(id){
       <label class="f">เปลี่ยนสถานะ</label>
       <select id="newStatus">
         <option value="">— ไม่เปลี่ยน —</option>
-        <option>รับเรื่องแล้ว</option><option>เข้าแผนแล้ว</option><option>แก้ไขเสร็จ</option><option>ปิด</option>
+        <option>รับเรื่องแล้ว</option><option>เข้าแผนแล้ว</option><option>แก้ไขเสร็จ</option>
       </select>
-      <label class="f">เหตุผล / ผลที่ทำ (จำเป็นเมื่อปิด)</label>
-      <input type="text" id="closeReason" placeholder="เช่น ตัดกิ่งไม้เรียบร้อย">
+      <input type="hidden" id="closeReason" value="">
       <button class="primary" id="btnUpdate" style="margin-top:12px;">บันทึกการเปลี่ยนแปลง</button>
+      ${f.Status === 'ปิด' || f.Status === 'ปิด (ไม่ใช่ปัญหา)' ? '' : `
+      <button class="ghost" id="btnOpenClose" style="width:100%;margin-top:8px;border-color:var(--sev3);color:var(--sev3);font-weight:700;">✅ ปิดงาน — กรอกใบสั่งงาน</button>
+      <button class="ghost" id="btnNotIssue" style="width:100%;margin-top:8px;">ปิดแบบ "ไม่ใช่ปัญหา"</button>`}
       <button class="ghost" id="btnDelete" style="width:100%;margin-top:8px;border-color:var(--sev1);color:var(--sev1);">ลบรายการนี้</button>
       <button class="ghost" id="btnCloseSheet" style="width:100%;margin-top:8px;">ปิดหน้าต่าง</button>`;
 
@@ -1671,6 +1731,21 @@ async function openDetail(id){
       const rr = await api(payload);
       if(rr && rr.ok){ beep('ok'); toast('บันทึกแล้ว', 'ok'); ov.classList.remove('show'); await loadList(); drawMapPins(); }
       else { beep('err'); toast((rr && rr.error) || 'บันทึกไม่สำเร็จ', 'err'); }
+    };
+
+    const oc = $('btnOpenClose');
+    if(oc) oc.onclick = ()=> openCloseForm({ ids:[id], subtitle: typeName(f.ProblemType) + ' · ' + id });
+    const ec = $('btnEditClose');
+    if(ec) ec.onclick = ()=> openCloseForm({ ids:[id], edit:true, subtitle: id,
+      prefill:{ orderNo:f.OrderNo, orderDate:f.OrderDate, fixedDate:f.FixedDate, fixedBy:f.FixedBy, fixedDetail:f.FixedDetail } });
+    const ni = $('btnNotIssue');
+    if(ni) ni.onclick = async ()=>{
+      const reason = prompt('เหตุผลที่ไม่ใช่ปัญหา เช่น ตรวจแล้วปกติ / ข้อมูลผิด');
+      if(reason === null) return;
+      if(!reason.trim()){ toast('ต้องระบุเหตุผล', 'err'); return; }
+      const rr = await api({ action:'patrolUpdate', findingId:id, status:'ปิด (ไม่ใช่ปัญหา)', closeReason:reason.trim() });
+      if(rr && rr.ok){ beep('ok'); toast('ปิดแบบไม่ใช่ปัญหาแล้ว', 'ok'); ov.classList.remove('show'); await loadList(); drawMapPins(); }
+      else { beep('err'); toast((rr && rr.error) || 'ทำรายการไม่สำเร็จ', 'err'); }
     };
 
     $('btnDelete').onclick = async ()=>{
@@ -2015,6 +2090,93 @@ async function bindCoordBlock(lat, lon, idPrefix){
     $(idPrefix + 'Addr').textContent = navigator.onLine ? 'ไม่พบข้อมูลที่ตั้งของพิกัดนี้' : 'ออฟไลน์ — ดูที่ตั้งไม่ได้';
   }
 }
+
+/* ---------- ปิดงาน ---------- */
+const THMONTH = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function thDate(iso){
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(!m) return iso || '';
+  return parseInt(m[3], 10) + ' ' + THMONTH[parseInt(m[2], 10) - 1] + ' ' + (parseInt(m[1], 10) + 543);
+}
+function todayISO(){
+  const d = new Date(), p = n=> String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+/* ฟอร์มปิดงาน ใช้ได้ทั้งปิดรายการเดียวและปิดหลายรายการด้วยใบสั่งงานเดียวกัน */
+function openCloseForm(opts){
+  const ids = opts.ids || [];
+  const prev = opts.prefill || {};
+  const many = ids.length > 1;
+  const ov = $('closeOverlay');
+  $('closeSheet').innerHTML = `
+    <h2 style="margin:0 0 3px;color:var(--pea-purple);font-size:17px;">${many ? 'ปิดงาน ' + ids.length + ' รายการ' : (opts.edit ? 'แก้ไขข้อมูลการปิดงาน' : 'ปิดงาน')}</h2>
+    <div class="hint" style="margin-bottom:12px;">${esc(opts.subtitle || ids.join(', '))}</div>
+
+    <label class="f">หมายเลขใบสั่งงาน <span class="req">จำเป็น</span></label>
+    <input type="text" id="clOrderNo" inputmode="numeric" pattern="[0-9]*"
+           value="${esc(prev.orderNo || '')}" placeholder="ตัวเลขล้วน เช่น 6812345">
+
+    <div class="row">
+      <div style="flex:1;">
+        <label class="f">วันที่ใบสั่งงาน <span class="req">จำเป็น</span></label>
+        <input type="date" id="clOrderDate" value="${esc(prev.orderDate || todayISO())}">
+      </div>
+      <div style="flex:1;">
+        <label class="f">วันที่ดำเนินการจริง <span class="req">จำเป็น</span></label>
+        <input type="date" id="clFixedDate" value="${esc(prev.fixedDate || todayISO())}">
+      </div>
+    </div>
+
+    <label class="f">ผู้ปฏิบัติงาน <span class="req">จำเป็น</span></label>
+    <input type="text" id="clFixedBy" list="memberNames" value="${esc(prev.fixedBy || (PROFILE && PROFILE.name) || '')}"
+           placeholder="พิมพ์ชื่อ หรือเลือกจากรายชื่อ">
+    <div class="hint">พิมพ์ชื่อผู้รับเหมาหรือทีมจากสาขาอื่นที่ไม่มีบัญชีในระบบได้</div>
+
+    <label class="f">สิ่งที่ดำเนินการ <span class="req">จำเป็น</span></label>
+    <textarea id="clFixedDetail" style="min-height:62px;" placeholder="เช่น ตัดกิ่งไม้ออกจากแนวสาย 3 ต้น">${esc(prev.fixedDetail || '')}</textarea>
+
+    <div class="hint" id="clPhotoNote" style="margin-top:10px;"></div>
+    <button class="primary" id="clSave" style="margin-top:12px;">${many ? 'ปิดงานทั้ง ' + ids.length + ' รายการ' : 'ยืนยันปิดงาน'}</button>
+    <button class="ghost" id="clCancel" style="width:100%;margin-top:8px;">ยกเลิก</button>`;
+  ov.classList.add('show');
+  $('clPhotoNote').innerHTML = many
+    ? '⚠ รายการที่ยังไม่มีรูปหลังปรับปรุงจะถูกข้าม และแจ้งให้ทราบหลังบันทึก'
+    : 'ต้องมีรูปหลังปรับปรุงอย่างน้อย 1 รูป จึงจะปิดงานได้';
+  $('clCancel').onclick = ()=> ov.classList.remove('show');
+  $('clOrderNo').addEventListener('input', e=>{ e.target.value = e.target.value.replace(/\D/g, ''); });
+
+  $('clSave').onclick = async ()=>{
+    const payload = {
+      orderNo: $('clOrderNo').value.trim(),
+      orderDate: $('clOrderDate').value,
+      fixedDate: $('clFixedDate').value,
+      fixedBy: $('clFixedBy').value.trim(),
+      fixedDetail: $('clFixedDetail').value.trim()
+    };
+    if(!payload.orderNo){ toast('กรุณาใส่หมายเลขใบสั่งงาน', 'err'); return; }
+    if(!payload.fixedBy){ toast('กรุณาระบุผู้ปฏิบัติงาน', 'err'); return; }
+    if(!payload.fixedDetail){ toast('กรุณาระบุสิ่งที่ดำเนินการ', 'err'); return; }
+    const btn = $('clSave'); btn.disabled = true; btn.textContent = 'กำลังบันทึก ...';
+    let r;
+    if(many || opts.bulk) r = await api(Object.assign({ action:'patrolCloseBulk', ids }, payload));
+    else r = await api(Object.assign({ action:'patrolUpdate', findingId:ids[0], status:'ปิด' }, payload));
+    btn.disabled = false; btn.textContent = many ? 'ปิดงานทั้ง ' + ids.length + ' รายการ' : 'ยืนยันปิดงาน';
+    if(!r || !r.ok){ beep('err'); toast((r && r.error) || 'ปิดงานไม่สำเร็จ', 'err'); return; }
+    beep('ok');
+    if(r.noPhoto && r.noPhoto.length){
+      toast('ปิดได้ ' + r.closed + ' รายการ · ข้าม ' + r.noPhoto.length + ' รายการที่ยังไม่มีรูปหลังปรับปรุง', 'err');
+    } else {
+      toast(many ? 'ปิดงานแล้ว ' + (r.closed || ids.length) + ' รายการ · ใบสั่งงาน ' + payload.orderNo
+                 : 'ปิดงานแล้ว · ใบสั่งงาน ' + payload.orderNo, 'ok');
+    }
+    ov.classList.remove('show');
+    $('detailOverlay').classList.remove('show');
+    SELECTED.clear();
+    await loadList();
+    drawMapPins();
+  };
+}
+$('closeOverlay').onclick = e=>{ if(e.target.id === 'closeOverlay') e.currentTarget.classList.remove('show'); };
 
 /* ---------- แผนที่เต็มจอในแอป — แสดงทุกชั้นข้อมูลที่เรามี ---------- */
 let bigMap = null, bigReady = false, bigTarget = null;
