@@ -220,7 +220,18 @@
         <option value="1">ระดับ 1</option><option value="2">ระดับ 2</option><option value="3">ระดับ 3</option>
       </select>
     </div>
-    <button class="ghost small" id="btnReload" style="margin-top:9px;width:100%;">โหลดรายการจากระบบ</button>
+    <input type="text" id="fltSearch" placeholder="ค้นหา — รหัส เลขเสา รายละเอียด ผู้บันทึก" style="margin-top:9px;">
+    <div class="seg" id="quickSeg" style="margin-top:9px;">
+      <button data-q="all" class="on">ทั้งหมด</button>
+      <button data-q="mine">ของฉัน</button>
+      <button data-q="today">วันนี้</button>
+      <button data-q="mine_today">ของฉันวันนี้</button>
+    </div>
+    <div class="row" style="margin-top:9px;">
+      <button class="ghost small" id="btnReload">โหลดใหม่</button>
+      <button class="ghost small" id="btnExport">ส่งออก CSV</button>
+    </div>
+    <div class="hint" id="listCount" style="margin-top:7px;"></div>
   </div>
   <div id="listBox"></div>
 </section>
@@ -237,6 +248,7 @@
       </select>
       <button class="ghost small" id="btnMapReload">โหลดใหม่</button>
       <button class="ghost small" id="btnMapMe">📍 ตำแหน่งฉัน</button>
+      <button class="ghost small" id="btnMapLines">แนวสาย: เปิด</button>
     </div>
     <div class="hint" id="mapHint" style="margin-top:7px;">แตะหมุดบนแผนที่เพื่อดูรายละเอียดและจัดการได้ทันที</div>
   </div>
@@ -967,17 +979,64 @@ function resetForm(){
 
 /* ---------- รายการ ---------- */
 $('btnReload').onclick = loadList;
-async function loadList(){
-  if(!navigator.onLine){ toast('ต้องมีสัญญาณจึงจะโหลดรายการได้', 'err'); return; }
-  $('listBox').innerHTML = '<div class="hint">กำลังโหลด ...</div>';
-  try{
-    const r = await api({ action:'patrolList', status:$('fltStatus').value, severity:$('fltSeverity').value, limit:200 });
-    if(!r.ok){ $('listBox').innerHTML = '<div class="hint">' + esc(r.error || 'โหลดไม่สำเร็จ') + '</div>'; return; }
-    FINDINGS = r.findings || [];
-    renderList(); renderHome();
-    if(mapReady) drawMapPins();
-  }catch(e){ $('listBox').innerHTML = '<div class="hint">โหลดไม่สำเร็จ</div>'; }
+let QUICK = 'all';
+document.querySelectorAll('#quickSeg button').forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll('#quickSeg button').forEach(x=> x.classList.remove('on'));
+    btn.classList.add('on'); QUICK = btn.dataset.q; renderList();
+  };
+});
+$('fltSearch').oninput = ()=> renderList();
+$('fltStatus').onchange = ()=> renderList();
+$('fltSeverity').onchange = ()=> renderList();
+
+function isToday(str){
+  if(!str) return false;
+  const d = new Date();
+  const p = n=> String(n).padStart(2, '0');
+  return String(str).indexOf(d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate())) === 0;
 }
+function visibleFindings(){
+  const q = ($('fltSearch').value || '').trim().toLowerCase();
+  const st = $('fltStatus').value, sv = $('fltSeverity').value;
+  const me = (PROFILE && PROFILE.name) || cfg.name;
+  return FINDINGS.filter(f=>{
+    if(st && f.Status !== st) return false;
+    if(sv && String(f.Severity) !== sv) return false;
+    if((QUICK === 'mine' || QUICK === 'mine_today') && f.CreatedBy !== me) return false;
+    if((QUICK === 'today' || QUICK === 'mine_today') && !isToday(f.CreatedAt)) return false;
+    if(q){
+      const hay = [f.FindingID, f.AnchorRef, f.Detail, f.CreatedBy, f.FeederID, typeName(f.ProblemType)]
+        .join(' ').toLowerCase();
+      if(hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+}
+/* ส่งออกเป็น CSV — เปิดใน Excel ได้เลย ใส่ BOM เพื่อให้ภาษาไทยไม่เพี้ยน */
+$('btnExport').onclick = ()=>{
+  const rows = visibleFindings();
+  if(!rows.length){ toast('ไม่มีรายการให้ส่งออก', 'err'); return; }
+  const cols = [
+    ['รหัส','FindingID'], ['วันเวลา','CreatedAt'], ['ผู้บันทึก','CreatedBy'], ['ตำแหน่ง','CreatorRole'],
+    ['สังกัด','CreatorOrg'], ['ผูกกับ','AnchorType'], ['รหัสอ้างอิง','AnchorRef'], ['วงจร','FeederID'],
+    ['ประเภทปัญหา','_type'], ['ความรุนแรง','Severity'], ['รายละเอียด','Detail'], ['สถานะ','Status'],
+    ['lat','Lat'], ['lon','Lon'], ['ปิดเมื่อ','ClosedAt'], ['ผู้ปิด','ClosedBy'], ['เหตุผลที่ปิด','CloseReason']
+  ];
+  const esc2 = v=> '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const body = rows.map(f=> cols.map(c=> esc2(c[1] === '_type' ? typeName(f.ProblemType) : f[c[1]])).join(',')).join('\r\n');
+  const csv = '\uFEFF' + cols.map(c=> esc2(c[0])).join(',') + '\r\n' + body;
+  const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  const d = new Date(), p = n=> String(n).padStart(2, '0');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'patrol_' + d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '_' + rows.length + 'รายการ.csv';
+  a.click();
+  setTimeout(()=> URL.revokeObjectURL(a.href), 4000);
+  beep('ok');
+  toast('ส่งออก ' + rows.length + ' รายการแล้ว', 'ok');
+};
+
 let FINDINGS = [];
 const SEV_COLOR = { 1:'var(--sev1)', 2:'var(--sev2)', 3:'var(--sev3)' };
 function typeName(code){
@@ -985,8 +1044,10 @@ function typeName(code){
   return t ? t.name : code;
 }
 function renderList(){
-  if(!FINDINGS.length){ $('listBox').innerHTML = '<div class="hint">ยังไม่มีรายการ</div>'; return; }
-  $('listBox').innerHTML = FINDINGS.map(f=>`
+  const rows = visibleFindings();
+  $('listCount').innerHTML = 'แสดง <b>' + rows.length + '</b> จาก ' + FINDINGS.length + ' รายการ';
+  if(!rows.length){ $('listBox').innerHTML = '<div class="hint">ไม่มีรายการที่ตรงกับเงื่อนไข</div>'; return; }
+  $('listBox').innerHTML = rows.map(f=>`
     <div class="item" data-id="${esc(f.FindingID)}">
       <div class="top">
         <span class="pill" style="background:${SEV_COLOR[f.Severity] || '#888'}">ระดับ ${esc(f.Severity)}</span>
@@ -1035,6 +1096,18 @@ async function openDetail(id){
         <button class="ghost" id="btnAddAfter">📷 เพิ่มรูปหลังปรับปรุง</button>
         <button class="ghost" id="btnAddDuring">📷 เพิ่มรูประหว่างทำ</button>
       </div>
+      <label class="f">แก้ไขประเภทปัญหา</label>
+      <select id="edType"></select>
+      <label class="f">แก้ไขความรุนแรง</label>
+      <select id="edSeverity">
+        <option value="">— ไม่เปลี่ยน —</option>
+        <option value="1">ระดับ 1 · ไฟดับได้ทุกเมื่อ</option>
+        <option value="2">ระดับ 2 · เสี่ยงในไม่ช้า</option>
+        <option value="3">ระดับ 3 · เฝ้าระวัง</option>
+      </select>
+      <label class="f">แก้ไขรายละเอียด</label>
+      <textarea id="edDetail" style="min-height:58px;">${esc(f.Detail || '')}</textarea>
+
       <label class="f">เปลี่ยนสถานะ</label>
       <select id="newStatus">
         <option value="">— ไม่เปลี่ยน —</option>
@@ -1043,6 +1116,7 @@ async function openDetail(id){
       <label class="f">เหตุผล / ผลที่ทำ (จำเป็นเมื่อปิด)</label>
       <input type="text" id="closeReason" placeholder="เช่น ตัดกิ่งไม้เรียบร้อย">
       <button class="primary" id="btnUpdate" style="margin-top:12px;">บันทึกการเปลี่ยนแปลง</button>
+      <button class="ghost" id="btnDelete" style="width:100%;margin-top:8px;border-color:var(--sev1);color:var(--sev1);">ลบรายการนี้</button>
       <button class="ghost" id="btnCloseSheet" style="width:100%;margin-top:8px;">ปิดหน้าต่าง</button>`;
 
     let addKind = 'after';
@@ -1062,12 +1136,35 @@ async function openDetail(id){
       if(rr && rr.ok){ toast('เพิ่มรูปแล้ว', 'ok'); openDetail(id); }
       else toast('อัปโหลดไม่สำเร็จ', 'err');
     };
+    // เติมรายการประเภทปัญหา และเลือกค่าปัจจุบันไว้
+    $('edType').innerHTML = '<option value="">— ไม่เปลี่ยน —</option>' +
+      TYPES.map(t=> `<option value="${esc(t.code)}"${t.code === f.ProblemType ? ' selected' : ''}>${esc(t.name)}</option>`).join('');
+
     $('btnUpdate').onclick = async ()=>{
       const st = $('newStatus').value, reason = $('closeReason').value.trim();
-      if(!st){ toast('ยังไม่ได้เลือกสถานะใหม่', 'err'); return; }
-      const rr = await api({ action:'patrolUpdate', findingId:id, status:st, closeReason:reason });
+      const newType = $('edType').value, newSev = $('edSeverity').value;
+      const newDetail = $('edDetail').value.trim();
+      const payload = { action:'patrolUpdate', findingId:id };
+      if(st) { payload.status = st; payload.closeReason = reason; }
+      if(newType && newType !== f.ProblemType) payload.problemType = newType;
+      if(newSev && newSev !== String(f.Severity)) payload.severity = newSev;
+      if(newDetail !== String(f.Detail || '')) payload.detail = newDetail;
+      if(Object.keys(payload).length <= 2){ toast('ยังไม่ได้แก้อะไรเลย', 'err'); return; }
+      const rr = await api(payload);
       if(rr && rr.ok){ beep('ok'); toast('บันทึกแล้ว', 'ok'); ov.classList.remove('show'); await loadList(); drawMapPins(); }
-      else toast((rr && rr.error) || 'บันทึกไม่สำเร็จ', 'err');
+      else { beep('err'); toast((rr && rr.error) || 'บันทึกไม่สำเร็จ', 'err'); }
+    };
+
+    $('btnDelete').onclick = async ()=>{
+      const reason = prompt('ลบรายการนี้ถาวร — ระบุเหตุผล เช่น บันทึกซ้ำ / เลือกผิด');
+      if(reason === null) return;
+      if(!reason.trim()){ toast('ต้องระบุเหตุผลที่ลบ', 'err'); return; }
+      if(!confirm('ยืนยันลบ ' + id + ' ?\nรูปทั้งหมดจะถูกย้ายลงถังขยะของ Drive ด้วย')) return;
+      const rr = await api({ action:'patrolDelete', findingId:id, reason:reason.trim() });
+      if(rr && rr.ok){
+        beep('ok'); toast('ลบแล้ว (รูป ' + (rr.deletedPhotos || 0) + ' รูป)', 'ok');
+        ov.classList.remove('show'); await loadList(); drawMapPins();
+      } else { beep('err'); toast((rr && rr.error) || 'ลบไม่สำเร็จ', 'err'); }
     };
     $('btnCloseSheet').onclick = ()=> ov.classList.remove('show');
   }catch(e){ sh.innerHTML = '<div class="hint">โหลดไม่สำเร็จ</div>'; }
@@ -1086,8 +1183,42 @@ function initMap(){
     map.Ui.DPad.visible(false);
     mapReady = true;
     if(GPS) map.location({ lon:GPS.lon, lat:GPS.lat }, true);
-    if(!FINDINGS.length && navigator.onLine) loadList(); else drawMapPins();
+    loadMvLines().then(()=>{
+      if(!FINDINGS.length && navigator.onLine) loadList(); else drawMapPins();
+    });
   }catch(e){ $('mapHint').textContent = 'โหลดแผนที่ไม่ได้ (ต้องมีสัญญาณ)'; }
+}
+/* แนวสายแรงสูงจาก GIS — ไฟล์แยก mv-lines.json โหลดครั้งเดียวแล้วเก็บไว้ในเครื่อง */
+let MVLINES = null, showLines = localStorage.getItem('patrol_lines') !== 'off';
+async function loadMvLines(){
+  if(MVLINES) return MVLINES;
+  try{
+    const c = await cGet('mvlines');
+    if(c){ MVLINES = c.value; return MVLINES; }
+  }catch(e){}
+  if(!navigator.onLine) return null;
+  try{
+    const r = await fetch('mv-lines.json');
+    if(!r.ok) return null;
+    MVLINES = await r.json();
+    await cPut('mvlines', MVLINES);
+  }catch(e){ MVLINES = null; }
+  return MVLINES;
+}
+function drawMvLines(){
+  if(!mapReady || !showLines || !MVLINES) return;
+  Object.keys(MVLINES.lines).forEach(fid=>{
+    const col = MVLINES.colors[fid] || '#888';
+    MVLINES.lines[fid].forEach(seg=>{
+      try{
+        map.Overlays.add(new longdo.Polyline(seg.v.map(p=>({ lat:p[0], lon:p[1] })), {
+          lineWidth: seg.m ? 4 : 1.6,
+          lineColor: col,
+          weight: longdo.OverlayWeight.Bottom
+        }));
+      }catch(e){}
+    });
+  });
 }
 function mapVisibleFindings(){
   const f = $('mapFltStatus') ? $('mapFltStatus').value : 'open';
@@ -1099,6 +1230,7 @@ function drawMapPins(){
   if(!mapReady) return;
   map.Overlays.clear();
   mapPins = [];
+  drawMvLines();
 
   if(GPS){
     map.Overlays.add(new longdo.Marker({ lon:GPS.lon, lat:GPS.lat }, {
@@ -1122,11 +1254,24 @@ function drawMapPins(){
       icon:{ html:`<div style="width:19px;height:19px;border-radius:50%;background:${col};border:3px solid #fff;
         box-shadow:0 0 5px rgba(0,0,0,.55);${done ? 'opacity:.45;' : ''}"></div>`, offset:{ x:12, y:12 } } }));
   });
-  $('mapHint').innerHTML = 'แสดง <b>' + mapPins.length + '</b> จุด · ' +
+  $('mapHint').innerHTML = (MVLINES && showLines ? 'เส้นหนา=สายเมน เส้นบาง=สายแยก สีตามวงจร · ' : '') +
+    'แสดง <b>' + mapPins.length + '</b> จุด · ' +
     '<span style="color:#c62828;">●</span> ระดับ1 <span style="color:#e07b00;">●</span> ระดับ2 ' +
     '<span style="color:#2e7d32;">●</span> ระดับ3 · จางลง=ปิดแล้ว · แตะหมุดเพื่อจัดการ';
 }
 (function bindMapTools(){
+  const bl = $('btnMapLines');
+  if(bl){
+    const label = ()=>{ bl.textContent = 'แนวสาย: ' + (showLines ? 'เปิด' : 'ปิด'); };
+    label();
+    bl.onclick = async ()=>{
+      showLines = !showLines;
+      localStorage.setItem('patrol_lines', showLines ? 'on' : 'off');
+      label();
+      if(showLines) await loadMvLines();
+      drawMapPins();
+    };
+  }
   const sel = $('mapFltStatus');
   if(sel) sel.onchange = drawMapPins;
   const rl = $('btnMapReload');
