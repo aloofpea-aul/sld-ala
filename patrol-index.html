@@ -1119,6 +1119,14 @@ function handleMapTap(e){
     return (e.clientX > r.right - 150) && (e.clientY < r.top + 46);
   };
 
+  // แผนที่เต็มจอ — แตะที่ไหนก็ปักหมุดที่นั่น
+  const bm = $('bigMap');
+  if(bigReady && $('bigMapWrap').classList.contains('show') && bm && bm.contains(e.target) && !inTopRight(bm)){
+    const c = pxToLatLon(bigMap, bm, e.clientX, e.clientY);
+    if(c){ beep('tap'); setBigTarget(c.lat, c.lon); }
+    return;
+  }
+
   // แผนที่ช่วยเลือกในข้อ 1
   const pm = $('pickMap');
   if(pickReady && pm && pm.offsetWidth && pm.contains(e.target) && pickItems.length && !inTopRight(pm)){
@@ -1983,8 +1991,7 @@ function openMapAt(lat, lon, title, sub){
   $('bigMapTitle').textContent = title || 'ตำแหน่งบนแผนที่';
   $('bigMapWrap').classList.add('show');
   $('bigMapFoot').innerHTML = '<div class="mono">' + lat.toFixed(6) + ', ' + lon.toFixed(6) + '</div>' +
-    (sub ? '<div>' + esc(sub) + '</div>' : '') + '<div id="bigAddr">กำลังค้นหาที่ตั้ง ...</div>';
-  thaiAddress(lat, lon).then(a=>{ const el = $('bigAddr'); if(el) el.textContent = a ? '📍 ' + a : ''; });
+    (sub ? '<div>' + esc(sub) + '</div>' : '') + '<div class="hint">แตะที่ใดก็ได้บนแผนที่เพื่อย้ายหมุดและดูพิกัดจุดนั้น</div>';
 
   setTimeout(async ()=>{
     if(!bigReady){
@@ -1997,7 +2004,7 @@ function openMapAt(lat, lon, title, sub){
     bigMap.location({ lon, lat }, true);
     bigMap.zoom(17, true);
     await loadMvLines();
-    drawBigMap();
+    setBigTarget(lat, lon);
   }, 80);
 }
 function drawBigMap(){
@@ -2061,6 +2068,46 @@ function drawBigMap(){
         border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.5);"></div></div>`,
       offset:{ x:19, y:19 } } }));
 }
+/* แปลงตำแหน่งนิ้วบนจอกลับเป็นพิกัดจริง (ผกผันของ Mercator) */
+function pxToLatLon(mapObj, el, clientX, clientY){
+  let b;
+  try{ b = mapObj.bound(); }catch(e){ return null; }
+  if(!b || b.maxLon === b.minLon || b.maxLat === b.minLat) return null;
+  const rect = el.getBoundingClientRect();
+  const mx = clientX - rect.left, my = clientY - rect.top;
+  if(mx < 0 || my < 0 || mx > rect.width || my > rect.height) return null;
+  const lon = b.minLon + (mx / rect.width) * (b.maxLon - b.minLon);
+  const yTop = mercY_(b.maxLat), yBot = mercY_(b.minLat);
+  const y = yTop - (my / rect.height) * (yTop - yBot);
+  const lat = (Math.atan(Math.exp(y)) - Math.PI / 4) * 360 / Math.PI;
+  return { lat, lon };
+}
+/* ปักหมุดใหม่ตามจุดที่แตะ แล้วอัปเดตข้อมูลด้านล่าง */
+function setBigTarget(lat, lon){
+  bigTarget = { lat, lon };
+  drawBigMap();
+  const p = nearestPlace(lat, lon);
+  $('bigMapFoot').innerHTML =
+    `<div class="row" style="align-items:center;gap:8px;">
+       <div style="flex:1;">
+         <div class="mono" style="font-size:13px;color:#333;">${lat.toFixed(6)}, ${lon.toFixed(6)}</div>
+         <div id="bigPlace">${p ? '🏘 ใกล้ ' + esc(p.name) + ' · ห่าง ' + p.dist + ' ม.' : ''}</div>
+         <div id="bigAddr">กำลังค้นหาที่ตั้ง ...</div>
+       </div>
+       <button class="ghost small" id="bigCopy" style="flex:0 0 auto;">📋 คัดลอก</button>
+       <button class="ghost small" id="bigUse" style="flex:0 0 auto;border-color:var(--sev3);color:var(--sev3);">ใช้พิกัดนี้</button>
+     </div>`;
+  thaiAddress(lat, lon).then(a=>{ const el = $('bigAddr'); if(el) el.textContent = a ? '📍 ' + a : ''; });
+  $('bigCopy').onclick = ()=> copyText(lat.toFixed(6) + ', ' + lon.toFixed(6), 'คัดลอกพิกัดแล้ว');
+  $('bigUse').onclick = ()=>{
+    GPS = { lat, lon, acc:0 };
+    beep('ok'); toast('ใช้พิกัดนี้เป็นตำแหน่งที่พบแล้ว', 'ok');
+    showGps();
+    $('bigMapWrap').classList.remove('show');
+    switchTab('new');
+  };
+}
+
 $('bigMapClose').onclick = ()=> $('bigMapWrap').classList.remove('show');
 $('bigMapNav').onclick = ()=>{
   if(bigTarget) window.open(navLink(bigTarget.lat, bigTarget.lon), '_blank');
