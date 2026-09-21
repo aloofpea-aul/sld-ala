@@ -152,7 +152,7 @@
   .tr-map-hit{position:relative;}
   /* ===== จอคอมพิวเตอร์: ขยายตัวอักษรและเพิ่มความคมชัด (มือถือคงเดิม) ===== */
   @media (min-width:821px){
-    html, body{ font-size:19px; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+    html, body{ font-size:16.5px; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
     body, button, input, select, textarea{ font-weight:400; letter-spacing:.005em; }
     .device-row .did, .trunk-node text, .tap-label{ font-weight:700; }
     .device-row{ font-size:.92rem; }
@@ -166,12 +166,22 @@
     .report-note{ font-size:.82rem; }
     .menuitem{ font-size:.92rem; }
     #mapControlBody, .mcp-section label{ font-size:.82rem; }
-    .device-view-row{ font-size:.92rem; }
-    .dm-confirm-box, .dm-step, .dm-msg, .dm-hint{ font-size:.86rem; }
-    #mapHoverTip{ font-size:13.5px !important; }
-    .map-device-label{ font-size:12px !important; }
+    .device-view-row{ font-size:.9rem; }
+    .dm-confirm-box, .dm-step, .dm-msg, .dm-hint{ font-size:.84rem; }
+    #mapHoverTip{ font-size:13px !important; }
+    .map-device-label{ font-size:11.5px !important; }
     #legend{ font-size:.8rem; }
   }
+  #searchGoBtn{flex:0 0 auto;padding:0 12px;border-radius:8px;border:1px solid var(--pea-purple);
+    background:var(--pea-purple);color:#fff;font-size:1rem;cursor:pointer;}
+  @keyframes srchPulse{0%{transform:scale(.6);opacity:1;}100%{transform:scale(1.9);opacity:0;}}
+  .srch-mark{position:relative;width:46px;height:46px;pointer-events:none;}
+  .srch-mark .ring{position:absolute;inset:0;border-radius:50%;border:3px solid #e53935;animation:srchPulse 1.3s ease-out infinite;}
+  .srch-mark .ring.r2{animation-delay:.65s;}
+  .srch-mark .dot{position:absolute;left:14px;top:14px;width:18px;height:18px;border-radius:50%;background:#e53935;
+    border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.5);}
+  .srch-mark .lbl{position:absolute;left:50%;top:-26px;transform:translateX(-50%);background:#e53935;color:#fff;
+    font:700 12px Consolas,monospace;padding:3px 8px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35);}
   .map-device-label{display:none;position:absolute;top:-3px;left:50%;transform:translate(-50%,-100%);
     background:rgba(255,255,255,.92);border:none;box-shadow:0 1px 3px rgba(0,0,0,.3);
     font-size:10px;font-weight:700;padding:1px 4px;border-radius:3px;white-space:nowrap;}
@@ -407,7 +417,7 @@
   #deviceHeader h2{margin:0;font-size:1.1rem;color:var(--pea-purple);}
   #deviceCloseBtn{border:none;background:none;font-size:1.3rem;cursor:pointer;color:var(--muted);}
   #deviceBody{padding:16px 18px;overflow:auto;flex:1;min-height:0;}
-  .device-view-row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;
+  .device-view-row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;
     border-bottom:1px solid #f0f0f0;font-size:1rem;}
   .device-view-row .k{color:var(--muted);flex:0 0 auto;}
   .device-view-row .v{font-weight:600;text-align:right;}
@@ -722,7 +732,10 @@
   <div id="searchbar">
     <button id="backBtn">← ภาพรวมทั้งหมด</button>
     <div id="searchResults" style="flex:1;max-width:420px;">
-      <input id="searchInput" type="text" placeholder="ค้นหา เช่น ALA01WS-101, บ.นาเหนือ, โรงงาน...">
+      <div style="display:flex;gap:6px;">
+        <input id="searchInput" type="text" placeholder="ค้นหา เช่น ALA01WS-101, 57-004243, บ.นาเหนือ..." style="flex:1;min-width:0;">
+        <button id="searchGoBtn" title="ค้นหาแล้วซูมไปที่ตำแหน่ง">🔍</button>
+      </div>
       <div id="searchResultsList"></div>
     </div>
     <button id="clearBtn">แสดงทั้งหมด</button>
@@ -2632,6 +2645,8 @@ function rebuildMapMarkers(){
   if(!leafletMap) return;
   leafletMap.Overlays.clear();
   poleOverlays = []; drawnPoles = []; poleViewKey = '';   // Overlays.clear() ลบหมุดเสาไปด้วย ต้องวาดใหม่
+  searchHighlightOverlay = null;
+  setTimeout(()=>{ if(searchHighlight) drawSearchHighlight(); }, 0);
   setTimeout(()=>{ if(polesEnabled()) redrawPoles(); }, 0);
   mapMarkers = [];
   markerDeviceLookup = new Map();
@@ -2792,7 +2807,7 @@ function ensureMapHoverTip(){
     tip = document.createElement('div');
     tip.id = 'mapHoverTip';
     tip.style.cssText = 'position:fixed;z-index:5500;pointer-events:none;display:none;background:#fff;border:1px solid #e3ddd0;'+
-      'border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.22);padding:8px 10px;font-size:12px;line-height:1.55;max-width:260px;color:#222;';
+      'border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.18);padding:10px 12px;font-size:13px;line-height:1.6;max-width:290px;color:#222;';
     document.body.appendChild(tip);
   }
   return tip;
@@ -2800,8 +2815,8 @@ function ensureMapHoverTip(){
 function hideMapHoverTip(){ const t = document.getElementById('mapHoverTip'); if(t) t.style.display = 'none'; }
 function mapHoverTipHtml(f, d){
   const rows = [];
-  rows.push(`<div style="font-weight:700;color:#4b2e83;font-family:Consolas,monospace;font-size:13px;">${escapeHtml(d.id)}</div>`);
-  rows.push(`<div style="color:#777;">${escapeHtml(MAP_TYPE_LABEL[d.type] || d.type || '')} · <span style="color:${escapeHtml(f.color)};font-weight:700;">${escapeHtml(f.id)}</span></div>`);
+  rows.push(`<div style="font-weight:700;color:#4b2e83;font-family:Consolas,monospace;font-size:14px;letter-spacing:.2px;">${escapeHtml(d.id)}</div>`);
+  rows.push(`<div style="color:#777;font-size:12px;margin-bottom:4px;">${escapeHtml(MAP_TYPE_LABEL[d.type] || d.type || '')} · <span style="color:${escapeHtml(f.color)};font-weight:700;">${escapeHtml(f.id)}</span></div>`);
   if(d.rating) rows.push(`ขนาด: <b>${escapeHtml(d.rating)}</b>${d.ratingConfidence==='estimated'?' <span style="color:#b5651d">(ประมาณ)</span>':''}`);
   if(d.desc) rows.push(escapeHtml(d.desc));
   if(d.parentId) rows.push(`ต่อจาก: <b>${escapeHtml(d.parentId)}</b>${d.parentConfidence==='estimated'?' <span style="color:#b5651d">(ประมาณจากพิกัด)</span>':''}`);
@@ -2824,7 +2839,7 @@ function mapHoverTipHtml(f, d){
     const c = lp >= 100 ? '#c62828' : lp >= 80 ? '#b26a00' : '#2e7d32';
     rows.push(`โหลด (OPSA): <b style="color:${c}">${lp}%</b>`);
   }
-  rows.push(`<div style="color:#999;font-size:11px;margin-top:3px;">คลิกเพื่อดูรายละเอียด / แก้ไข</div>`);
+  rows.push(`<div style="color:#999;font-size:11px;margin-top:5px;padding-top:5px;border-top:1px dashed #eee;">คลิกเพื่อดูรายละเอียด / แก้ไข</div>`);
   return rows.map(r => r.startsWith('<div') ? r : `<div>${r}</div>`).join('');
 }
 // ===== ชั้นข้อมูลเสาไฟฟ้า (โหลดจากไฟล์ poles.json เมื่อผู้ใช้เปิดใช้งาน) =====
@@ -5190,20 +5205,83 @@ function doSearch(q){
       </div>`).join('');
     list.querySelectorAll('div[data-fid]').forEach(row => {
       row.addEventListener('click', () => {
-        showFeederDetail(row.getAttribute('data-fid'));
-        list.style.display = 'none';
-        document.getElementById('searchInput').value = row.getAttribute('data-id');
         const foundId = row.getAttribute('data-id');
-        setTimeout(()=>{ highlightAndScrollTo(foundId); openDeviceModal(foundId); }, 60);
+        focusDevice(row.getAttribute('data-fid'), foundId);
+        setTimeout(()=>{ openDeviceModal(foundId); }, 700);
       });
     });
   }
   list.style.display = 'block';
 }
 
+/* ===== ค้นหาแล้วซูมไปที่ตำแหน่งบนแผนที่จริง พร้อมหมุดไฮไลต์ ===== */
+let searchHighlight = null, searchHighlightOverlay = null;
+function findBestDevice(q){
+  q = String(q || '').trim().toLowerCase();
+  if(!q) return null;
+  let exact = null, starts = null, contains = null;
+  DATA.feeders.forEach(f => f.devices.forEach(d => {
+    const id = d.id.toLowerCase(), desc = (d.desc || '').toLowerCase();
+    if(!exact && id === q) exact = { f, d };
+    else if(!starts && id.indexOf(q) === 0) starts = { f, d };
+    else if(!contains && (id.indexOf(q) >= 0 || desc.indexOf(q) >= 0)) contains = { f, d };
+  }));
+  return exact || starts || contains;
+}
+function drawSearchHighlight(){
+  if(!leafletMap || !searchHighlight) return;
+  try{ if(searchHighlightOverlay) leafletMap.Overlays.remove(searchHighlightOverlay); }catch(e){}
+  const h = searchHighlight;
+  searchHighlightOverlay = new longdo.Marker({ lon: h.lon, lat: h.lat }, {
+    icon: { html: `<div class="srch-mark"><div class="ring"></div><div class="ring r2"></div><div class="dot"></div>
+                     <div class="lbl">${escapeHtml(h.id)}</div></div>`, offset: { x: 23, y: 23 } },
+    weight: longdo.OverlayWeight.Top
+  });
+  try{ leafletMap.Overlays.add(searchHighlightOverlay); }catch(e){}
+}
+function clearSearchHighlight(){
+  try{ if(leafletMap && searchHighlightOverlay) leafletMap.Overlays.remove(searchHighlightOverlay); }catch(e){}
+  searchHighlight = null; searchHighlightOverlay = null;
+}
+/* ซูมไปที่อุปกรณ์: เปิดวงจร ไฮไลต์ในผัง แล้วสลับไปแผนที่จริงและปักหมุด */
+function focusDevice(fid, id){
+  const f = DATA.feeders.find(x => x.id === fid);
+  const d = f && f.devices.find(x => x.id === id);
+  if(!d) return;
+  document.getElementById('searchResultsList').style.display = 'none';
+  document.getElementById('searchInput').value = d.id;
+  if(selectedFeeder !== fid) showFeederDetail(fid);
+  setTimeout(()=>{ try{ highlightAndScrollTo(d.id); }catch(e){} }, 60);
+
+  if(d.lat == null || d.lon == null){
+    showToast('อุปกรณ์ ' + d.id + ' ยังไม่มีพิกัด จึงแสดงได้เฉพาะในผัง', 'warn');
+    return;
+  }
+  searchHighlight = { lat: d.lat, lon: d.lon, id: d.id };
+  if(!mapMode) toggleMapMode();
+  const go = ()=>{
+    if(!leafletMap){ setTimeout(go, 150); return; }
+    leafletMap.location({ lon: d.lon, lat: d.lat }, true);
+    leafletMap.zoom(18, true);
+    drawSearchHighlight();
+  };
+  setTimeout(go, 250);   // รอให้แผนที่และการปรับมุมมองตอนเปิดทำงานเสร็จก่อน
+}
+function runSearch(){
+  const q = document.getElementById('searchInput').value;
+  const hit = findBestDevice(q);
+  if(!hit){ showToast('ไม่พบ "' + q.trim() + '" ในผัง', 'warn'); return; }
+  focusDevice(hit.f.id, hit.d.id);
+}
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if(e.key === 'Enter'){ e.preventDefault(); runSearch(); }
+});
+document.getElementById('searchGoBtn').addEventListener('click', runSearch);
+
 document.getElementById('searchInput').addEventListener('input', e => doSearch(e.target.value));
 document.getElementById('searchInput').addEventListener('focus', e => e.target.select());
 document.getElementById('clearBtn').addEventListener('click', () => {
+  clearSearchHighlight();
   document.getElementById('searchInput').value = '';
   document.getElementById('searchResultsList').style.display = 'none';
   selectedFeeder = null; editingDeviceId = null;
