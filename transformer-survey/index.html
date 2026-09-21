@@ -321,6 +321,21 @@
   #toast.err{background:var(--bad);}
   #toast.ok{background:var(--good);}
   #toast.warn{background:var(--warn);}
+  #poleMap{height:270px;border-radius:10px;overflow:hidden;border:1px solid var(--line);}
+  .pole-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;font-size:.9rem;}
+  .pole-state{font-size:.74rem;padding:3px 10px;border-radius:10px;background:#fdecea;color:#c62828;font-weight:700;white-space:nowrap;}
+  .pole-state.ok{background:#eaf4eb;color:#2e7d32;}
+  .pole-state.warn{background:#fdf3e6;color:#b26a00;}
+  .pole-tools{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+  .pole-tools button{flex:1;min-width:52px;padding:8px 6px;border-radius:8px;border:1.5px solid var(--pea-purple);
+    background:#fff;color:var(--pea-purple);font:inherit;font-size:.8rem;cursor:pointer;}
+  .pole-legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:.74rem;color:#4e4b45;}
+  .pole-legend i{display:inline-block;width:10px;height:10px;margin-right:4px;vertical-align:-1px;border:1.5px solid #fff;outline:1px solid #bbb;}
+  .pole-legend i.rd{border-radius:50%;}
+  .pole-hint{font-size:.74rem;color:#4e4b45;margin-top:6px;line-height:1.6;}
+  .pole-manual{width:100%;margin-top:8px;padding:9px;border-radius:8px;border:1.5px dashed var(--pea-purple);
+    background:#faf8fd;color:var(--pea-purple);font:inherit;font-size:.82rem;cursor:pointer;}
+  @keyframes polePulse{0%,100%{transform:scale(1);opacity:1;}50%{transform:scale(1.18);opacity:.6;}}
 </style>
 </head>
 <body>
@@ -1143,6 +1158,179 @@ function compressImage(file){
 }
 
 // ============ จับ GPS แบบหลายครั้ง — เลือกค่าที่แม่นที่สุดแล้วเฉลี่ย ============
+/* ============ เสียงประกอบ (สร้างเสียงในเครื่อง ไม่ต้องโหลดไฟล์) ============ */
+let audioCtx = null;
+function beep(kind){
+  if(localStorage.getItem('patrol_sound') === 'off') return;   // ใช้ค่าเปิด/ปิดเสียงเดียวกับแอป Patrol
+  try{
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    const notes = kind === 'ok'  ? [[880,0,.12],[1318,.12,.2]]
+                : kind === 'err' ? [[220,0,.18],[165,.18,.28]]
+                : kind === 'save'? [[660,0,.1],[880,.1,.1],[1318,.2,.25]]
+                : [[700,0,.07]];
+    notes.forEach(([f,t,dur])=>{
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = kind === 'err' ? 'square' : 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(.0001, audioCtx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(.25, audioCtx.currentTime + t + .02);
+      g.gain.exponentialRampToValueAtTime(.0001, audioCtx.currentTime + t + dur);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(audioCtx.currentTime + t); o.stop(audioCtx.currentTime + t + dur + .02);
+    });
+    if(navigator.vibrate) navigator.vibrate(kind === 'err' ? [80,60,80] : kind === 'tap' ? 15 : 50);
+  }catch(e){}
+}
+
+/* ============ แผนที่เลือกเสา (ข้อ 1) — ใช้ข้อมูลเสาชุดเดียวกับ Patrol ============ */
+const POLE_GPS_WARN_M = 30;         // พิกัดเสากับ GPS ห่างเกินนี้ = เตือนว่าอาจเลือกผิดต้น
+const POLE_AUTO_M = 60;             // เลือกเสาให้อัตโนมัติเฉพาะต้นที่อยู่ในรัศมีนี้
+const POLE_COLOR = { 0:'#d32f2f', 1:'#2e7d32', 2:'#6a1b9a', 3:'#d32f2f', 4:'#9e9e9e' };
+let POLES = null, polesLoading = null, poleMap = null, poleItems = [], poleCenter = null;
+
+function loadPoles(){
+  if(POLES) return Promise.resolve(POLES);
+  if(polesLoading) return polesLoading;
+  polesLoading = fetch('../poles.json').then(r=> r.ok ? r.json() : null)
+    .then(j=>{ POLES = j; return j; }).catch(()=> null);
+  return polesLoading;
+}
+function poleTag(p){
+  const pre = (POLES.prefix && POLES.prefix[p[3]]) || '';
+  return p[4] ? pre + String(p[4]).padStart(9, '0') : '(ไม่มีเลขในระบบ)';
+}
+function nearPoles(lat, lon, n, maxM){
+  if(!POLES) return [];
+  const out = [];
+  for(const p of POLES.poles){
+    if(Math.abs(p[0]-lat) > 0.006 || Math.abs(p[1]-lon) > 0.006) continue;
+    const dd = gpsDistanceMeters(lat, lon, p[0], p[1]);
+    if(dd <= (maxM || 500)) out.push({ p, d: dd });
+  }
+  out.sort((a,b)=> a.d - b.d);
+  return out.slice(0, n || 60);
+}
+function setPole(p){
+  if(!p){ form.pole = null; }
+  else{
+    form.pole = { tag: poleTag(p), lat: p[0], lon: p[1], volt: p[2],
+                  gpsDist: form.gps ? gpsDistanceMeters(form.gps.lat, form.gps.lon, p[0], p[1]) : null };
+  }
+  if(form.gps) renderGpsResult();
+  updatePoleState();
+  syncStatusUi();
+  drawPoleMap();
+}
+/* เลือกเสาใกล้ที่สุดให้อัตโนมัติหลังจับ GPS */
+async function autoPickPole(){
+  if(!form || !form.gps || form.pole) return;
+  await loadPoles();
+  if(!form || !form.gps || !POLES) return;
+  const near = nearPoles(form.gps.lat, form.gps.lon, 1, POLE_AUTO_M);
+  if(near.length){
+    setPole(near[0].p);
+    showToast('เลือกเสาใกล้ที่สุดให้แล้ว (ห่าง ' + near[0].d.toFixed(1) + ' ม.) — แตะเสาต้นอื่นบนแผนที่เพื่อเปลี่ยน', 'ok');
+  } else {
+    updatePoleState();
+  }
+}
+function updatePoleState(){
+  const el = document.getElementById('poleState');
+  if(!el) return;
+  if(!form.pole){ el.textContent = 'ยังไม่ได้เลือก'; el.className = 'pole-state'; return; }
+  const warn = form.pole.gpsDist != null && form.pole.gpsDist > POLE_GPS_WARN_M;
+  el.textContent = (warn ? '⚠ ' : '✓ ') + form.pole.tag.slice(-9);
+  el.className = 'pole-state ' + (warn ? 'warn' : 'ok');
+}
+async function renderPoleMap(){
+  if(!form) return;
+  const wrap = document.getElementById('poleMapWrap');
+  if(!wrap) return;
+  const center = form.gps || form.pole || (form.manualPole && hasGps(form.d) ? form.d : null);
+  if(!center){ wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  const manual = document.getElementById('poleManualBtn');
+  if(manual) manual.style.display = 'none';
+  await loadPoles();
+  if(!POLES){ document.querySelector('#poleMapWrap .pole-hint').textContent = 'โหลดข้อมูลเสาไม่ได้ — ต้องมีไฟล์ poles.json ในโฟลเดอร์ sld-ala'; return; }
+  const el = document.getElementById('poleMap');
+  if(!el || typeof longdo === 'undefined') return;
+  // ฟอร์มถูกวาดใหม่ทุกครั้ง จึงต้องสร้างแผนที่ใหม่ถ้ากล่องเดิมหายไป
+  if(!poleMap || poleMap.__el !== el){
+    poleMap = new longdo.Map({ placeholder: el, zoom: 19, lastView: false, location: { lon: center.lon, lat: center.lat } });
+    poleMap.__el = el;
+    try{ poleMap.Ui.DPad.visible(false); poleMap.Ui.Zoombar.visible(false); }catch(e){}
+  }
+  poleCenter = { lat: center.lat, lon: center.lon };
+  poleMap.location({ lon: center.lon, lat: center.lat }, true);
+  updatePoleState();
+  drawPoleMap();
+}
+function drawPoleMap(){
+  if(!poleMap || !form || !poleCenter) return;
+  poleMap.Overlays.clear();
+  poleItems = [];
+  const ref = form.gps || poleCenter;
+  nearPoles(ref.lat, ref.lon, 70, 400).forEach(x=>{
+    const tag = poleTag(x.p);
+    const on = form.pole && form.pole.tag === tag && Math.abs(form.pole.lat - x.p[0]) < 1e-6;
+    poleItems.push({ lat: x.p[0], lon: x.p[1], p: x.p });
+    const html = on
+      ? `<div style="position:relative;width:36px;height:36px;">
+           <div style="position:absolute;inset:0;border-radius:50%;background:rgba(75,46,131,.22);border:2px solid #4b2e83;animation:polePulse 1.4s ease-in-out infinite;"></div>
+           <div style="position:absolute;left:10px;top:10px;width:16px;height:16px;background:#4b2e83;border:3px solid #fff;box-shadow:0 0 5px rgba(0,0,0,.55);"></div>
+           <div style="position:absolute;top:-20px;left:50%;transform:translateX(-50%);background:#4b2e83;color:#fff;font:700 10px Consolas,monospace;padding:2px 6px;border-radius:9px;white-space:nowrap;">${escapeHtml(tag.slice(-6))}</div>
+         </div>`
+      : `<div style="width:14px;height:14px;background:${POLE_COLOR[x.p[2]] || '#9e9e9e'};border:2px solid #fff;box-shadow:0 0 3px rgba(0,0,0,.5);"></div>`;
+    poleMap.Overlays.add(new longdo.Marker({ lon: x.p[1], lat: x.p[0] }, { icon: { html, offset: on ? { x:18, y:18 } : { x:8, y:8 } } }));
+  });
+  // พิกัดหม้อแปลงในระบบ — เห็นทันทีว่าเพี้ยนไปจากเสาแค่ไหน
+  if(hasGps(form.d)){
+    poleMap.Overlays.add(new longdo.Marker({ lon: form.d.lon, lat: form.d.lat }, {
+      icon: { html: `<div style="width:15px;height:15px;border-radius:50%;background:#e07b00;border:3px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.5);"></div>`, offset: { x:10, y:10 } } }));
+  }
+  // ตำแหน่งฉัน + วงความแม่นยำ
+  if(form.gps){
+    try{
+      poleMap.Overlays.add(new longdo.Circle({ lon: form.gps.lon, lat: form.gps.lat }, Math.max(form.gps.accuracy, 4) / 111320,
+        { lineWidth:1, lineColor:'rgba(21,101,192,.8)', fillColor:'rgba(21,101,192,.14)' }));
+    }catch(e){}
+    poleMap.Overlays.add(new longdo.Marker({ lon: form.gps.lon, lat: form.gps.lat }, {
+      icon: { html: `<div style="width:15px;height:15px;border-radius:50%;background:#1565c0;border:3px solid #fff;box-shadow:0 0 5px rgba(0,0,0,.5);"></div>`, offset: { x:10, y:10 } } }));
+  }
+}
+/* แตะบนแผนที่ = เลือกเสาที่ใกล้นิ้วที่สุด (ฟังที่ window แบบ capture เพราะ Longdo ดักเหตุการณ์ไว้ชั้นใน) */
+(function bindPoleTap(){
+  const mercY = lat => Math.log(Math.tan(Math.PI/4 + lat*Math.PI/360));
+  let down = null;
+  const start = (x, y)=>{ down = { x, y }; };
+  const end = (x, y, target)=>{
+    const d0 = down; down = null;
+    if(!d0 || !poleMap || !poleItems.length) return;
+    if(Math.hypot(x - d0.x, y - d0.y) > 14) return;
+    const el = document.getElementById('poleMap');
+    if(!el || !el.contains(target)) return;
+    if(target.closest && target.closest('button, a, input, select, label')) return;
+    const r = el.getBoundingClientRect();
+    if(x > r.right - 150 && y < r.top + 46) return;       // แถบสลับแผนที่/ดาวเทียมของ Longdo
+    let b; try{ b = poleMap.bound(); }catch(e){ return; }
+    const yTop = mercY(b.maxLat), yBot = mercY(b.minLat);
+    let best = null, bestD = 34;
+    poleItems.forEach(it=>{
+      const px = (it.lon - b.minLon) / (b.maxLon - b.minLon) * r.width;
+      const py = (yTop - mercY(it.lat)) / (yTop - yBot) * r.height;
+      const dd = Math.hypot(px - (x - r.left), py - (y - r.top));
+      if(dd < bestD){ bestD = dd; best = it; }
+    });
+    if(best){ beep('tap'); setPole(best.p); }
+  };
+  window.addEventListener('pointerdown', e=> start(e.clientX, e.clientY), true);
+  window.addEventListener('pointerup', e=> end(e.clientX, e.clientY, e.target), true);
+  window.addEventListener('touchstart', e=>{ if(e.touches[0]) start(e.touches[0].clientX, e.touches[0].clientY); }, true);
+  window.addEventListener('touchend', e=>{ const t = e.changedTouches[0]; if(t) end(t.clientX, t.clientY, e.target); }, true);
+})();
+
 function captureGps(onProgress){
   let watchId = null, timer = null, stopped = false;
   const samples = [];
@@ -1177,6 +1365,15 @@ function captureGps(onProgress){
     timer = setTimeout(()=>finish('timeout'), GPS_MAX_SECONDS * 1000);
   }
   return { promise, stop: ()=>finish('manual') };
+}
+/* ตำแหน่งที่ใช้ตัดสินผลตรวจ — แบบ ค: ถ้าเลือกเสาแล้ว ใช้พิกัดเสาจาก GIS (คลาดเพียง 1–3 ม.)
+   ถ้ายังไม่เลือกเสา ใช้ GPS มือถือตามเดิม · GPS ดิบยังถูกบันทึกแยกไว้เสมอ */
+const POLE_ACCURACY_M = 3;
+function checkPos(){
+  if(!form) return null;
+  if(form.pole) return { lat: form.pole.lat, lon: form.pole.lon, accuracy: POLE_ACCURACY_M,
+                         samples: form.gps ? form.gps.samples : 0, fromPole: true };
+  return form.gps;
 }
 function gpsVerdict(d, gps){
   if(!gps) return null;
@@ -1267,7 +1464,7 @@ function openDetail(feederId, id){
   form = { f, d, gps: null, status: null, issues: {}, correctedRating:'', correctedDesc:'', peaNo:'',
     note:'', noGps:false, updateCoords:false, photos:{},
     parentCheck:'skip', newParentId:'', savedVerify:false,
-    checks:{}, newPhase:'', newTxType:'' };
+    checks:{}, newPhase:'', newTxType:'', pole:null };
   document.getElementById('detailOverlay').classList.add('show');
   renderDetailForm();
 }
@@ -1398,7 +1595,29 @@ function renderDetailForm(){
       <div class="sec-title">1. จับพิกัดที่หม้อแปลง <span class="req">จำเป็น</span></div>
       <button type="button" class="btn-main" id="gpsBtn">📍 เริ่มจับพิกัด GPS</button>
       <div class="gps-live" id="gpsLive"></div>
+      <div id="poleMapWrap" style="display:none;margin-top:10px;">
+        <div class="pole-head">
+          <b>เสาที่หม้อแปลงติดตั้ง</b>
+          <span id="poleState" class="pole-state">ยังไม่ได้เลือก</span>
+        </div>
+        <div id="poleMap"></div>
+        <div class="pole-tools">
+          <button type="button" id="poleMeBtn">📍 ตำแหน่งฉัน</button>
+          <button type="button" id="poleTxBtn">⚡ พิกัดในระบบ</button>
+          <button type="button" id="poleZoomOut">−</button>
+          <button type="button" id="poleZoomIn">＋</button>
+          <button type="button" id="poleClearBtn">ไม่ใช้เสา</button>
+        </div>
+        <div class="pole-legend">
+          <span><i style="background:#d32f2f"></i>เสาแรงสูง</span>
+          <span><i style="background:#2e7d32"></i>เสาแรงต่ำ</span>
+          <span><i class="rd" style="background:#1565c0"></i>ตำแหน่งฉัน</span>
+          <span><i class="rd" style="background:#e07b00"></i>พิกัดในระบบ</span>
+        </div>
+        <div class="pole-hint">ระบบเลือกเสาใกล้ที่สุดให้แล้ว · แตะเสาต้นอื่นบนแผนที่เพื่อเปลี่ยน · สลับแผนที่/ดาวเทียมที่มุมขวาบน</div>
+      </div>
       <label class="check" id="noGpsWrap"><input type="checkbox" id="noGpsChk"> จับ GPS ไม่ได้ (ต้องระบุเหตุผลในหมายเหตุ)</label>
+      <button type="button" id="poleManualBtn" class="pole-manual">🗺 เลือกเสาจากแผนที่แทน (กรณีจับ GPS ไม่ได้)</button>
     </div>
 
     <div class="sec">
@@ -1591,6 +1810,17 @@ async function renderHistoryBox(deviceId){
 function bindDetailForm(){
   const { f, d } = form;
   const body = document.getElementById('detailBody');
+  const on = (id, fn)=>{ const el = document.getElementById(id); if(el) el.addEventListener('click', fn); };
+  on('poleMeBtn', ()=>{ if(poleMap && form.gps){ poleMap.location({ lon:form.gps.lon, lat:form.gps.lat }, true); beep('tap'); } });
+  on('poleTxBtn', ()=>{ if(poleMap && hasGps(d)){ poleMap.location({ lon:d.lon, lat:d.lat }, true); beep('tap'); }
+                        else showToast('หม้อแปลงนี้ยังไม่มีพิกัดในระบบ', 'warn'); });
+  on('poleZoomIn', ()=>{ if(poleMap) poleMap.zoom(poleMap.zoom() + 1, true); });
+  on('poleZoomOut', ()=>{ if(poleMap) poleMap.zoom(poleMap.zoom() - 1, true); });
+  on('poleClearBtn', ()=>{ setPole(null); beep('tap'); showToast('ไม่ใช้พิกัดเสา — กลับไปใช้ GPS มือถือ', 'ok'); });
+  on('poleManualBtn', ()=>{
+    if(!hasGps(d)){ showToast('หม้อแปลงนี้ยังไม่มีพิกัดในระบบ ต้องจับ GPS ก่อน', 'warn'); return; }
+    form.manualPole = true; renderPoleMap();
+  });
   const mapBtn = document.getElementById('showOnMapBtn');
   if(mapBtn) mapBtn.addEventListener('click', ()=>{
     closeDetail();
@@ -1673,7 +1903,7 @@ function syncParentUi(){
 }
 function renderCandidates(){
   const { f, d } = form;
-  const ref = form.gps || (hasGps(d) ? d : null);
+  const ref = checkPos() || (hasGps(d) ? d : null);
   const cands = parentCandidates(f, d, ref);
   const prot = protectiveDevice(f, d);
   const dl = document.getElementById('parentList');
@@ -1703,6 +1933,7 @@ function restoreFormValues(){
   document.getElementById('noteInput').value = form.note;
   document.getElementById('noGpsChk').checked = form.noGps;
   if(form.gps) renderGpsResult();
+  setTimeout(()=> renderPoleMap(), 60);
   Object.keys(form.photos).forEach(showPhoto);
   syncStatusUi();
   renderParentInfo();
@@ -1722,7 +1953,8 @@ function showPhoto(key){
 }
 // สรุปผลจากการตรวจรายช่อง → form.status / form.issues / ค่าที่แก้ (ใช้ต่อในหน้ายืนยันและตอนบันทึก)
 function deriveFromChecks(){
-  const { d, gps } = form;
+  const { d } = form;
+  const gps = checkPos();
   const v = gpsVerdict(d, gps);
   const chk = k => form.checks[k] || {};
   const changed = (k, oldVal) => chk(k).state === 'edit' && String(chk(k).value||'').trim() !== '' &&
@@ -1743,6 +1975,10 @@ function deriveFromChecks(){
   form.status = anyIssue ? 'mismatch' : (pending.length ? null : 'match');
   return { pending, v };
 }
+document.addEventListener('click', e=>{
+  const t = e.target && e.target.closest && e.target.closest('.chk-btn, #gpsBtn, .btn-main');
+  if(t) beep('tap');
+}, true);
 function syncChecksUi(rebuildSummaryOnly){
   const { pending, v } = deriveFromChecks();
   document.querySelectorAll('#checkList .chk-row[data-key]').forEach(row=>{
@@ -1757,10 +1993,10 @@ function syncChecksUi(rebuildSummaryOnly){
   });
   const locText = document.getElementById('locCheckText'), locBadge = document.getElementById('locCheckBadge');
   if(locText){
-    if(!form.gps){ locText.textContent = form.noGps ? 'จับ GPS ไม่ได้' : 'ยังไม่ได้จับ GPS'; locBadge.textContent = ''; locBadge.className = 'chk-auto'; }
+    if(!checkPos()){ locText.textContent = form.noGps ? 'จับ GPS ไม่ได้' : 'ยังไม่ได้จับ GPS'; locBadge.textContent = ''; locBadge.className = 'chk-auto'; }
     else if(v.kind === 'first'){ locText.textContent = 'ยังไม่มีพิกัดในระบบ — จะบันทึกพิกัดนี้'; locBadge.textContent = '✓ อัตโนมัติ'; locBadge.className = 'chk-auto c-ok'; }
     else if(v.kind === 'ok'){ locText.textContent = `ห่าง ${v.dist.toFixed(1)} ม.`; locBadge.textContent = '✓ ตรง'; locBadge.className = 'chk-auto c-ok'; }
-    else if(v.kind === 'unsure'){ locText.textContent = `ห่าง ${v.dist.toFixed(1)} ม. (GPS ±${Math.round(form.gps.accuracy)} ม.)`; locBadge.textContent = '⚠ ไม่แน่ชัด'; locBadge.className = 'chk-auto c-mid'; }
+    else if(v.kind === 'unsure'){ locText.textContent = `ห่าง ${v.dist.toFixed(1)} ม. (${checkPos().fromPole ? 'พิกัดเสา' : 'GPS ±' + Math.round(checkPos().accuracy) + ' ม.'})`; locBadge.textContent = '⚠ ไม่แน่ชัด'; locBadge.className = 'chk-auto c-mid'; }
     else { locText.textContent = `ห่าง ${v.dist.toFixed(1)} ม. เกินเกณฑ์`; locBadge.textContent = '✏ ไม่ตรง'; locBadge.className = 'chk-auto c-hi'; }
   }
   const sum = document.getElementById('checkSummary');
@@ -1773,13 +2009,14 @@ function syncChecksUi(rebuildSummaryOnly){
   if(!rebuildSummaryOnly) renderCoordUpdateOption();
 }
 function syncStatusUi(){
-  document.getElementById('noGpsWrap').style.display = form.gps ? 'none' : 'flex';
+  document.getElementById('noGpsWrap').style.display = checkPos() ? 'none' : 'flex';
   syncChecksUi();
 }
 function renderCoordUpdateOption(){
   const wrap = document.getElementById('coordUpdateWrap');
   if(!wrap) return;
-  const { d, gps } = form;
+  const { d } = form;
+  const gps = checkPos();
   const v = gpsVerdict(d, gps);
   const canUpdate = form.status === 'mismatch' && form.issues.location && gps && hasGps(d) && v && v.kind !== 'ok'
     && gps.accuracy <= GPS_GOOD_ACCURACY_M;
@@ -1814,6 +2051,7 @@ function startGps(){
     document.getElementById('gpsBtn').textContent = '📍 จับพิกัดใหม่';
     if(!result){
       form.gps = null;
+      beep('err');
       document.getElementById('gpsLive').innerHTML = `<div class="verdict bad">${
         reason === 'denied' ? 'ไม่ได้รับอนุญาตเข้าถึงตำแหน่ง — เปิดสิทธิ์ตำแหน่งให้เบราว์เซอร์/แอป แล้วลองใหม่' :
         reason === 'unsupported' ? 'อุปกรณ์นี้ไม่รองรับ GPS' : 'ไม่ได้รับสัญญาณ GPS — ลองออกไปที่โล่งแล้วจับใหม่'}</div>`;
@@ -1823,32 +2061,41 @@ function startGps(){
     form.gps = result;
     myPos = { lat: result.lat, lon: result.lon, accuracy: result.accuracy, time: Date.now() };
     form.noGps = false;
-    const v = gpsVerdict(form.d, result);
+    beep('ok');
+    autoPickPole();
     renderGpsResult();
     syncStatusUi();
+    renderPoleMap();
   });
 }
 function renderGpsResult(){
-  const { d, gps } = form;
-  const v = gpsVerdict(d, gps);
+  const { d } = form;
+  const gps = form.gps;
+  const v = gpsVerdict(d, checkPos());
   const head = `พิกัดที่จับได้ ${gps.lat.toFixed(6)}, ${gps.lon.toFixed(6)} <b>(±${Math.round(gps.accuracy)} ม.)</b> จาก ${gps.samples} ค่า`;
   let verdictHtml = '';
   if(v.kind === 'first') verdictHtml = `<div class="verdict first">ยังไม่มีพิกัดในระบบ — จะบันทึกพิกัดนี้เป็นพิกัดแรกของหม้อแปลง</div>`;
   else if(v.kind === 'ok') verdictHtml = `<div class="verdict ok">✅ ตำแหน่งตรงกัน (ห่าง ${v.dist.toFixed(1)} ม.)</div>`;
   else if(v.kind === 'unsure') verdictHtml = `<div class="verdict unsure">⚠ ห่าง ${v.dist.toFixed(1)} ม. — ยังสรุปไม่ได้เพราะ GPS คลาดได้ ±${Math.round(gps.accuracy)} ม. ลองจับใหม่ในที่โล่งเพื่อผลที่ชัดขึ้น</div>`;
   else verdictHtml = `<div class="verdict bad">❌ ห่าง ${v.dist.toFixed(1)} ม. เกินเกณฑ์ ${GPS_TOLERANCE_M} ม.</div>`;
-  document.getElementById('gpsLive').innerHTML = head + verdictHtml;
+  const poleNote = form.pole
+    ? `<div class="verdict ${form.pole.gpsDist != null && form.pole.gpsDist > POLE_GPS_WARN_M ? 'unsure' : 'first'}" style="margin-top:6px;">
+         📍 ใช้พิกัดเสา <b>${escapeHtml(form.pole.tag)}</b> เป็นตำแหน่งหม้อแปลง
+         ${form.pole.gpsDist != null ? ' · ห่างจาก GPS ' + form.pole.gpsDist.toFixed(1) + ' ม.' : ''}
+         ${form.pole.gpsDist != null && form.pole.gpsDist > POLE_GPS_WARN_M ? '<br>⚠ ห่างเกิน ' + POLE_GPS_WARN_M + ' ม. — ตรวจว่าเลือกเสาถูกต้น' : ''}</div>`
+    : '';
+  document.getElementById('gpsLive').innerHTML = head + verdictHtml + poleNote;
 }
 
 function reviewForm(){
   const { d } = form;
   const err = document.getElementById('formErr');
   err.textContent = '';
-  const v = gpsVerdict(d, form.gps);
+  const v = gpsVerdict(d, checkPos());
   const fail = msg=>{ err.textContent = msg; err.scrollIntoView({ block:'center', behavior:'smooth' }); };
   if(activeGps) return fail('กำลังจับ GPS อยู่ — รอให้เสร็จ หรือกด "หยุดและใช้ค่านี้" ก่อน');
-  if(!form.gps && !form.noGps) return fail('กรุณาจับพิกัด GPS ที่หม้อแปลงก่อน (ถ้าจับไม่ได้ ให้ติ๊ก "จับ GPS ไม่ได้" และระบุเหตุผล)');
-  if(!form.gps && form.noGps && !form.note.trim()) return fail('ติ๊ก "จับ GPS ไม่ได้" แล้ว ต้องระบุเหตุผลในช่องหมายเหตุ');
+  if(!checkPos() && !form.noGps) return fail('กรุณาจับพิกัด GPS ที่หม้อแปลงก่อน (ถ้าจับไม่ได้ ให้ติ๊ก "จับ GPS ไม่ได้" และระบุเหตุผล)');
+  if(!checkPos() && form.noGps && !form.note.trim()) return fail('ติ๊ก "จับ GPS ไม่ได้" แล้ว ต้องระบุเหตุผลในช่องหมายเหตุ');
   const { pending } = deriveFromChecks();
   const emptyEdit = CHECK_FIELDS.find(cf=>form.checks[cf.key] && form.checks[cf.key].state === 'edit' && !String(form.checks[cf.key].value||'').trim());
   if(emptyEdit) return fail(`กด "แก้" ที่ช่อง${emptyEdit.label}แล้ว — กรอกค่าที่พบจริง หรือกด "ตรง" ถ้าไม่ต้องแก้`);
@@ -1856,7 +2103,7 @@ function reviewForm(){
     document.getElementById('checkList').classList.add('show-need');
     return fail(`ตรวจข้อมูลให้ครบทุกช่องก่อน: ${pending.join(', ')}`);
   }
-  if(form.status === 'match' && !form.gps)
+  if(form.status === 'match' && !checkPos())
     return fail('ผลสำรวจ "ถูกต้อง" ต้องจับพิกัด GPS ที่หน้างานได้ก่อน');
   if(form.parentCheck === 'ok' && !protectiveDevice(form.f, d))
     return fail('ในระบบยังไม่มีต้นทางให้ยืนยัน — เลือก "ไม่ตรง" แล้วระบุอุปกรณ์ที่เห็นจริง');
@@ -1894,9 +2141,12 @@ function fullDeviceRow(d, overrides){
 }
 
 function buildPayload(){
-  const { f, d, gps } = form;
-  const v = gpsVerdict(d, gps);
+  const { f, d } = form;
+  const gps = form.gps;               // GPS มือถือดิบ — เก็บไว้เทียบเสมอ
+  const pos = checkPos();             // ตำแหน่งที่ใช้จริง (เสา ถ้าเลือก)
+  const v = gpsVerdict(d, pos);
   const tags = [];
+  if(form.pole) tags.push('เสา: ' + form.pole.tag + (form.pole.gpsDist != null ? ' (ห่าง GPS ' + form.pole.gpsDist.toFixed(1) + 'ม.)' : ''));
   if(form.status === 'mismatch') tags.push('ปัญหา: ' + ISSUES.filter(it=>form.issues[it.key]).map(it=>it.label).join(', '));
   if(form.issues.peaNo && form.peaNo.trim()) tags.push('เลขที่ตัวถัง: ' + form.peaNo.trim());
   if(form.issues.phase && form.newPhase) tags.push(`เฟส: ${d.phase||'-'} → ${form.newPhase}`);
@@ -1914,11 +2164,15 @@ function buildPayload(){
     correctedDesc: form.status==='mismatch' && form.issues.desc ? form.correctedDesc.trim() : '',
     gpsLat: gps ? gps.lat : null, gpsLon: gps ? gps.lon : null,
     gpsDistanceMeters: v && v.dist != null ? v.dist : null,
-    gpsWithinTolerance: v && v.dist != null ? v.dist <= GPS_TOLERANCE_M : null
+    gpsWithinTolerance: v && v.dist != null ? v.dist <= GPS_TOLERANCE_M : null,
+    poleTag: form.pole ? form.pole.tag : '',
+    poleLat: form.pole ? form.pole.lat : null,
+    poleLon: form.pole ? form.pole.lon : null,
+    poleGpsDistance: form.pole && form.pole.gpsDist != null ? form.pole.gpsDist : null
   };
   let updatedDevice = null;
-  if(gps && !hasGps(d)) updatedDevice = { lat: gps.lat, lon: gps.lon };           // พิกัดแรก
-  else if(gps && form.updateCoords) updatedDevice = { lat: gps.lat, lon: gps.lon }; // แก้พิกัดที่ผิด
+  if(pos && !hasGps(d)) updatedDevice = { lat: pos.lat, lon: pos.lon };           // พิกัดแรก
+  else if(pos && form.updateCoords) updatedDevice = { lat: pos.lat, lon: pos.lon }; // แก้พิกัดที่ผิด
   return { f, d, verification, updatedDevice };
 }
 
@@ -1950,7 +2204,8 @@ function renderConfirm(){
   if(form.issues.phase) rows.push(['แก้เฟส', `${escapeHtml(d.phase||'-')} → <b>${escapeHtml(form.newPhase)}</b>`]);
   if(form.issues.txType) rows.push(['แก้ชนิดหม้อแปลง', `${escapeHtml(TX_TYPES[txTypeOf(d)].label)} → <b>${escapeHtml(TX_TYPES[form.newTxType].label)}</b>`]);
   if(form.issues.peaNo) rows.push(['เลขที่ตัวถัง', `<b>${escapeHtml(form.peaNo)}</b> (จดในหมายเหตุ รหัสในระบบคงเดิม)`]);
-  if(form.gps) rows.push(['พิกัดที่จับได้', `${form.gps.lat.toFixed(6)}, ${form.gps.lon.toFixed(6)} (±${Math.round(form.gps.accuracy)} ม.)`]);
+  if(form.gps) rows.push(['พิกัดที่จับได้ (GPS)', `${form.gps.lat.toFixed(6)}, ${form.gps.lon.toFixed(6)} (±${Math.round(form.gps.accuracy)} ม.)`]);
+  if(form.pole) rows.push(['เสาที่ติดตั้ง', `${form.pole.tag} · ${form.pole.lat.toFixed(6)}, ${form.pole.lon.toFixed(6)}`]);
   else rows.push(['พิกัด', 'จับไม่ได้']);
   if(vf.gpsDistanceMeters != null) rows.push(['ห่างจากในระบบ', `${vf.gpsDistanceMeters.toFixed(1)} ม.`]);
   const pcPlan = parentChangePlan();
@@ -2000,6 +2255,7 @@ function showSaveLock(state, errMsg){
     document.getElementById('saveTitle').textContent = form && Object.keys(form.photos).length ? `💾 กำลังอัปโหลดรูป ${Object.keys(form.photos).length} รูปและบันทึก` : '💾 กำลังบันทึกลง Google Sheet';
     document.getElementById('saveText').textContent = 'กรุณารอสักครู่ อย่าปิดหรือรีเฟรชหน้านี้';
   } else {
+    beep('err');
     box.classList.add('err');
     document.getElementById('saveTitle').textContent = '⚠ บันทึกไม่สำเร็จ';
     document.getElementById('saveText').textContent = 'ผลสำรวจยังไม่ถูกบันทึก ข้อมูลที่กรอกยังอยู่ครบ — ลองบันทึกอีกครั้ง หรือย้ายไปที่สัญญาณดีกว่าแล้วลองใหม่';
@@ -2053,10 +2309,12 @@ async function saveSurvey(){
     saving = false;
   }
   if(errMsg){ showSaveLock('error', errMsg); return; }
+  beep('save');
 
   // บันทึกสำเร็จแล้ว จึงแก้ข้อมูลบนหน้าจอให้ตรงกับชีต (Code.gs แก้ช่องเหล่านี้ในแถวเดียวกัน)
   d.verified = { status: verification.status, date: verification.date };
   if(updatedDevice){ d.lat = updatedDevice.lat; d.lon = updatedDevice.lon; }
+  if(form && form.pole) d.poleTag = form.pole.tag;
   if(verification.correctedRating) d.rating = verification.correctedRating;
   if(verification.correctedDesc) d.desc = verification.correctedDesc;
   if(verification.status === 'mismatch') d.source = 'field-verified';
