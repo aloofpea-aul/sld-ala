@@ -1769,11 +1769,13 @@ let RISKS = null, RISK_STATE = {}, RISK_FILTER = 'todo';
 const RISK_LABEL = {
   OVERLOAD:'โหลดเกินพิกัด', LOWVOLT:'แรงดันปลายทางต่ำ', UNBALANCE:'กระแสไม่สมดุล',
   LONGLV:'สายแรงต่ำยาวเกิน', FUSE:'ฟิวส์ไม่ตรง GIS', TRPOS:'พิกัดหม้อแปลงไม่ตรง',
-  TRNEW:'หม้อแปลงไม่มีในผัง'
+  TRNEW:'หม้อแปลงไม่มีในผัง', TRGONE:'หม้อแปลงไม่มีใน GIS', TRFEEDER:'หม้อแปลงรหัสวงจรไม่ตรง',
+  TIE:'สวิตช์จุดเชื่อมโยงไม่มีในผัง', FUSEID:'ฟิวส์รหัสผิด ไม่มีในผัง'
 };
 /* จับคู่ประเภทจุดเสี่ยงกับประเภทปัญหาในระบบ เพื่อสร้างเป็นจุดที่พบได้ทันที */
 const RISK_TO_TYPE = { OVERLOAD:'OVERLOAD', LOWVOLT:'LOWVOLT', UNBALANCE:'OVERLOAD',
-  LONGLV:'LOWVOLT', FUSE:'FUSE', TRPOS:'OBSTACLE', TRNEW:'OBSTACLE' };
+  LONGLV:'LOWVOLT', FUSE:'FUSE', TRPOS:'OBSTACLE', TRNEW:'OBSTACLE',
+  TRGONE:'OBSTACLE', TRFEEDER:'OBSTACLE', TIE:'OBSTACLE', FUSEID:'FUSE' };
 
 async function loadRisks(){
   if(!RISKS) showLoading('riskBox', 'skeleton', 'กำลังโหลดจุดเสี่ยงจากข้อมูล OPSA และ GIS');
