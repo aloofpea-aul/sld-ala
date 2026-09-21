@@ -321,6 +321,16 @@
   #toast.err{background:var(--bad);}
   #toast.ok{background:var(--good);}
   #toast.warn{background:var(--warn);}
+  .prev-box{border:1.5px solid #c9b8ea;background:#f7f3fd;border-radius:10px;padding:11px 12px;margin:10px 0;}
+  .prev-title{font-weight:700;color:var(--pea-purple);font-size:.92rem;}
+  .prev-meta{font-size:.76rem;color:#4e4b45;margin-top:2px;}
+  .prev-ok{margin-top:8px;font-size:.82rem;color:#2e7d32;font-weight:600;}
+  .prev-note{margin-top:8px;font-size:.8rem;color:#6b5500;}
+  .prev-warn{margin-top:8px;font-size:.82rem;color:#b26a00;font-weight:600;}
+  .prev-warn ul{margin:5px 0 0 18px;padding:0;font-weight:500;color:#5a3a00;}
+  .prev-reset{margin-top:9px;width:100%;padding:7px;border-radius:8px;border:1px solid #c9b8ea;background:#fff;
+    color:var(--pea-purple);font:inherit;font-size:.78rem;cursor:pointer;}
+  .chk-row.changed-since{background:#fdf3e6;border-radius:8px;box-shadow:0 0 0 1.5px #f0c27a inset;}
   #poleMap{height:270px;border-radius:10px;overflow:hidden;border:1px solid var(--line);}
   .pole-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;font-size:.9rem;}
   .pole-state{font-size:.74rem;padding:3px 10px;border-radius:10px;background:#fdecea;color:#c62828;font-weight:700;white-space:nowrap;}
@@ -1258,20 +1268,30 @@ async function renderPoleMap(){
   if(!el || typeof longdo === 'undefined') return;
   // ฟอร์มถูกวาดใหม่ทุกครั้ง จึงต้องสร้างแผนที่ใหม่ถ้ากล่องเดิมหายไป
   if(!poleMap || poleMap.__el !== el){
-    poleMap = new longdo.Map({ placeholder: el, zoom: 19, lastView: false, location: { lon: center.lon, lat: center.lat } });
+    poleMap = new longdo.Map({ placeholder: el, zoom: 17, lastView: false, location: { lon: center.lon, lat: center.lat } });
     poleMap.__el = el;
+    poleDrawnAt = null;
     try{ poleMap.Ui.DPad.visible(false); poleMap.Ui.Zoombar.visible(false); }catch(e){}
+    // กล่องแผนที่อยู่ในหน้าต่างที่เพิ่งเปิด บางครั้งวัดขนาดได้ 0 ตอนสร้าง → ภาพขาว สั่งคำนวณขนาดใหม่อีกรอบ
+    setTimeout(()=>{ try{ poleMap.resize(); }catch(e){} }, 250);
+    setTimeout(()=>{ try{ poleMap.resize(); }catch(e){} }, 900);
   }
   poleCenter = { lat: center.lat, lon: center.lon };
   poleMap.location({ lon: center.lon, lat: center.lat }, true);
   updatePoleState();
   drawPoleMap();
 }
+let poleDrawnAt = null;
+function poleMapCenter(){
+  try{ const c = poleMap.location(); if(c && isFinite(c.lat) && isFinite(c.lon)) return c; }catch(e){}
+  return poleCenter;
+}
 function drawPoleMap(){
   if(!poleMap || !form || !poleCenter) return;
   poleMap.Overlays.clear();
   poleItems = [];
-  const ref = form.gps || poleCenter;
+  const ref = poleMapCenter() || form.gps || poleCenter;
+  poleDrawnAt = { lat: ref.lat, lon: ref.lon };
   nearPoles(ref.lat, ref.lon, 70, 400).forEach(x=>{
     const tag = poleTag(x.p);
     const on = form.pole && form.pole.tag === tag && Math.abs(form.pole.lat - x.p[0]) < 1e-6;
@@ -1300,6 +1320,15 @@ function drawPoleMap(){
       icon: { html: `<div style="width:15px;height:15px;border-radius:50%;background:#1565c0;border:3px solid #fff;box-shadow:0 0 5px rgba(0,0,0,.5);"></div>`, offset: { x:10, y:10 } } }));
   }
 }
+/* เลื่อนแผนที่ไปไกลเกิน 80 ม. จากจุดที่วาดไว้ → วาดเสาชุดใหม่รอบจุดกึ่งกลาง */
+setInterval(()=>{
+  if(!poleMap || !form || !poleDrawnAt) return;
+  const el = document.getElementById('poleMap');
+  if(!el || !el.offsetWidth) return;
+  const c = poleMapCenter();
+  if(c && gpsDistanceMeters(c.lat, c.lon, poleDrawnAt.lat, poleDrawnAt.lon) > 80) drawPoleMap();
+}, 800);
+
 /* แตะบนแผนที่ = เลือกเสาที่ใกล้นิ้วที่สุด (ฟังที่ window แบบ capture เพราะ Longdo ดักเหตุการณ์ไว้ชั้นใน) */
 (function bindPoleTap(){
   const mercY = lat => Math.log(Math.tan(Math.PI/4 + lat*Math.PI/360));
@@ -1591,6 +1620,7 @@ function renderDetailForm(){
       ${hasGps(d) ? `<button type="button" id="showOnMapBtn">🗺 ดูบนแผนที่</button>` : ''}
     </div>
 
+    <div id="prevBanner"></div>
     <div class="sec">
       <div class="sec-title">1. จับพิกัดที่หม้อแปลง <span class="req">จำเป็น</span></div>
       <button type="button" class="btn-main" id="gpsBtn">📍 เริ่มจับพิกัด GPS</button>
@@ -1778,6 +1808,78 @@ async function loadFieldHistory(deviceId, force){
   historyCache.set(deviceId, json);
   return json;
 }
+/* ===== ผลสำรวจครั้งก่อน: เติมค่าไว้ให้ และบอกว่ามีอะไรเปลี่ยนไปหลังสำรวจ ===== */
+const SNAP_FIELDS = [
+  { key:'rating', label:'ขนาด',            now: d=> d.rating || '',            check:'rating' },
+  { key:'desc',   label:'ชื่อ/จุดติดตั้ง',   now: d=> d.desc || '',              check:'desc' },
+  { key:'phase',  label:'เฟส',              now: d=> d.phase || '',             check:'phase' },
+  { key:'txType', label:'ชนิดหม้อแปลง',     now: d=> txTypeOf(d),               check:'txType',
+    show: v=> TX_TYPES[v] ? TX_TYPES[v].label : v },
+  { key:'parentId', label:'ต่อจากอุปกรณ์',   now: d=> d.parentId || '' },
+  { key:'poleTag',  label:'เสาที่ติดตั้ง',    now: d=> d.poleTag || '' }
+];
+function surveyDiffs(snap, d){
+  const out = [];
+  SNAP_FIELDS.forEach(f=>{
+    const a = String(snap[f.key] == null ? '' : snap[f.key]).trim(), b = String(f.now(d) == null ? '' : f.now(d)).trim();
+    if(a.toUpperCase() !== b.toUpperCase()) out.push({ label: f.label, check: f.check, from: f.show ? f.show(a) : a, to: f.show ? f.show(b) : b });
+  });
+  if(snap.lat != null && hasGps(d)){
+    const m = gpsDistanceMeters(snap.lat, snap.lon, d.lat, d.lon);
+    if(m > 5) out.push({ label:'พิกัด', from:'', to:'ย้ายไป ' + fmtDist(m) });
+  }
+  return out;
+}
+function applyPrevSurvey(r0){
+  if(!form || form.prevApplied) return;
+  const touched = Object.keys(form.checks).length || form.gps || form.status;
+  if(touched) return;                               // ผู้ใช้เริ่มกรอกเองแล้ว ไม่เขียนทับ
+  form.prevApplied = true;
+  const d = form.d;
+  let snap = null;
+  try{ snap = r0.snapshot ? JSON.parse(r0.snapshot) : null; }catch(e){ snap = null; }
+  const diffs = snap ? surveyDiffs(snap, d) : null;
+  const changedChecks = new Set((diffs || []).map(x=> x.check).filter(Boolean));
+
+  // ช่องที่ไม่เปลี่ยน = ติ๊ก "ตรง" ไว้ให้ · ช่องที่เปลี่ยนหลังสำรวจ = ต้องตรวจใหม่
+  CHECK_FIELDS.forEach(cf=>{ if(!changedChecks.has(cf.key)) form.checks[cf.key] = { state:'ok' }; });
+
+  // เสาที่เคยเลือกไว้
+  const tag = d.poleTag || r0.poleTag || (snap && snap.poleTag);
+  if(tag){
+    loadPoles().then(()=>{
+      if(!POLES || !form || form.d.id !== d.id || form.pole) return;
+      const p = POLES.poles.find(x=> poleTag(x) === tag);
+      if(p){ setPole(p); renderPoleMap(); }
+    });
+  }
+
+  const box = document.getElementById('prevBanner');
+  if(box){
+    let html = `<div class="prev-box">
+      <div class="prev-title">📋 เติมจากผลสำรวจครั้งก่อน</div>
+      <div class="prev-meta">${escapeHtml(r0.time)} · ${escapeHtml(r0.inspector || '-')} ·
+        ${r0.status === 'mismatch' ? 'ไม่ถูกต้อง (แก้ข้อมูลแล้ว)' : 'ถูกต้อง'}${tag ? ' · เสา ' + escapeHtml(String(tag).slice(-9)) : ''}</div>`;
+    if(diffs === null){
+      html += `<div class="prev-note">ผลสำรวจครั้งนั้นบันทึกก่อนมีระบบติดตามการเปลี่ยนแปลง — ตรวจทานทุกช่องเทียบกับหน้างานอีกครั้ง</div>`;
+    } else if(!diffs.length){
+      html += `<div class="prev-ok">✅ ข้อมูลในระบบไม่เปลี่ยนแปลงตั้งแต่สำรวจครั้งก่อน — ตรวจทานแล้วบันทึกได้เลย</div>`;
+    } else {
+      html += `<div class="prev-warn">⚠ มีการเปลี่ยนแปลงหลังสำรวจครั้งก่อน ${diffs.length} รายการ — ช่องเหล่านี้ต้องตรวจใหม่
+        <ul>${diffs.map(x=> `<li><b>${escapeHtml(x.label)}</b> ${x.from ? escapeHtml(x.from) + ' → ' : ''}${escapeHtml(x.to || '(ว่าง)')}</li>`).join('')}</ul></div>`;
+    }
+    html += `<button type="button" class="prev-reset" id="prevResetBtn">ล้างค่าที่เติม เริ่มตรวจใหม่ทั้งหมด</button></div>`;
+    box.innerHTML = html;
+    const rb = document.getElementById('prevResetBtn');
+    if(rb) rb.onclick = ()=>{ form.checks = {}; form.pole = null; box.innerHTML = ''; restoreFormValues(); syncChecksUi(); beep('tap'); };
+  }
+  // ไฮไลต์แถวที่ต้องตรวจใหม่
+  document.querySelectorAll('#checkList .chk-row[data-key]').forEach(row=>{
+    if(changedChecks.has(row.dataset.key)) row.classList.add('changed-since');
+  });
+  syncChecksUi();
+  beep('tap');
+}
 async function renderHistoryBox(deviceId){
   const box = document.getElementById('histBox');
   if(!box) return;
@@ -1789,6 +1891,7 @@ async function renderHistoryBox(deviceId){
   const recs = h.records || [];
   if(!recs.length){ box.innerHTML = '<div class="hist-meta">ยังไม่มีบันทึกผลสำรวจภาคสนามในชีต</div>'; return; }
   const r0 = recs[0];
+  applyPrevSurvey(r0);
   const stTxt = r => r.status === 'mismatch' ? '❌ ไม่ถูกต้อง' : '✅ ถูกต้อง';
   box.innerHTML = `
     <div class="hist-title">🗂 ผลสำรวจครั้งล่าสุด</div>
@@ -1811,10 +1914,15 @@ function bindDetailForm(){
   const { f, d } = form;
   const body = document.getElementById('detailBody');
   const on = (id, fn)=>{ const el = document.getElementById(id); if(el) el.addEventListener('click', fn); };
-  on('poleMeBtn', ()=>{ if(poleMap && form.gps){ poleMap.location({ lon:form.gps.lon, lat:form.gps.lat }, true); beep('tap'); } });
-  on('poleTxBtn', ()=>{ if(poleMap && hasGps(d)){ poleMap.location({ lon:d.lon, lat:d.lat }, true); beep('tap'); }
+  on('poleMeBtn', ()=>{
+    if(!poleMap) return;
+    if(!form.gps){ showToast('ยังไม่ได้จับ GPS — กดเริ่มจับพิกัดก่อน', 'warn'); return; }
+    if(form.gps.accuracy > 100) showToast('GPS คลาดเคลื่อน ±' + Math.round(form.gps.accuracy) + ' ม. (ถ้าเปิดบนคอมพิวเตอร์ ตำแหน่งจะไม่แม่น)', 'warn');
+    poleMap.location({ lon:form.gps.lon, lat:form.gps.lat }, false); drawPoleMap(); beep('tap');
+  });
+  on('poleTxBtn', ()=>{ if(poleMap && hasGps(d)){ poleMap.location({ lon:d.lon, lat:d.lat }, false); drawPoleMap(); beep('tap'); }
                         else showToast('หม้อแปลงนี้ยังไม่มีพิกัดในระบบ', 'warn'); });
-  on('poleZoomIn', ()=>{ if(poleMap) poleMap.zoom(poleMap.zoom() + 1, true); });
+  on('poleZoomIn', ()=>{ if(poleMap) poleMap.zoom(Math.min(poleMap.zoom() + 1, 19), true); });
   on('poleZoomOut', ()=>{ if(poleMap) poleMap.zoom(poleMap.zoom() - 1, true); });
   on('poleClearBtn', ()=>{ setPole(null); beep('tap'); showToast('ไม่ใช้พิกัดเสา — กลับไปใช้ GPS มือถือ', 'ok'); });
   on('poleManualBtn', ()=>{
@@ -2140,6 +2248,22 @@ function fullDeviceRow(d, overrides){
   return Object.assign(row, overrides || {});
 }
 
+/* ค่าของหม้อแปลงหลังบันทึกผลสำรวจนี้ — เก็บไว้เทียบครั้งถัดไปว่ามีอะไรเปลี่ยน */
+function surveySnapshot(){
+  const { d } = form;
+  const pc = parentChangePlan();
+  const pos = checkPos();
+  const moved = pos && (!hasGps(d) || form.updateCoords);
+  return {
+    rating: form.correctedRating || d.rating || '',
+    desc: form.correctedDesc || d.desc || '',
+    phase: form.newPhase || d.phase || '',
+    txType: form.newTxType || txTypeOf(d),
+    parentId: pc && pc.newParent ? pc.newParent.id : (d.parentId || ''),
+    lat: moved ? pos.lat : d.lat, lon: moved ? pos.lon : d.lon,
+    poleTag: form.pole ? form.pole.tag : (d.poleTag || '')
+  };
+}
 function buildPayload(){
   const { f, d } = form;
   const gps = form.gps;               // GPS มือถือดิบ — เก็บไว้เทียบเสมอ
@@ -2165,6 +2289,7 @@ function buildPayload(){
     gpsLat: gps ? gps.lat : null, gpsLon: gps ? gps.lon : null,
     gpsDistanceMeters: v && v.dist != null ? v.dist : null,
     gpsWithinTolerance: v && v.dist != null ? v.dist <= GPS_TOLERANCE_M : null,
+    snapshot: JSON.stringify(surveySnapshot()),
     poleTag: form.pole ? form.pole.tag : '',
     poleLat: form.pole ? form.pole.lat : null,
     poleLon: form.pole ? form.pole.lon : null,
