@@ -22,11 +22,11 @@
   :root{
     --pea-purple:#4b2e83;
     --pea-purple-dark:#341f5c;
-    --ink:#1c1b1f;
+    --ink:#111014;
     --paper:#f6f5f2;
     --panel:#ffffff;
     --line:#d9d6ce;
-    --muted:#6b6860;
+    --muted:#4e4b45;
     --good:#2e7d32;
     --bad:#c62828;
   }
@@ -152,11 +152,11 @@
   .tr-map-hit{position:relative;}
   /* ===== จอคอมพิวเตอร์: ขยายตัวอักษรและเพิ่มความคมชัด (มือถือคงเดิม) ===== */
   @media (min-width:821px){
-    html, body{ font-size:16.5px; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
-    body, button, input, select, textarea{ font-weight:400; letter-spacing:.005em; }
+    html, body{ font-size:16.5px; text-rendering:optimizeLegibility; }
+    body, button, input, select, textarea{ font-weight:500; letter-spacing:.005em; }
     .device-row .did, .trunk-node text, .tap-label{ font-weight:700; }
     .device-row{ font-size:.92rem; }
-    .device-row .ddesc{ font-size:.86rem; color:#4a4a4a; }
+    .device-row .ddesc{ font-size:.86rem; color:#2f2d29; }
     .device-row .rating-badge-est, .device-row .phase-badge, .device-row .impact-badge,
     .device-row .src-badge, .device-row .verify-badge-ok, .device-row .verify-badge-mismatch,
     .device-row .seq-badge-ok{ font-size:.74rem; height:21px; }
@@ -182,6 +182,9 @@
     border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.5);}
   .srch-mark .lbl{position:absolute;left:50%;top:-26px;transform:translateX(-50%);background:#e53935;color:#fff;
     font:700 12px Consolas,monospace;padding:3px 8px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35);}
+  body, button, input, select, textarea{ font-weight:500; }
+  b, strong, th{ font-weight:700; }
+  .device-view-row .k{ color:#4e4b45; }
   .map-device-label{display:none;position:absolute;top:-3px;left:50%;transform:translate(-50%,-100%);
     background:rgba(255,255,255,.92);border:none;box-shadow:0 1px 3px rgba(0,0,0,.3);
     font-size:10px;font-weight:700;padding:1px 4px;border-radius:3px;white-space:nowrap;}
@@ -694,6 +697,9 @@
     footer, #legend{padding-bottom:calc(8px + env(safe-area-inset-bottom));}
   }
 </style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 <div id="app" class="is-overview">
@@ -2807,7 +2813,7 @@ function ensureMapHoverTip(){
     tip = document.createElement('div');
     tip.id = 'mapHoverTip';
     tip.style.cssText = 'position:fixed;z-index:5500;pointer-events:none;display:none;background:#fff;border:1px solid #e3ddd0;'+
-      'border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.18);padding:10px 12px;font-size:13px;line-height:1.6;max-width:290px;color:#222;';
+      'border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.18);padding:10px 12px;font-size:13px;line-height:1.6;max-width:290px;color:#111;font-weight:500;';
     document.body.appendChild(tip);
   }
   return tip;
@@ -2816,7 +2822,7 @@ function hideMapHoverTip(){ const t = document.getElementById('mapHoverTip'); if
 function mapHoverTipHtml(f, d){
   const rows = [];
   rows.push(`<div style="font-weight:700;color:#4b2e83;font-family:Consolas,monospace;font-size:14px;letter-spacing:.2px;">${escapeHtml(d.id)}</div>`);
-  rows.push(`<div style="color:#777;font-size:12px;margin-bottom:4px;">${escapeHtml(MAP_TYPE_LABEL[d.type] || d.type || '')} · <span style="color:${escapeHtml(f.color)};font-weight:700;">${escapeHtml(f.id)}</span></div>`);
+  rows.push(`<div style="color:#4e4b45;font-size:12px;margin-bottom:4px;">${escapeHtml(MAP_TYPE_LABEL[d.type] || d.type || '')} · <span style="color:${escapeHtml(f.color)};font-weight:700;">${escapeHtml(f.id)}</span></div>`);
   if(d.rating) rows.push(`ขนาด: <b>${escapeHtml(d.rating)}</b>${d.ratingConfidence==='estimated'?' <span style="color:#b5651d">(ประมาณ)</span>':''}`);
   if(d.desc) rows.push(escapeHtml(d.desc));
   if(d.parentId) rows.push(`ต่อจาก: <b>${escapeHtml(d.parentId)}</b>${d.parentConfidence==='estimated'?' <span style="color:#b5651d">(ประมาณจากพิกัด)</span>':''}`);
@@ -2839,7 +2845,7 @@ function mapHoverTipHtml(f, d){
     const c = lp >= 100 ? '#c62828' : lp >= 80 ? '#b26a00' : '#2e7d32';
     rows.push(`โหลด (OPSA): <b style="color:${c}">${lp}%</b>`);
   }
-  rows.push(`<div style="color:#999;font-size:11px;margin-top:5px;padding-top:5px;border-top:1px dashed #eee;">คลิกเพื่อดูรายละเอียด / แก้ไข</div>`);
+  rows.push(`<div style="color:#6b6860;font-size:11px;margin-top:5px;padding-top:5px;border-top:1px dashed #e6e2d8;">คลิกเพื่อดูรายละเอียด / แก้ไข</div>`);
   return rows.map(r => r.startsWith('<div') ? r : `<div>${r}</div>`).join('');
 }
 // ===== ชั้นข้อมูลเสาไฟฟ้า (โหลดจากไฟล์ poles.json เมื่อผู้ใช้เปิดใช้งาน) =====
