@@ -1023,6 +1023,143 @@
 </div>
 
 <script>
+/* ===========================================================================
+ *  เข็มทิศ — ลำแสงบอกทิศที่มือถือหันอยู่ ติดกับจุดตำแหน่งฉันบนแผนที่ทุกแผ่น
+ *  ใช้ร่วมกันทุกแอปในแพลตฟอร์ม (ค่าเปิด/ปิดเก็บที่ localStorage 'compass_on')
+ *  - Android: deviceorientationabsolute (ทิศเหนือจริงเทียบแม่เหล็กโลก)
+ *  - iPhone:  webkitCompassHeading + ต้องกดขออนุญาตทุกครั้งที่เปิดหน้า
+ *  - ลำแสงกว้างขึ้นเมื่อเข็มทิศไม่แน่นอน (เช่น ยืนใกล้หม้อแปลงหรือใต้สายแรงสูง)
+ * =========================================================================== */
+const Compass = (function(){
+  let on = localStorage.getItem('compass_on') === '1';
+  let listening = false, heading = null, spread = 50, samples = [], lastPath = -1, raf = 0, lastEvt = 0;
+  const needPerm = typeof DeviceOrientationEvent !== 'undefined' &&
+                   typeof DeviceOrientationEvent.requestPermission === 'function';
+  const touch = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+  const supported = touch && typeof DeviceOrientationEvent !== 'undefined';
+
+  function screenAngle(){
+    return (screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle
+         : (typeof window.orientation === 'number' ? window.orientation : 0);
+  }
+  function onEvt(e){
+    let h = null, acc = null;
+    if(typeof e.webkitCompassHeading === 'number'){ h = e.webkitCompassHeading; acc = e.webkitCompassAccuracy; }
+    else if((e.absolute === true || e.type === 'deviceorientationabsolute') && e.alpha != null){ h = 360 - e.alpha; }
+    else return;
+    lastEvt = Date.now();
+    h = (h + screenAngle() + 360) % 360;
+    if(heading == null) heading = h;
+    else{ const d = ((h - heading + 540) % 360) - 180; heading = (heading + d * 0.25 + 360) % 360; }  // หน่วงให้ลื่น
+    samples.push(h); if(samples.length > 24) samples.shift();
+    if(acc != null && acc >= 0) spread = Math.max(24, Math.min(100, acc * 2));
+    else{
+      let sx = 0, sy = 0;
+      samples.forEach(a=>{ sx += Math.cos(a * Math.PI / 180); sy += Math.sin(a * Math.PI / 180); });
+      const R = Math.hypot(sx, sy) / samples.length;
+      const sd = Math.sqrt(-2 * Math.log(Math.max(R, 1e-6))) * 180 / Math.PI;   // ส่วนเบี่ยงเบนเชิงมุม
+      spread = Math.max(28, Math.min(100, 28 + sd * 2.2));
+    }
+    if(!raf) raf = requestAnimationFrame(paint);
+  }
+  function wedge(sp){
+    const r = 30, c = 32, a1 = (-90 - sp / 2) * Math.PI / 180, a2 = (-90 + sp / 2) * Math.PI / 180;
+    const x1 = c + r * Math.cos(a1), y1 = c + r * Math.sin(a1), x2 = c + r * Math.cos(a2), y2 = c + r * Math.sin(a2);
+    return `M${c} ${c} L${x1.toFixed(1)} ${y1.toFixed(1)} A${r} ${r} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z`;
+  }
+  function paint(){
+    raf = 0;
+    const show = on && heading != null && (Date.now() - lastEvt < 4000);
+    const sp = Math.round(spread / 4) * 4;
+    const d = sp !== lastPath ? wedge(sp) : null;
+    if(d) lastPath = sp;
+    document.querySelectorAll('.me-cone').forEach(el=>{
+      el.style.display = show ? 'block' : 'none';
+      if(show) el.style.transform = 'rotate(' + heading.toFixed(1) + 'deg)';
+      const p = el.querySelector('path');
+      if(p && (d || !p.getAttribute('d'))) p.setAttribute('d', d || wedge(sp));
+    });
+    const b = document.getElementById('compassBtn');
+    if(b){
+      b.classList.toggle('on', on);
+      b.title = on ? 'ปิดเข็มทิศ' : 'เปิดเข็มทิศ — แสดงทิศที่มือถือหันอยู่';
+    }
+  }
+  function listen(){
+    if(listening) return;
+    listening = true;
+    if('ondeviceorientationabsolute' in window) window.addEventListener('deviceorientationabsolute', onEvt, true);
+    window.addEventListener('deviceorientation', onEvt, true);
+  }
+  function unlisten(){
+    listening = false;
+    window.removeEventListener('deviceorientationabsolute', onEvt, true);
+    window.removeEventListener('deviceorientation', onEvt, true);
+  }
+  async function start(){
+    if(needPerm){
+      try{
+        const r = await DeviceOrientationEvent.requestPermission();
+        if(r !== 'granted'){ toastC('ไม่ได้รับอนุญาตใช้เข็มทิศ — เปิดได้ที่ ตั้งค่า > Safari > การเคลื่อนไหวและทิศทาง'); return false; }
+      }catch(e){ toastC('ขออนุญาตเข็มทิศไม่สำเร็จ'); return false; }
+    }
+    listen();
+    setTimeout(()=>{ if(on && heading == null) toastC('เครื่องนี้ไม่ส่งค่าเข็มทิศ — อาจไม่มีเซนเซอร์'); }, 3500);
+    return true;
+  }
+  function toastC(msg){
+    if(typeof showToast === 'function') showToast(msg, 'warn');
+    else if(typeof toast === 'function') toast(msg, 'err');
+  }
+  async function toggle(){
+    if(on){ on = false; localStorage.setItem('compass_on', '0'); unlisten(); heading = null; paint(); return; }
+    on = true; localStorage.setItem('compass_on', '1');
+    const ok = await start();
+    if(!ok){ on = false; localStorage.setItem('compass_on', '0'); }
+    paint();
+  }
+  /* HTML ของจุดตำแหน่งฉัน + ลำแสงบอกทิศ ใช้แทนจุดน้ำเงินเดิมในทุกแผนที่ */
+  function meIcon(color){
+    const c = color || '#1565c0';
+    return `<div style="position:relative;width:64px;height:64px;pointer-events:none;">
+      <svg class="me-cone" viewBox="0 0 64 64" width="64" height="64"
+           style="position:absolute;inset:0;display:none;transform-origin:32px 32px;transition:transform .12s linear;">
+        <path fill="${c}" fill-opacity=".28" stroke="${c}" stroke-opacity=".55" stroke-width="1"/>
+      </svg>
+      <div style="position:absolute;left:23px;top:23px;width:18px;height:18px;border-radius:50%;background:${c};
+                  border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.45);"></div></div>`;
+  }
+  /* ปุ่มลอย — แสดงเฉพาะอุปกรณ์จอสัมผัส และเฉพาะตอนมีแผนที่อยู่บนจอ */
+  function mountButton(mapIds){
+    if(!supported || document.getElementById('compassBtn')) return;
+    const b = document.createElement('button');
+    b.id = 'compassBtn'; b.type = 'button'; b.textContent = '🧭';
+    b.style.cssText = 'position:fixed;right:12px;bottom:calc(92px + env(safe-area-inset-bottom));z-index:9000;' +
+      'width:46px;height:46px;border-radius:50%;border:2px solid #4b2e83;background:#fff;font-size:22px;' +
+      'box-shadow:0 3px 10px rgba(0,0,0,.25);display:none;cursor:pointer;';
+    b.addEventListener('click', e=>{ e.stopPropagation(); toggle(); }, true);
+    document.body.appendChild(b);
+    const st = document.createElement('style');
+    st.textContent = '#compassBtn.on{background:#4b2e83;color:#fff;border-color:#fff;}';
+    document.head.appendChild(st);
+    setInterval(()=>{
+      const vis = mapIds.some(id=>{
+        const el = document.getElementById(id);
+        if(!el || !el.offsetWidth || !el.offsetHeight) return false;
+        const r = el.getBoundingClientRect();
+        return r.bottom > 60 && r.top < window.innerHeight - 60;
+      });
+      b.style.display = vis ? 'block' : 'none';
+    }, 700);
+    if(on && !needPerm) start();        // Android จำค่าเปิดไว้ได้ · iPhone ต้องกดขออนุญาตใหม่ทุกครั้ง
+    else if(on && needPerm){ on = false; }
+    setInterval(()=>{ if(on) paint(); }, 600);   // หมุดที่สร้างใหม่ได้ลำแสงทันที
+    paint();
+  }
+  return { meIcon, mountButton, toggle, paint, get heading(){ return heading; } };
+})();
+
+
 // ============ ล็อคหน้าจอระหว่างบันทึกลง Google Sheet ============
 // ทุกคำสั่งที่ "เขียนข้อมูล" (เพิ่ม/แก้ไข/ลบ/ยืนยันลำดับ/ตรวจภาคสนาม) จะผ่านจุดนี้จุดเดียว:
 //  - ระหว่างบันทึก: บังหน้าจอทั้งหมด กดอย่างอื่นไม่ได้ และเตือนถ้าจะปิด/รีเฟรชหน้า
@@ -2297,7 +2434,7 @@ document.getElementById('locateBtn').addEventListener('click', ()=>{
     leafletMap.zoom(16, true);
     const meMarker = new longdo.Marker(
       { lon: longitude, lat: latitude },
-      { icon: { html: '<div style="width:16px;height:16px;border-radius:50%;background:#4285f4;border:2px solid #1a73e8;"></div>', offset:{x:8,y:8} },
+      { icon: { html: Compass.meIcon('#1a73e8'), offset:{x:32,y:32} },
         popup: { html: 'ตำแหน่งปัจจุบันของคุณ' } }
     );
     leafletMap.Overlays.add(meMarker);
@@ -6212,5 +6349,6 @@ if(isIos && !isStandalone){
 }
 document.getElementById('installAppBtn')?.addEventListener('click', triggerInstallPrompt);
 </script>
+<script>window.addEventListener('load', ()=> Compass.mountButton(['mapDiv']));</script>
 </body>
 </html>
