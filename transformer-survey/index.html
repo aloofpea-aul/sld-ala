@@ -476,6 +476,7 @@
 </div>
 <div id="toast"></div>
 
+<script src="../ui-kit.js"></script>
 <script>
 /* ===========================================================================
  *  เข็มทิศ — ลำแสงบอกทิศที่มือถือหันอยู่ ติดกับจุดตำแหน่งฉันบนแผนที่ทุกแผ่น
@@ -648,6 +649,7 @@ function attachOpsa(){
 }   // ไม่มีการตอบกลับเกินนี้ถือว่าบันทึกไม่สำเร็จ
 
 function showToast(msg, kind){
+  try{ PEAUI.beep(kind === 'bad' || kind === 'err' ? 'err' : kind === 'ok' ? 'ok' : 'tap'); }catch(e){}
   const t = document.getElementById('toast');
   t.textContent = msg; t.className = 'show ' + (kind||'');
   clearTimeout(window.__toastTimer);
@@ -772,7 +774,22 @@ let txFilter = null;   // null = ทุกชนิด | PEA | PRIVATE | PUBLIC 
 let sortNear = false;
 let myPos = null; // {lat, lon, accuracy, time}
 
+const TXS_TIPS = [
+  '📷 ถ่ายรูปป้ายชื่อหม้อแปลงให้เห็นเลข PEA ชัด จะตรวจย้อนหลังได้',
+  '📍 เลือกเสาบนแผนที่แทนการใช้ GPS อย่างเดียว พิกัดจะแม่นกว่าหลายเท่า',
+  '🔁 หม้อแปลงที่เคยสำรวจแล้ว ระบบเติมผลครั้งก่อนให้ และบอกว่ามีอะไรเปลี่ยน',
+  '🧭 กดปุ่มเข็มทิศบนแผนที่ จะเห็นทิศที่มือถือหันอยู่',
+  '⚡ ยืนใกล้หม้อแปลงเข็มทิศอาจเพี้ยน ลำแสงจะกว้างขึ้นเพื่อบอกว่าอย่าเชื่อมาก',
+  '💾 ฐานข้อมูลเดียวกับ SLD และ Patrol แก้ที่นี่เห็นทุกแอป'
+];
 async function loadData(){
+  PEAUI.setTips(TXS_TIPS);
+  PEAUI.boot.start([
+    { k:'data', t:'ดึงข้อมูลหม้อแปลงจาก Google Sheet' },
+    { k:'opsa', t:'ผนวกข้อมูลวิเคราะห์ OPSA' },
+    { k:'view', t:'จัดรายการและแผนที่' }
+  ], { title:'สำรวจหม้อแปลง', sub:'ตรวจสอบตำแหน่งและข้อมูลจริงหน้างาน' });
+  PEAUI.boot.step('data','run');
   const box = document.getElementById('loadBox');
   const overlay = document.getElementById('loadOverlay');
   box.classList.remove('err');
@@ -787,10 +804,16 @@ async function loadData(){
       const json = await res.json();
       if(json && Array.isArray(json.feeders) && json.feeders.length){
         DATA = json;
+        PEAUI.boot.step('data','done', (DATA.feeders || []).reduce((n,f)=> n + (f.devices || []).length, 0).toLocaleString() + ' รายการ');
+        PEAUI.boot.step('opsa','run');
         attachOpsa();
+        PEAUI.boot.step('opsa','done');
         overlay.classList.remove('show');
+        PEAUI.boot.step('view','run');
         buildFeederSelect();
         refreshView();
+        PEAUI.boot.step('view','done');
+        setTimeout(()=> PEAUI.boot.close(), 350);
         return true;
       }
       throw new Error('ข้อมูลว่าง');
@@ -2548,6 +2571,7 @@ async function saveSurvey(){
   const pcPlan = parentChangePlan();
   saving = true;
   showSaveLock('saving');
+  PEAUI.saving.show('กำลังส่งผลสำรวจและรูปถ่ายขึ้นระบบ');
   if(form.savedVerify){ return saveParentStep(pcPlan); } // ผลสำรวจบันทึกไปแล้ว — ลองใหม่เฉพาะส่วนต้นทาง
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = ctrl ? setTimeout(()=>ctrl.abort(), SAVE_TIMEOUT_MS) : null;
@@ -2570,8 +2594,8 @@ async function saveSurvey(){
     if(timer) clearTimeout(timer);
     saving = false;
   }
-  if(errMsg){ showSaveLock('error', errMsg); return; }
-  beep('save');
+  if(errMsg){ showSaveLock('error', errMsg); PEAUI.saving.fail('บันทึกไม่สำเร็จ', errMsg); return; }
+  PEAUI.saving.done('บันทึกผลสำรวจแล้ว', form && form.d ? form.d.id : '');
 
   // บันทึกสำเร็จแล้ว จึงแก้ข้อมูลบนหน้าจอให้ตรงกับชีต (Code.gs แก้ช่องเหล่านี้ในแถวเดียวกัน)
   d.verified = { status: verification.status, date: verification.date };
