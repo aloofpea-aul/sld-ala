@@ -6105,6 +6105,35 @@ const FUSE_V_COLOR = { 'ฟิวส์ใหญ่กว่าพิกัด�
   'ฟิวส์ใหญ่กว่าโหลดมาก':'#b26a00', 'ไม่มีหม้อแปลงปลายน้ำ':'#6b6860',
   'ยังไม่ระบุขนาดฟิวส์':'#6b6860', 'ไม่พบข้อสังเกต':'#2e7d32' };
 let fuseFilter = '', fuseView = 'list';
+/* ส่งออกเป็นไฟล์ CSV — ใช้ค่าสดจากระบบเสมอ จึงตรงกับขนาด A0 ล่าสุดที่บันทึกไว้
+   request = แบบฟอร์มขอแก้ไข 4 คอลัมน์ · all = ตารางเต็มไว้ตรวจที่มา */
+function exportFuseCsv(rows, mode){
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  let head, body;
+  if(mode === 'request'){
+    const pick = rows.filter(r=> r.K != null && r.sug != null && r.sug > r.K);
+    if(!pick.length){ showToast('ไม่มีฟิวส์ที่เล็กกว่าตาราง 3105A', 'warn'); return; }
+    head = ['รหัสอุปกรณ์','สถานที่','ขนาดฟิวส์เดิม ใน A0','ขอแก้ไข'];
+    body = pick.map(r=> [r.id, (r.desc || '').trim() || '-', r.K + 'k', r.sug + 'k']);
+  } else {
+    head = ['วงจร','รหัสอุปกรณ์','สถานที่','ขนาด A0','สายที่คุม','เฟส','หม้อแปลงบนไลน์','kVA พิกัดรวม',
+            'มิเตอร์','ตัวประกอบ','kVA ออกแบบ','กระแสออกแบบ (A)','ตาราง 3105A (K)','ฟิวส์รับต่อเนื่อง (A)',
+            'พิกัดสาย (A)','ฟิวส์ปากทาง','K ปากทาง','K ถัดเข้าไป','ข้อสังเกต'];
+    body = rows.map(r=> [r.f, r.id, r.desc, r.K != null ? r.K + 'K' : '', r.cond, r.phase, r.nTr,
+      r.kva.toFixed(0), r.meter, r.cf, r.kvaDesign.toFixed(1), r.I.toFixed(2),
+      r.sug != null ? r.sug : '', r.cont != null ? r.cont.toFixed(1) : '', r.amp || '',
+      r.par, r.parK || '', r.childMax || '', r.v]);
+  }
+  const csv = '\uFEFF' + [head, ...body].map(r=> r.map(q).join(',')).join('\r\n');
+  const d = new Date(), p2 = n=> String(n).padStart(2, '0');
+  const name = (mode === 'request' ? 'ขอแก้ไขขนาดฟิวส์_' : 'ตารางขนาดฟิวส์_') +
+               d.getFullYear() + p2(d.getMonth()+1) + p2(d.getDate()) + '_' + body.length + 'รายการ.csv';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8;' }));
+  a.download = name; a.click();
+  setTimeout(()=> URL.revokeObjectURL(a.href), 4000);
+  showToast('ส่งออก ' + body.length + ' รายการแล้ว (ใช้ขนาด A0 ล่าสุดในระบบ)', 'ok');
+}
 function renderReportTabFuseSize(){
   const rows = fuseRows();
   const cnt = {};
@@ -6120,11 +6149,14 @@ function renderReportTabFuseSize(){
     ฟิวส์สายแยก <b>${rows.length}</b> ตัว · 1 เฟสคิดที่ ${FUSE_CFG.kv1.toLocaleString()} V · 3 เฟสคิดที่ ${(FUSE_CFG.kv*1000).toLocaleString()} V ·
     ฟิวส์ K รับต่อเนื่อง ${FUSE_CFG.cont} เท่าของพิกัด<br>
     ขนาดที่แนะนำอ้างอิง <b>ตารางการประกอบเลขที่ 3105A ของ กฟภ.</b> ร่วมกับตัวประกอบความต้องการพร้อมกัน<br>
-    โหลดคิดจาก <b>พิกัด kVA ของหม้อแปลงทุกเครื่องที่เกาะอยู่บนไลน์</b> — จำหน่าย เฉพาะราย ไฟสาธารณะ ชั่วคราว นับหมด ·
+    โหลดคิดจาก <b>พิกัด kVA ของหม้อแปลงทุกเครื่องที่เกาะอยู่บนไลน์</b> — จำหน่าย เฉพาะราย ไฟสาธารณะ ชั่วคราว นับหมด<br>
+    ขนาดฟิวส์ที่นำมาเทียบคือ <b>ขนาด A0 ที่บันทึกไว้ในระบบ ณ ขณะนี้</b> (ไม่ใช่ค่าดิบจาก GIS) ·
     <b>${full}</b> ตัวมีข้อมูลโหลดจริงครบทั้งไลน์</p>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
       <button class="fz-chip fz-view" data-view="list" style="font-weight:700;">รายตัว</button>
-      <button class="fz-chip fz-view" data-view="chain">🔗 สายโซ่ฟิวส์ (การไล่ระดับ)</button></div>
+      <button class="fz-chip fz-view" data-view="chain">🔗 สายโซ่ฟิวส์ (การไล่ระดับ)</button>
+      <button class="fz-chip" id="fzExportReq" style="border-color:#1e6b45;color:#1e6b45;font-weight:700;">⬇ ส่งออกแบบฟอร์มขอแก้ไข</button>
+      <button class="fz-chip" id="fzExportAll" style="border-color:var(--pea-purple);color:var(--pea-purple);">⬇ ส่งออกตารางทั้งหมด</button></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
       <button class="fz-chip" data-v="">ทั้งหมด ${rows.length}</button>` +
     order.filter(v=> cnt[v]).map(v=> `<button class="fz-chip" data-v="${escapeHtml(v)}"
@@ -6159,6 +6191,8 @@ function renderReportTabFuseSize(){
   body.innerHTML = html;
   body.querySelectorAll('.fz-chip').forEach(b=>{
     b.addEventListener('click', ()=>{
+      if(b.id === 'fzExportReq'){ exportFuseCsv(rows, 'request'); return; }
+      if(b.id === 'fzExportAll'){ exportFuseCsv(rows, 'all'); return; }
       if(b.dataset.view){ fuseView = b.dataset.view; renderReportTabFuseSize(); return; }
       fuseFilter = b.dataset.v; renderReportTabFuseSize();
     });
