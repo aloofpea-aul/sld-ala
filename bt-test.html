@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ทดสอบบลูทูธเครื่องวัด — กฟส.อ่าวลึก</title>
+<style>
+  :root{
+    --pea-purple:#4b2e83; --pea-purple-dark:#3a2266;
+    --bg:#f6f5f2; --paper:#fff; --line:#e3dfd6; --muted:#5c5a54;
+    --good:#1b5e20; --warn:#8a5200; --bad:#b0201f; --blue:#1a73e8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Sarabun','Noto Sans Thai',system-ui,-apple-system,sans-serif;
+       background:var(--bg);color:#191816;-webkit-font-smoothing:antialiased;line-height:1.55}
+  header{background:var(--pea-purple);color:#fff;padding:12px 14px;
+         padding-top:calc(12px + env(safe-area-inset-top))}
+  header h1{margin:0;font-size:1.02rem;font-weight:700}
+  header p{margin:3px 0 0;font-size:.74rem;opacity:.86}
+  main{padding:12px;padding-bottom:calc(20px + env(safe-area-inset-bottom));max-width:680px;margin:0 auto}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:11px}
+  .card h2{margin:0 0 8px;font-size:.92rem;font-weight:700}
+  .muted{color:var(--muted);font-size:.78rem}
+  button{font-family:inherit;cursor:pointer}
+  .btn{width:100%;min-height:50px;border:0;border-radius:10px;background:var(--pea-purple);color:#fff;
+       font-size:1rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px}
+  .btn.blue{background:var(--blue)}
+  .btn.ghost{background:#fff;border:1.5px solid #ccc7bc;color:#46443e;min-height:44px;font-size:.88rem}
+  .btn:disabled{opacity:.45}
+  .row{display:flex;gap:8px}
+  .row .btn{flex:1}
+  input[type=text]{width:100%;border:1px solid #ccc7bc;border-radius:8px;padding:11px;font-size:.86rem;
+       font-family:'Consolas',ui-monospace,monospace;background:#fdfdfc}
+  label.f{display:block;font-size:.72rem;font-weight:600;color:var(--muted);margin:9px 0 4px}
+  .pill{display:inline-block;font-size:.66rem;font-weight:700;padding:2px 8px;border-radius:8px;margin:0 4px 4px 0}
+  .pill.r{background:#e8f0fe;color:#12386e}
+  .pill.w{background:#fff4e5;color:var(--warn)}
+  .pill.n{background:#e8f5e9;color:var(--good)}
+  .svc{border:1px solid var(--line);border-radius:9px;padding:9px 10px;margin-bottom:7px;background:#fdfdfc}
+  .svc b{font-size:.78rem;font-family:'Consolas',ui-monospace,monospace;word-break:break-all}
+  .chr{border-top:1px dashed var(--line);margin-top:7px;padding-top:7px;font-size:.72rem}
+  .chr code{font-family:'Consolas',ui-monospace,monospace;word-break:break-all;color:var(--pea-purple-dark)}
+  #log{background:#0f0e0d;color:#e8e6e1;border-radius:10px;padding:10px;font-size:.68rem;
+       font-family:'Consolas',ui-monospace,monospace;white-space:pre-wrap;word-break:break-all;
+       max-height:340px;overflow:auto;line-height:1.5}
+  .state{display:flex;align-items:center;gap:9px;background:#f6f5f2;border-radius:9px;padding:10px 11px;margin-bottom:9px}
+  .dot{width:10px;height:10px;border-radius:50%;background:#b3ada0;flex:0 0 auto}
+  .dot.on{background:var(--blue)}
+  .dot.err{background:var(--bad)}
+  .live{background:#e8f0fe;border:1px solid #a8c7fa;border-radius:10px;padding:12px;margin-bottom:9px;
+        display:flex;align-items:baseline;gap:8px}
+  .live b{font-size:2rem;line-height:1;color:#12386e}
+  .warnbox{background:#fff4e5;color:#6b4200;border-radius:9px;padding:10px 11px;font-size:.78rem;margin-bottom:9px}
+  .okbox{background:#e8f5e9;color:#175c3a;border-radius:9px;padding:10px 11px;font-size:.78rem;margin-bottom:9px}
+  ol{margin:6px 0 0;padding-left:20px;font-size:.8rem} ol li{margin-bottom:5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>ทดสอบบลูทูธเครื่องวัด</h1>
+  <p>HIOKI CM3286-01 · หน้านี้ใช้หาว่าเครื่องส่งข้อมูลออกมาเป็นรูปแบบไหน</p>
+</header>
+
+<main>
+
+  <div id="support"></div>
+
+  <div class="card">
+    <h2>1. เชื่อมกับเครื่อง</h2>
+    <div class="state"><span class="dot" id="dot"></span><span id="stateText">ยังไม่ได้เชื่อม</span></div>
+    <div class="row" style="margin-bottom:8px;">
+      <button class="btn blue" id="scanBtn">🔍 ค้นหาและเชื่อม</button>
+    </div>
+    <p class="muted" style="margin:0;">เปิดเครื่องวัด กดปุ่มบลูทูธที่เครื่องให้สัญลักษณ์ขึ้นบนจอก่อน แล้วกดปุ่มนี้ ·
+      ในรายการที่เด้งขึ้นมาให้เลือกชื่อที่ขึ้นต้นด้วย <b>HIOKI</b> หรือ <b>CM3286</b></p>
+
+    <label class="f">ถ้าเชื่อมแล้วไม่เห็นข้อมูล — ใส่ UUID ของ service ที่ได้จาก nRF Connect แล้วลองใหม่</label>
+    <input type="text" id="extraUuid" placeholder="เช่น 0000fff0-0000-1000-8000-00805f9b34fb" autocomplete="off" spellcheck="false">
+    <div class="muted" style="margin-top:5px;">ใส่ได้หลายอันคั่นด้วยจุลภาค · เว้นว่างไว้ก็ได้ ระบบจะลองชุดที่พบบ่อยให้เอง</div>
+  </div>
+
+  <div class="card" id="liveCard" style="display:none;">
+    <h2>2. ค่าที่อ่านได้</h2>
+    <div class="live"><b id="liveVal">—</b><span id="liveUnit" class="muted"></span>
+      <span style="flex:1"></span><span class="muted" id="liveSrc"></span></div>
+    <p class="muted" style="margin:0;">ถ้าตัวเลขนี้ขยับตามหน้าจอเครื่องวัด แปลว่าถอดรหัสได้แล้ว —
+      ถ้ายังเป็นขีด ให้ดูข้อมูลดิบด้านล่างแล้วส่งมาให้ผม</p>
+  </div>
+
+  <div class="card" id="svcCard" style="display:none;">
+    <h2>3. สิ่งที่พบในเครื่อง</h2>
+    <div id="svcList"></div>
+  </div>
+
+  <div class="card">
+    <h2>4. ข้อมูลดิบ — ส่งส่วนนี้กลับมาให้ผม</h2>
+    <div id="log">ยังไม่มีข้อมูล — กดปุ่มค้นหาและเชื่อมด้านบนก่อน</div>
+    <div class="row" style="margin-top:9px;">
+      <button class="btn ghost" id="copyBtn">📋 คัดลอกทั้งหมด</button>
+      <button class="btn ghost" id="clearBtn">ล้าง</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>ถ้าหน้านี้หาไม่เจอ — ใช้ nRF Connect แทน</h2>
+    <p class="muted" style="margin:0 0 6px;">Web Bluetooth ต้องรู้รหัส service ล่วงหน้าถึงจะอ่านได้
+      ถ้าลองชุดที่เตรียมไว้แล้วไม่เจอ ให้ใช้แอปนี้หารหัสมาก่อน (ฟรี ใช้เวลา 5 นาที)</p>
+    <ol>
+      <li>ติดตั้ง <b>nRF Connect for Mobile</b> จาก Play Store</li>
+      <li>เปิดแอป → แท็บ SCAN → หาชื่อ HIOKI หรือ CM3286 → กด CONNECT</li>
+      <li>จะเห็นรายการ <b>Unknown Service</b> พร้อมรหัสยาวๆ ข้างใต้</li>
+      <li>ถ่ายรูปหน้าจอนั้นส่งมาให้ผม หรือเอารหัสมาใส่ในช่องด้านบนแล้วลองใหม่</li>
+    </ol>
+  </div>
+
+</main>
+
+<script>
+/* ============================================================================
+   หน้าทดสอบบลูทูธ — อ่านอย่างเดียว ไม่เขียนอะไรกลับไปที่เครื่องวัด
+   ไม่ส่งข้อมูลออกไปไหน ทุกอย่างอยู่ในเครื่องจนกว่าจะกดคัดลอกเอง
+   ============================================================================ */
+
+/* Web Bluetooth ให้เข้าถึงเฉพาะ service ที่ประกาศไว้ล่วงหน้าเท่านั้น
+   จึงต้องใส่ชุดที่พบบ่อยในเครื่องมือวัดไว้ก่อน แล้วค่อยเพิ่มของจริงทีหลัง */
+const CANDIDATES = [
+  // มาตรฐาน
+  '00001800-0000-1000-8000-00805f9b34fb', // Generic Access
+  '0000180a-0000-1000-8000-00805f9b34fb', // Device Information
+  '0000180f-0000-1000-8000-00805f9b34fb', // Battery
+  // ชุดที่ผู้ผลิตเครื่องมือวัดใช้บ่อย
+  '0000fff0-0000-1000-8000-00805f9b34fb',
+  '0000ffe0-0000-1000-8000-00805f9b34fb',
+  '0000ffb0-0000-1000-8000-00805f9b34fb',
+  '0000fee0-0000-1000-8000-00805f9b34fb',
+  '0000fe59-0000-1000-8000-00805f9b34fb',
+  '0000ff00-0000-1000-8000-00805f9b34fb',
+  '0000ffa0-0000-1000-8000-00805f9b34fb',
+  // Nordic UART (โมดูลที่ใช้กันมากที่สุด)
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
+  // Microchip Transparent UART
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+  // TI
+  'f000c0c0-0451-4000-b000-000000000000',
+  '0000c0c0-0000-1000-8000-00805f9b34fb'
+];
+
+const $ = id => document.getElementById(id);
+let device = null, server = null;
+const seen = [];          // เก็บแพ็กเก็ตไว้ดูรูปแบบ
+
+function log(line){
+  const el = $('log');
+  if(el.textContent.indexOf('ยังไม่มีข้อมูล') === 0) el.textContent = '';
+  el.textContent += line + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+function setState(text, cls){
+  $('stateText').textContent = text;
+  $('dot').className = 'dot' + (cls ? ' ' + cls : '');
+}
+function hex(dv){
+  const out = [];
+  for(let i = 0; i < dv.byteLength; i++) out.push(dv.getUint8(i).toString(16).padStart(2, '0'));
+  return out.join(' ');
+}
+function ascii(dv){
+  let s = '';
+  for(let i = 0; i < dv.byteLength; i++){
+    const c = dv.getUint8(i);
+    s += (c >= 32 && c < 127) ? String.fromCharCode(c) : '·';
+  }
+  return s;
+}
+/* ลองถอดค่าเป็นตัวเลขแบบต่างๆ ทุกตำแหน่ง — ค่าที่ใกล้เคียงกับที่อ่านบนหน้าจอเครื่องคือรูปแบบที่ใช่ */
+function guesses(dv){
+  const out = [];
+  for(let i = 0; i + 4 <= dv.byteLength; i++){
+    const f = dv.getFloat32(i, true);
+    if(isFinite(f) && Math.abs(f) > 0.001 && Math.abs(f) < 100000) out.push('f32LE@' + i + '=' + f.toPrecision(6));
+    const fb = dv.getFloat32(i, false);
+    if(isFinite(fb) && Math.abs(fb) > 0.001 && Math.abs(fb) < 100000) out.push('f32BE@' + i + '=' + fb.toPrecision(6));
+  }
+  for(let i = 0; i + 2 <= dv.byteLength; i++){
+    const u = dv.getUint16(i, true);
+    if(u > 0 && u < 60000) out.push('u16LE@' + i + '=' + u);
+  }
+  for(let i = 0; i + 4 <= dv.byteLength; i++){
+    const u = dv.getUint32(i, true);
+    if(u > 0 && u < 10000000) out.push('u32LE@' + i + '=' + u);
+  }
+  return out.slice(0, 14).join('  ');
+}
+
+/* เบราว์เซอร์รองรับหรือไม่ — iPhone จะเข้าเงื่อนไขนี้ */
+(function checkSupport(){
+  const box = $('support');
+  if(navigator.bluetooth){
+    box.innerHTML = '<div class="okbox">✓ เบราว์เซอร์นี้ใช้บลูทูธได้ — กดปุ่มด้านล่างเพื่อเริ่ม</div>';
+    return;
+  }
+  $('scanBtn').disabled = true;
+  box.innerHTML = '<div class="warnbox"><b>เบราว์เซอร์นี้ต่อบลูทูธไม่ได้</b><br>' +
+    'ถ้าเป็น iPhone หรือ iPad — Safari ไม่รองรับ Web Bluetooth และ Chrome บน iOS ก็ใช้ตัวเดียวกัน จึงไม่ได้เหมือนกัน<br>' +
+    'ต้องทดสอบด้วยมือถือ <b>Android</b> เปิดด้วย <b>Chrome</b> เท่านั้น</div>';
+})();
+
+$('scanBtn').addEventListener('click', async ()=>{
+  const extra = $('extraUuid').value.split(',').map(s=> s.trim().toLowerCase()).filter(s=> s);
+  const optionalServices = CANDIDATES.concat(extra);
+  try{
+    setState('กำลังเปิดรายการอุปกรณ์ ...', '');
+    log('=== เริ่มค้นหา ' + new Date().toLocaleString('th-TH') + ' ===');
+    if(extra.length) log('UUID ที่กรอกเพิ่ม: ' + extra.join(', '));
+
+    device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices });
+    log('อุปกรณ์: ' + (device.name || '(ไม่มีชื่อ)') + '  id=' + device.id);
+    setState('กำลังเชื่อม ' + (device.name || '') + ' ...', '');
+
+    device.addEventListener('gattserverdisconnected', ()=>{
+      setState('หลุดการเชื่อมต่อ', 'err');
+      log('!! เครื่องตัดการเชื่อมต่อ');
+    });
+
+    server = await device.gatt.connect();
+    setState('เชื่อมแล้ว — ' + (device.name || 'อุปกรณ์'), 'on');
+    log('เชื่อม GATT สำเร็จ');
+
+    const services = await server.getPrimaryServices();
+    log('พบ service ที่เข้าถึงได้ ' + services.length + ' รายการ');
+    if(!services.length){
+      log('!! เข้าถึง service ไม่ได้เลย — แปลว่า UUID ของ HIOKI ไม่อยู่ในชุดที่เตรียมไว้');
+      log('   ให้ใช้ nRF Connect หา UUID มาใส่ในช่องด้านบน แล้วกดค้นหาใหม่');
+      return;
+    }
+
+    $('svcCard').style.display = '';
+    const list = $('svcList');
+    list.innerHTML = '';
+
+    for(const svc of services){
+      log('--- service ' + svc.uuid);
+      const box = document.createElement('div');
+      box.className = 'svc';
+      box.innerHTML = '<b>' + svc.uuid + '</b>';
+      list.appendChild(box);
+
+      let chars = [];
+      try{ chars = await svc.getCharacteristics(); }
+      catch(e){ log('    อ่าน characteristic ไม่ได้: ' + e.message); continue; }
+
+      for(const ch of chars){
+        const p = ch.properties;
+        const tags = [];
+        if(p.read) tags.push('read');
+        if(p.write || p.writeWithoutResponse) tags.push('write');
+        if(p.notify || p.indicate) tags.push('notify');
+        log('    char ' + ch.uuid + '  [' + tags.join(',') + ']');
+
+        const row = document.createElement('div');
+        row.className = 'chr';
+        row.innerHTML = '<code>' + ch.uuid + '</code><br>' +
+          (p.read ? '<span class="pill r">read</span>' : '') +
+          ((p.write || p.writeWithoutResponse) ? '<span class="pill w">write</span>' : '') +
+          ((p.notify || p.indicate) ? '<span class="pill n">notify</span>' : '');
+        box.appendChild(row);
+
+        // อ่านค่าครั้งเดียวถ้าอ่านได้ — บางเครื่องเก็บรุ่น/เลขเครื่องไว้ตรงนี้
+        if(p.read){
+          try{
+            const v = await ch.readValue();
+            const h = hex(v), a = ascii(v);
+            log('      อ่านได้: ' + h + '   "' + a + '"');
+            row.innerHTML += '<div class="muted" style="margin-top:3px;">ค่า: ' + h + ' &nbsp; "' + a + '"</div>';
+          }catch(e){ log('      อ่านไม่ได้: ' + e.message); }
+        }
+
+        // สมัครรับค่าที่ส่งมาเรื่อยๆ — นี่คือส่วนที่เราต้องการจริง
+        if(p.notify || p.indicate){
+          try{
+            await ch.startNotifications();
+            log('      >> สมัครรับข้อมูลแล้ว รอค่าจากเครื่อง ...');
+            ch.addEventListener('characteristicvaluechanged', ev=> onPacket(ch.uuid, ev.target.value));
+          }catch(e){ log('      สมัครรับข้อมูลไม่ได้: ' + e.message); }
+        }
+      }
+    }
+    log('=== ไล่ครบแล้ว ถ้ามี notify ให้หมุนสวิตช์ที่เครื่องวัดดู ค่าควรวิ่งเข้ามา ===');
+    $('liveCard').style.display = '';
+  }catch(e){
+    setState('ไม่สำเร็จ', 'err');
+    log('!! ' + (e && e.message ? e.message : String(e)));
+    if(String(e).indexOf('cancel') >= 0) log('   (ปิดรายการอุปกรณ์ไปเอง — กดค้นหาใหม่ได้)');
+  }
+});
+
+let packetCount = 0;
+function onPacket(uuid, dv){
+  packetCount++;
+  const h = hex(dv), a = ascii(dv), g = guesses(dv);
+  if(packetCount <= 60){           // เก็บ 60 แพ็กเก็ตแรกพอ ไม่ให้ล้น
+    log('[' + packetCount + '] ' + uuid.slice(0, 8) + ' (' + dv.byteLength + 'B) ' + h);
+    if(a.replace(/·/g, '').length > 2) log('      ascii: "' + a + '"');
+    if(g) log('      ลองถอด: ' + g);
+  } else if(packetCount === 61){
+    log('... (หยุดบันทึกที่ 60 แพ็กเก็ต — เท่านี้พอให้ดูรูปแบบแล้ว)');
+  }
+  seen.push({ uuid, hex: h });
+
+  // เดาค่าที่น่าจะเป็นตัวเลขบนหน้าจอ แล้วโชว์ตัวใหญ่ไว้เทียบกับเครื่อง
+  let best = null;
+  for(let i = 0; i + 4 <= dv.byteLength; i++){
+    const f = dv.getFloat32(i, true);
+    if(isFinite(f) && f > 0.01 && f < 100000){ best = f; break; }
+  }
+  if(best == null){
+    for(let i = 0; i + 4 <= dv.byteLength; i++){
+      const u = dv.getUint32(i, true);
+      if(u > 0 && u < 10000000){ best = u / 1000; break; }
+    }
+  }
+  if(best != null){
+    $('liveVal').textContent = Number(best.toPrecision(6)).toString();
+    $('liveSrc').textContent = 'แพ็กเก็ตที่ ' + packetCount;
+  }
+}
+
+$('copyBtn').addEventListener('click', async ()=>{
+  const text = $('log').textContent;
+  try{
+    await navigator.clipboard.writeText(text);
+    $('copyBtn').textContent = '✓ คัดลอกแล้ว';
+    setTimeout(()=> $('copyBtn').textContent = '📋 คัดลอกทั้งหมด', 2000);
+  }catch(e){
+    // เบราว์เซอร์บางตัวไม่ให้คัดลอกอัตโนมัติ — เลือกข้อความให้แทน
+    const r = document.createRange();
+    r.selectNodeContents($('log'));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    $('copyBtn').textContent = 'เลือกข้อความให้แล้ว — กดคัดลอกเอง';
+  }
+});
+$('clearBtn').addEventListener('click', ()=>{
+  $('log').textContent = 'ยังไม่มีข้อมูล — กดปุ่มค้นหาและเชื่อมด้านบนก่อน';
+  packetCount = 0; seen.length = 0;
+  $('liveVal').textContent = '—'; $('liveSrc').textContent = '';
+});
+</script>
+</body>
+</html>
