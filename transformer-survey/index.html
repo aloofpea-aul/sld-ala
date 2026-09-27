@@ -3785,12 +3785,18 @@ function txlValidate(step){
   /* อ่านทีละหลัก: ส่องทั้ง 7 ตำแหน่งว่าขีดไหนติด แล้วเปิดตาราง */
   function readDigit(bin, W, box, thick) {
     var bw = box.x1 - box.x0 + 1, bh = box.y1 - box.y0 + 1;
+    var tk = thick > 0 ? thick : Math.max(2, bh * 0.12);
     // ตัวเลข 1 มีแค่ขีดตั้งสองเส้นซ้อนกัน กล่องจึงผอมกว่าหลักอื่นมาก
-    if (bw / bh < 0.34) return { ch: '1', ok: true, conf: 1, narrow: true };
+    // แต่ต้องผอม "เท่าความหนาขีดจริง" ด้วย ไม่งั้นขอบตัวเครื่องหรือปุ่มที่เป็นแท่งยาว
+    // จะถูกอ่านเป็นเลข 1 แล้วได้ค่าอย่าง 111 ที่ดูน่าเชื่อแต่ผิดสนิท
+    if (bw / bh < 0.34) {
+      if (bw <= tk * 2.8) return { ch: '1', ok: true, conf: 1, narrow: true };
+      return { ch: '?', ok: false, conf: 0, tooWide: true };
+    }
 
     // ถ้าขีดบาง ช่องที่ไปส่องจะมีหมึกไม่เต็มแม้ขีดนั้นติดอยู่ จึงต้องเทียบกับ
     // สัดส่วนที่ "ควรจะเป็น" ของขีดที่ติดจริง ไม่ใช่เทียบกับเลขคงที่
-    var t = thick > 0 ? thick : Math.max(2, bh * 0.12);
+    var t = tk;
     var expH = Math.max(0.10, Math.min(1, t / Math.max(1, bh * 0.16)));
     var expV = Math.max(0.10, Math.min(1, t / Math.max(1, bw * 0.28)));
 
@@ -3835,6 +3841,49 @@ function txlValidate(step){
   }
 
   /* ---------- ตัวหลัก ---------- */
+  /* หาขอบเขตหน้าจอ LCD — ไล่จากกลางกรอบที่ช่างเล็ง แผ่ไปตามพื้นที่ที่ไม่ใช่หมึก
+     จนชนขอบจอ ได้กรอบของหน้าจอออกมา ตัวเลขอยู่ในนั้นเสมอ
+     จำเป็นมากกับรูปที่ถ่ายทั้งเครื่อง เพราะตัวเครื่องกับปุ่มเป็นก้อนดำใหญ่
+     ถ้าไม่กันออกไปก่อน มันจะกลบแถวตัวเลขจนระบบเลือกแถวผิด */
+  function panelBox(bin, W, H, cx, cy) {
+    var n = W * H;
+    cx = Math.max(0, Math.min(W - 1, cx | 0));
+    cy = Math.max(0, Math.min(H - 1, cy | 0));
+    var start = cy * W + cx;
+    if (bin[start]) {                       // จุดกลางตกบนหมึกพอดี ขยับหาจุดว่างใกล้ๆ
+      var found = -1;
+      for (var rad = 1; rad < 40 && found < 0; rad++) {
+        for (var dy = -rad; dy <= rad && found < 0; dy += rad) {
+          for (var dx = -rad; dx <= rad && found < 0; dx++) {
+            var nx = cx + dx, ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+            if (!bin[ny * W + nx]) found = ny * W + nx;
+          }
+        }
+      }
+      if (found < 0) return null;
+      start = found;
+    }
+    var seen = new Uint8Array(n), stack = new Int32Array(n), sp = 0, area = 0;
+    var x0 = W, x1 = 0, y0 = H, y1 = 0;
+    stack[sp++] = start; seen[start] = 1;
+    while (sp > 0) {
+      var q = stack[--sp], qx = q % W, qy = (q / W) | 0;
+      area++;
+      if (qx < x0) x0 = qx; if (qx > x1) x1 = qx;
+      if (qy < y0) y0 = qy; if (qy > y1) y1 = qy;
+      if (qx > 0 && !bin[q - 1] && !seen[q - 1]) { seen[q - 1] = 1; stack[sp++] = q - 1; }
+      if (qx < W - 1 && !bin[q + 1] && !seen[q + 1]) { seen[q + 1] = 1; stack[sp++] = q + 1; }
+      if (qy > 0 && !bin[q - W] && !seen[q - W]) { seen[q - W] = 1; stack[sp++] = q - W; }
+      if (qy < H - 1 && !bin[q + W] && !seen[q + W]) { seen[q + W] = 1; stack[sp++] = q + W; }
+    }
+    var frac = area / n;
+    // เล็กไปแปลว่าไม่ใช่หน้าจอ · ใหญ่เกือบทั้งภาพแปลว่ากรอบอยู่ในจอทั้งหมดอยู่แล้ว ไม่ต้องตัด
+    if (frac < 0.03 || frac > 0.80) return null;
+    if (x1 - x0 < W * 0.15 || y1 - y0 < H * 0.10) return null;
+    return { x0: x0, y0: y0, x1: x1, y1: y1 };
+  }
+
   /* แถวที่มีหมึกในภาพ — ใช้หาว่าตัวเลขหลักอยู่แถวไหน */
   function rowBands(bin, W, H) {
     var rows = new Int32Array(H), maxR = 0, y, x;
@@ -3939,6 +3988,9 @@ function txlValidate(step){
     var medH = hs[Math.floor(hs.length / 2)];
 
     var thick = strokeThickness(bin, W, band.y0, band.y1);
+    // ตัวเลขบนจอ 7 ขีด สูงราว 4–12 เท่าของความหนาขีดเสมอ ไม่ว่าจอไหนยี่ห้อไหน
+    // ถ้าหลุดช่วงนี้แปลว่าสิ่งที่เจอไม่ใช่ตัวเลข แต่เป็นขอบตัวเครื่องหรือเงาก้อนใหญ่
+    if (thick > 0 && (medH < thick * 3.2 || medH > thick * 15)) return null;
 
     var digits = [], text = '', k;
     for (k = 0; k < items.length; k++) {
@@ -4019,6 +4071,25 @@ function txlValidate(step){
     }
     if (!keep.length) return fail('ในกรอบมีแต่จุดรบกวน ไม่มีตัวเลข');
 
+    // ตัดให้เหลือเฉพาะในหน้าจอก่อน แล้วค่อยหาแถวตัวเลข
+    var pan = panelBox(b.bin, W, H,
+                       opt.core ? (opt.core.x0 + opt.core.x1) / 2 : W / 2,
+                       opt.core ? (opt.core.y0 + opt.core.y1) / 2 : H / 2);
+    if (pan) {
+      var inpad = 2;
+      for (var py = 0; py < H; py++) {
+        for (var px = 0; px < W; px++) {
+          if (px < pan.x0 + inpad || px > pan.x1 - inpad || py < pan.y0 + inpad || py > pan.y1 - inpad) {
+            b.bin[py * W + px] = 0;
+          }
+        }
+      }
+      keep = keep.filter(function (kc) {
+        return kc.x0 >= pan.x0 && kc.x1 <= pan.x1 && kc.y0 >= pan.y0 && kc.y1 <= pan.y1;
+      });
+      if (!keep.length) return fail('ในหน้าจอไม่เจอตัวเลข');
+    }
+
     // หาแถวที่เป็นไปได้ทั้งหมด แล้วลองอ่านทีละแถว เลือกแถวที่ให้ผลดีที่สุด
     // จำเป็นเพราะในกรอบมักติดแถวอื่นของจอมาด้วย เช่น ค่าพีคหรือความถี่ที่อยู่คนละบรรทัด
     var bands = rowBands(b.bin, W, H);
@@ -4046,8 +4117,9 @@ function txlValidate(step){
       // ไล่ให้ครบทุกแถบ อย่าเพิ่งหยุดที่แถบแรกที่อ่านออก
       // เพราะแถบที่กินแถวอื่นเข้ามามักอ่านออกเหมือนกัน แค่ได้ตัวเลขไม่ครบ (จุดทศนิยมหาย)
     }
-    if (!best) return fail('ในกรอบไม่มีตัวเลขที่อ่านได้');
+    if (!best) return fail('อ่านตัวเลขไม่ออก — ลองถ่ายใกล้ขึ้นให้หน้าปัดเต็มกรอบ หรือลากกรอบให้เหลือเฉพาะตัวเลขแล้วกดอ่านใหม่');
     best.inkDark = b.inkDark;
+    best.panel = pan || null;
     best.width = W; best.height = H;
     return best;
   }
@@ -4157,7 +4229,10 @@ async function txlCapShoot(){
   txl.cap.ocr = await txlCapRunOcr();
   if(txl.cap && txl.cap.ocr){
     if(txl.cap.ocr.ok) txl.cap.value = txl.cap.ocr.text;
-    if(txl.cap.ocr.foundRect){ txl.cap.rect = txl.cap.ocr.foundRect; txlCapRect = Object.assign({}, txl.cap.rect); }
+    // ให้กรอบเกาะตัวเลขเฉพาะตอนอ่านสำเร็จ ถ้าเกาะตอนอ่านผิดด้วย กรอบจะเพี้ยนหนักขึ้นทุกรอบ
+    if(txl.cap.ocr.ok && txl.cap.ocr.foundRect){
+      txl.cap.rect = txl.cap.ocr.foundRect; txlCapRect = Object.assign({}, txl.cap.rect);
+    }
   }
   txlCapRender();
 }
@@ -4175,7 +4250,9 @@ async function txlCapPickFile(inp){
     txl.cap.ocr = await txlCapRunOcr();
     if(txl.cap && txl.cap.ocr){
       if(txl.cap.ocr.ok) txl.cap.value = txl.cap.ocr.text;
-      if(txl.cap.ocr.foundRect){ txl.cap.rect = txl.cap.ocr.foundRect; txlCapRect = Object.assign({}, txl.cap.rect); }
+      if(txl.cap.ocr.ok && txl.cap.ocr.foundRect){
+        txl.cap.rect = txl.cap.ocr.foundRect; txlCapRect = Object.assign({}, txl.cap.rect);
+      }
     }
     PEAUI.saving.hide();
     txlCapRender();
@@ -4443,7 +4520,7 @@ function txlCapRender(){
   note.style.display = (m === 'aim' || fullView) ? '' : 'none';
   note.innerHTML = m === 'aim'
     ? (cap.camErr ? '<span class="err">' + escapeHtml(cap.camErr) + '</span>'
-                  : 'วางกรอบให้คลุมเฉพาะตัวเลขใหญ่ ไม่ต้องเอาหน่วยหรือสัญลักษณ์เข้ามา')
+                  : 'เข้าใกล้ให้หน้าปัดเต็มกรอบ แล้ววางกรอบเขียวคลุมเฉพาะตัวเลขใหญ่ — ถ่ายทั้งเครื่องจะอ่านไม่ออก')
     : 'ลากกรอบให้คลุมเฉพาะตัวเลข แล้วกด "อ่านใหม่จากกรอบ" · รูปที่เก็บยังเป็นภาพเต็มใบนี้';
 
   const nextKey = txlCapNextKey(cap.key);
