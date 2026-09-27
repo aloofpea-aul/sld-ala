@@ -2785,6 +2785,7 @@ function txlFieldState(key){
 const TXL_LONGDO_KEY = 'f61a87ff70c39e610385809783d5a1b3';
 
 let txl = null;           // สถานะฟอร์มที่กำลังกรอก
+let txlLastStep = 0;      // ขั้นที่วาดไว้ล่าสุด ใช้ดูว่าควรคงตำแหน่งเลื่อนหน้าไหม
 let txlLatest = {};       // deviceId → ผลวัดล่าสุด (เติมจาก lastLoad ในข้อมูลอุปกรณ์)
 let txlSaving = false;
 let txlQueueCount = 0;
@@ -3096,6 +3097,7 @@ function txlOpen(feederId, deviceId){
     lat: d.lat != null ? d.lat : null, lon: d.lon != null ? d.lon : null,
     address: '', poleTag: d.poleTag || ''
   };
+  txlLastStep = 0;
   document.getElementById('txlOverlay').classList.add('show');
   txlRender();
   txlFillAddress();
@@ -3126,10 +3128,13 @@ function txlRender(){
   document.getElementById('txlBars').innerHTML =
     [1,2,3,4].map(n=> '<i class="' + (n <= txl.step ? 'on' : '') + '"></i>').join('');
   const body = document.getElementById('txlBody');
-  // ลำดับใหม่ — ขั้นที่ 2 ถ่ายรูปหม้อแปลงก่อน แล้วขั้นที่ 3 จึงลงมือวัดค่าพร้อมถ่ายหน้าปัด
+  // คงตำแหน่งเลื่อนหน้าไว้เวลากดปุ่มอะไรในขั้นเดิม — เปลี่ยนขั้นเท่านั้นถึงจะดีดขึ้นบนสุด
+  // ไม่งั้นกดเลือกอะไรทีหน้าจอเด้งขึ้นบนทุกที ต้องเลื่อนกลับลงมาเองทุกครั้ง
+  const keepY = (txlLastStep === txl.step) ? body.scrollTop : 0;
+  txlLastStep = txl.step;
   body.innerHTML = txl.step === 1 ? txlStep1() : txl.step === 2 ? txlStepPhotos()
                  : txl.step === 3 ? txlStepValues() : txlStep4();
-  body.scrollTop = 0;
+  body.scrollTop = keepY;
   txlBind();
   txlUpdateStrip();
 }
@@ -3614,14 +3619,24 @@ function txlValidate(step){
     }
     return o;
   }
-  function binarize(g0, W, H) {
+  function binarize(g0, W, H, core) {
     var g = smooth(g0, W, H), n = W * H, i;
 
     // ขั้วของภาพ: เลขดำบนพื้นสว่าง หรือเลขสว่างบนพื้นมืด (จอมีไฟส่องหลัง)
     // หมึกคือฝั่งที่มีพิกเซลน้อยกว่าเสมอ เพราะตัวเลขกินพื้นที่น้อยกว่าพื้นจอ
-    var thr = otsu(g), dark = 0;
-    for (i = 0; i < n; i++) if (g[i] < thr) dark++;
-    var inkDark = dark <= n - dark;
+    // ตัดสินจากบริเวณกลางกรอบที่ช่างเล็งเท่านั้น เพราะรอบนอกมักมีตัวเครื่องสีเข้มปนมา
+    // ถ้าเอาทั้งภาพมาคิด ตัวเครื่องจะทำให้นับพิกเซลมืดมากกว่าสว่างแล้วสลับขั้วผิด
+    var cx0 = 0, cy0 = 0, cx1 = W, cy1 = H;
+    if (core) {
+      cx0 = Math.max(0, Math.min(W - 1, core.x0 | 0)); cx1 = Math.max(cx0 + 1, Math.min(W, core.x1 | 0));
+      cy0 = Math.max(0, Math.min(H - 1, core.y0 | 0)); cy1 = Math.max(cy0 + 1, Math.min(H, core.y1 | 0));
+    }
+    var sample = [];
+    for (var yy = cy0; yy < cy1; yy++) for (var xx = cx0; xx < cx1; xx++) sample.push(g[yy * W + xx]);
+    var samp = Float32Array.from(sample);
+    var thr = otsu(samp), dark = 0;
+    for (i = 0; i < samp.length; i++) if (samp[i] < thr) dark++;
+    var inkDark = dark <= samp.length - dark;
     var v = new Float32Array(n);
     for (i = 0; i < n; i++) v[i] = inkDark ? g[i] : 255 - g[i];
 
@@ -3633,7 +3648,8 @@ function txlValidate(step){
     for (i = 0; i < n; i++) sq[i] = v[i] * v[i];
     var s2 = integral(sq, W, H);
 
-    var r = Math.max(5, Math.round(Math.min(W, H) / 6));
+    // หน้าต่างกว้างเกินไปจะทำให้ขอบจอที่ตัดกับตัวเครื่องกลายเป็นหมึกเป็นแถบหนา
+    var r = Math.max(8, Math.min(40, Math.round(Math.min(W, H) / 10)));
     var k = 0.18, R = 128;
     var bin = new Uint8Array(n), on = 0;
     for (var y = 0; y < H; y++) {
@@ -3778,6 +3794,21 @@ function txlValidate(step){
     var expH = Math.max(0.10, Math.min(1, t / Math.max(1, bh * 0.16)));
     var expV = Math.max(0.10, Math.min(1, t / Math.max(1, bw * 0.28)));
 
+    // ตัวเลข 7 ขีดทุกตัวมีช่องว่างกลางตัวเสมอ ทั้งช่วงบนและช่วงล่าง
+    // ถ้าตรงนั้นทึบ แปลว่าไม่ใช่ตัวเลขแต่เป็นก้อนสีเดียว เช่นเงาหรือขอบตัวเครื่อง
+    // เช็กตรงนี้สำคัญมาก ไม่งั้นพื้นที่ทึบจะถูกอ่านเป็นเลข 8 ซึ่งดูน่าเชื่อแต่ผิดสนิท
+    var holeFilled = function (hx0, hy0, hx1, hy1) {
+      var ax0 = box.x0 + Math.round(hx0 * bw), ax1 = box.x0 + Math.round(hx1 * bw);
+      var ay0 = box.y0 + Math.round(hy0 * bh), ay1 = box.y0 + Math.round(hy1 * bh);
+      if (ax1 <= ax0 || ay1 <= ay0) return 0;
+      var on = 0, tot = 0;
+      for (var y = ay0; y < ay1; y++) for (var x = ax0; x < ax1; x++) { on += bin[y * W + x]; tot++; }
+      return tot ? on / tot : 0;
+    };
+    if (holeFilled(0.36, 0.20, 0.64, 0.38) > 0.55 && holeFilled(0.36, 0.62, 0.64, 0.80) > 0.55) {
+      return { ch: '?', ok: false, conf: 0, solid: true };
+    }
+
     var bits = '', worst = 1;
     for (var i = 0; i < 7; i++) {
       var nm = SEG_ORDER[i];
@@ -3804,79 +3835,65 @@ function txlValidate(step){
   }
 
   /* ---------- ตัวหลัก ---------- */
-  function read(img, opt) {
-    opt = opt || {};
-    var W = img.width, H = img.height;
-    if (W < 40 || H < 20) return fail('กรอบเล็กเกินกว่าจะอ่านได้');
-
-    var g = toGray(img);
-    var b = binarize(g, W, H);
-    var inkFrac = b.ink / (W * H);
-    if (inkFrac < 0.006) return fail('ในกรอบแทบไม่มีตัวเลข — เล็งกรอบให้ตรงตัวเลขก่อน');
-    if (inkFrac > 0.55) return fail('ในกรอบมืดหรือรกเกินไป — ขยับกรอบให้เหลือเฉพาะตัวเลข');
-
-    // จับกลุ่มพิกเซลก่อน แล้วค่อยหาขอบบน-ล่างของแถบตัวเลขจากกลุ่มที่เหลือ
-    // นับทีละแถวไม่ได้ เพราะจอที่เป็นเลข 1 ล้วนจะมีช่องว่างกลางตัวจนแถบถูกตัดครึ่ง
-    var bl = blobs(b.bin, W, H);
-    if (!bl.list.length) return fail('หาตัวเลขในกรอบไม่เจอ');
-    var keep = [];
-    for (var z = 0; z < bl.list.length; z++) {
-      var cz = bl.list[z];
-      if (cz.area < 5 || (cz.x1 - cz.x0 + 1) < 2 || (cz.y1 - cz.y0 + 1) < 2) {
-        erase(b.bin, bl.lab, cz.id);        // เม็ดรบกวนเล็กจิ๋ว
-        continue;
-      }
-      keep.push(cz);
+  /* แถวที่มีหมึกในภาพ — ใช้หาว่าตัวเลขหลักอยู่แถวไหน */
+  function rowBands(bin, W, H) {
+    var rows = new Int32Array(H), maxR = 0, y, x;
+    for (y = 0; y < H; y++) {
+      var c = 0, off = y * W;
+      for (x = 0; x < W; x++) c += bin[off + x];
+      rows[y] = c; if (c > maxR) maxR = c;
     }
-    if (!keep.length) return fail('ในกรอบมีแต่จุดรบกวน ไม่มีตัวเลข');
-    var byT = Infinity, byB = -Infinity;
-    for (var z2 = 0; z2 < keep.length; z2++) {
-      if (keep[z2].y0 < byT) byT = keep[z2].y0;
-      if (keep[z2].y1 > byB) byB = keep[z2].y1;
+    if (!maxR) return [];
+    var th = Math.max(1, maxR * 0.05), out = [], cur = null;
+    for (y = 0; y < H; y++) {
+      if (rows[y] >= th) {
+        if (!cur) cur = { y0: y, y1: y, ink: rows[y] };
+        else { cur.y1 = y; cur.ink += rows[y]; }
+      } else if (cur) { out.push(cur); cur = null; }
     }
-    var band = { y0: byT, y1: byB };
-    if (band.y1 - band.y0 < 10) return fail('ตัวเลขในกรอบเล็กเกินไป');
+    if (cur) out.push(cur);
+    return out;
+  }
+
+  /* อ่านตัวเลขจากแถวที่กำหนด — คืนผลพร้อมคะแนนว่าน่าเชื่อแค่ไหน */
+  function readBand(binSrc, lab, keep, W, H, band, opt) {
     var bandH = band.y1 - band.y0 + 1;
-
-    var runs = columnRuns(b.bin, W, band.y0, band.y1);
-    if (!runs.length) return fail('หาตัวเลขในกรอบไม่เจอ');
-
-    // ความกว้างที่หลักหนึ่งควรเป็น — ตัวเลข 7 ขีดกว้างราว 0.58 เท่าของความสูงเสมอ
+    if (bandH < 12) return null;
+    var bin = binSrc.slice();
     var expectW = bandH * 0.58;
 
-    // แยกจุดทศนิยมกับเศษรบกวนออกจากภาพก่อน แล้วค่อยแบ่งหลัก
-    // จุดทศนิยมมักอยู่ชิดหลักถัดไปจนดูเป็นก้อนเดียวถ้าดูแค่คอลัมน์ จึงต้องจับเป็นชิ้นๆ
-    var dots = [];
-    for (var bi = 0; bi < keep.length; bi++) {
-      var c = keep[bi];
-      var cw = c.x1 - c.x0 + 1, ch2 = c.y1 - c.y0 + 1;
-      if (Math.max(cw, ch2) < bandH * 0.09) { erase(b.bin, bl.lab, c.id); continue; }  // เศษเล็กๆ
-      var aspect = cw / ch2;
-      var lowHalf = c.y1 >= band.y0 + bandH * 0.60;
-      if (aspect >= 0.5 && aspect <= 2.0 &&
-          cw <= bandH * 0.30 && ch2 <= bandH * 0.30 && lowHalf) {
+    // จุดทศนิยมกับเศษรบกวน เอาออกก่อนแบ่งหลัก
+    var dots = [], bi, c, cw, ch2, aspect;
+    for (bi = 0; bi < keep.length; bi++) {
+      c = keep[bi];
+      if (c.y1 < band.y0 || c.y0 > band.y1) continue;
+      cw = c.x1 - c.x0 + 1; ch2 = c.y1 - c.y0 + 1;
+      if (Math.max(cw, ch2) < bandH * 0.09) { erase(bin, lab, c.id); continue; }
+      aspect = cw / ch2;
+      // จุดทศนิยมจริงเล็กราว 0.10–0.15 เท่าของความสูงตัวเลข ตั้งเพดานไว้ 0.22 พอ
+      // ถ้าปล่อยถึง 0.30 ตัวอักษรหน่วยอย่าง V จะถูกนับเป็นจุดทศนิยมไปด้วย
+      if (aspect >= 0.5 && aspect <= 2.0 && cw <= bandH * 0.22 && ch2 <= bandH * 0.22 &&
+          c.y1 >= band.y0 + bandH * 0.60) {
         dots.push({ x: (c.x0 + c.x1) / 2 });
-        erase(b.bin, bl.lab, c.id);
+        erase(bin, lab, c.id);
       }
     }
 
-    runs = columnRuns(b.bin, W, band.y0, band.y1);
-    if (!runs.length) return fail('หาตัวเลขในกรอบไม่เจอ');
+    var runs = columnRuns(bin, W, band.y0, band.y1);
+    if (!runs.length) return null;
 
-    var parts = [];
-    for (var i = 0; i < runs.length; i++) {
-      var rr = runs[i];
-      var ex = vExtent(b.bin, W, rr.x0, rr.x1, band.y0, band.y1);
+    var parts = [], i, rr, ex;
+    for (i = 0; i < runs.length; i++) {
+      rr = runs[i];
+      ex = vExtent(bin, W, rr.x0, rr.x1, band.y0, band.y1);
       if (ex.y0 < 0) continue;
-      if (ex.y1 - ex.y0 + 1 < bandH * 0.42) continue;      // เตี้ยเกินกว่าจะเป็นตัวเลข
+      if (ex.y1 - ex.y0 + 1 < bandH * 0.42) continue;
       parts.push({ kind: 'digit', x0: rr.x0, x1: rr.x1, y0: ex.y0, y1: ex.y1 });
     }
 
-    // เชื่อมเฉพาะเศษที่แตกจากหลักเดียวกัน (เช่นโดนเงาพาดกลางตัว)
-    // รวมแล้วต้องไม่กว้างเกินหนึ่งหลัก จึงไม่มีทางเอาสองหลักมาติดกัน
-    var items = [];
-    for (var j = 0; j < parts.length; j++) {
-      var pt = parts[j], prev = items.length ? items[items.length - 1] : null;
+    var items = [], j, pt, prev;
+    for (j = 0; j < parts.length; j++) {
+      pt = parts[j]; prev = items.length ? items[items.length - 1] : null;
       if (prev && pt.x0 - prev.x1 <= bandH * 0.14 && (pt.x1 - prev.x0 + 1) <= expectW * 1.05) {
         prev.x1 = pt.x1;
         prev.y0 = Math.min(prev.y0, pt.y0);
@@ -3884,17 +3901,14 @@ function txlValidate(step){
       } else items.push(pt);
     }
 
-    // ชิ้นที่กว้างผิดปกติ แปลว่าหลายหลักติดกันจนแยกไม่ออก ให้หั่นเท่าๆ กัน
-    // เคยลองตัดตรงร่องที่หมึกน้อยที่สุด แต่เลข 4 มีขีดกลางพาดอยู่จนถูกผ่าเป็นเลข 1 สองตัว
-    // ซึ่งอันตรายกว่า เพราะได้ตัวเลขที่ดูสมเหตุสมผลแต่ผิด — หั่นเท่าๆ กันพลาดน้อยกว่า
-    var split = [];
-    for (var q = 0; q < items.length; q++) {
-      var it0 = items[q];
-      var wd = it0.x1 - it0.x0 + 1;
-      var k2 = Math.max(2, Math.min(8, Math.round(wd / expectW)));
+    var split = [], q, it0, wd, k2, step, t2;
+    for (q = 0; q < items.length; q++) {
+      it0 = items[q];
+      wd = it0.x1 - it0.x0 + 1;
+      k2 = Math.max(2, Math.min(8, Math.round(wd / expectW)));
       if (wd > expectW * 1.3) {
-        var step = wd / k2;
-        for (var t2 = 0; t2 < k2; t2++) {
+        step = wd / k2;
+        for (t2 = 0; t2 < k2; t2++) {
           split.push({ kind: 'digit', y0: it0.y0, y1: it0.y1,
                        x0: Math.round(it0.x0 + t2 * step),
                        x1: Math.round(it0.x0 + (t2 + 1) * step) - 1 });
@@ -3903,7 +3917,6 @@ function txlValidate(step){
     }
     items = split;
 
-    // เอาจุดทศนิยมกลับเข้าลำดับตามตำแหน่งแนวนอน
     for (var di = 0; di < dots.length; di++) {
       var dx2 = dots[di].x, at = items.length;
       for (var ii = 0; ii < items.length; ii++) {
@@ -3912,64 +3925,131 @@ function txlValidate(step){
       items.splice(at, 0, { kind: 'dot', x0: dx2, x1: dx2 });
     }
 
+    // จุดทศนิยมต้องอยู่ระหว่างตัวเลขเสมอ — บนหน้าปัดไม่มีทางมีจุดนำหน้าหรือปิดท้าย
+    // ตัวที่โผล่หัวหรือท้ายมักเป็นสัญลักษณ์อื่นที่ติดกรอบเข้ามา เช่นหน่วย V
+    var fi = -1, li = -1, w2;
+    for (w2 = 0; w2 < items.length; w2++) if (items[w2].kind === 'digit') { if (fi < 0) fi = w2; li = w2; }
+    if (fi < 0) return null;
+    items = items.filter(function (x, idx) { return x.kind === 'digit' || (idx > fi && idx < li); });
+
     var digitBoxes = items.filter(function (x) { return x.kind === 'digit'; });
-    if (!digitBoxes.length) return fail('ในกรอบไม่มีตัวเลขที่สูงพอ');
-    if (digitBoxes.length > 8) return fail('เจอตัวเลขเยอะเกินไป — กรอบน่าจะกินสัญลักษณ์อื่นเข้ามาด้วย');
+    if (!digitBoxes.length || digitBoxes.length > 8) return null;
 
-    // ใช้ความสูงกลางๆ ของหลักทั้งหมดเป็นมาตรฐาน กันหลักที่โดนเงาบังบางส่วน
-    var hs = digitBoxes.map(function (d) { return d.y1 - d.y0 + 1; }).sort(function (a, c) { return a - c; });
+    var hs = digitBoxes.map(function (d) { return d.y1 - d.y0 + 1; }).sort(function (a2, c2) { return a2 - c2; });
     var medH = hs[Math.floor(hs.length / 2)];
-    var thick = strokeThickness(b.bin, W, band.y0, band.y1);
-    // ตัวเลขเล็กกว่านี้ขีดจะกลืนกันจนอ่านเพี้ยน และเพี้ยนแบบดูน่าเชื่อด้วย
-    // ต้องวัดจากขนาดในรูปจริง ไม่ใช่ขนาดหลังขยาย เพราะขยายแล้วไม่ได้รายละเอียดเพิ่ม
-    var realH = medH / (opt.scale > 0 ? opt.scale : 1);
-    if (realH < 24) {
-      return fail('ตัวเลขในรูปเล็กเกินไป (สูงราว ' + Math.round(realH) +
-                  ' จุด ต้องการอย่างน้อย 24) — เข้าไปใกล้อีกนิดแล้วถ่ายใหม่');
-    }
 
-    var digits = [], text = '';
-    for (var k = 0; k < items.length; k++) {
+    var thick = strokeThickness(bin, W, band.y0, band.y1);
+
+    var digits = [], text = '', k;
+    for (k = 0; k < items.length; k++) {
       var it = items[k];
       if (it.kind === 'dot') { text += '.'; continue; }
       var box = { x0: it.x0, x1: it.x1, y0: it.y0, y1: it.y1 };
-      // หลักที่โดนบังจนเตี้ยผิดปกติ ให้ยืดกลับไปเท่าความสูงมาตรฐาน จะได้ส่องขีดถูกตำแหน่ง
       if ((box.y1 - box.y0 + 1) < medH * 0.8) {
         var cy = (box.y0 + box.y1) / 2;
         box.y0 = Math.max(band.y0, Math.round(cy - medH / 2));
         box.y1 = Math.min(band.y1, Math.round(cy + medH / 2));
       }
-      var d = readDigit(b.bin, W, box, thick);
-      d.x0 = box.x0; d.x1 = box.x1;      // ตำแหน่งในภาพที่วิเคราะห์ ใช้ขีดชี้ใต้รูปให้ช่างดู
+      var d = readDigit(bin, W, box, thick);
+      d.x0 = box.x0; d.x1 = box.x1;
       digits.push(d);
       text += d.ch;
     }
 
-    var okAll = digits.length > 0 && digits.every(function (d) { return d.ok; });
+    var okAll = digits.length > 0 && digits.every(function (d2) { return d2.ok; });
     var value = null;
-    if (okAll) {
-      var v = parseFloat(text);
-      if (isFinite(v)) value = v;
-    }
+    if (okAll) { var v = parseFloat(text); if (isFinite(v)) value = v; }
     var ok = okAll && value != null;
     var reason = okAll ? (value == null ? 'อ่านได้แต่ประกอบเป็นตัวเลขไม่ได้' : '') : 'บางหลักไม่ชัด';
-    // รูปร่างต้องเป็นตัวเลขที่ถูกต้อง — จุดทศนิยมเกินหนึ่งตัว หรือจุดอยู่หัวท้าย แปลว่ากรอบกินอย่างอื่นเข้ามา
+
     var dotCount = (text.match(/\./g) || []).length;
     if (ok && (dotCount > 1 || /^\.|\.$/.test(text))) {
       ok = false;
       reason = 'อ่านได้ ' + text + ' ซึ่งไม่ใช่รูปแบบตัวเลข — กรอบน่าจะกินสัญลักษณ์อื่นเข้ามา ลากกรอบให้เหลือเฉพาะตัวเลข';
     }
-    // ด่านสุดท้าย — เทียบกับช่วงที่ค่าของช่องนี้ควรจะเป็น
-    // จุดทศนิยมหายไปหนึ่งตัวทำให้ 231.0 กลายเป็น 2310 ซึ่งเป็นความผิดพลาดที่อันตรายที่สุด
-    // ถ้าค่าหลุดช่วงก็ไม่เติมให้เงียบๆ แต่ส่งให้คนดูแทน
+    var realH = medH / (opt.scale > 0 ? opt.scale : 1);
+    if (ok && realH < 24) {
+      ok = false;
+      reason = 'ตัวเลขในรูปเล็กเกินไป (สูงราว ' + Math.round(realH) + ' จุด ต้องการอย่างน้อย 24) — เข้าไปใกล้อีกนิดแล้วถ่ายใหม่';
+    }
     if (ok && opt.min != null && opt.max != null && (value < opt.min || value > opt.max)) {
       ok = false;
       reason = 'อ่านได้ ' + text + ' ซึ่งอยู่นอกช่วงที่ควรเป็น (' + opt.min + '–' + opt.max + ') — ตรวจจุดทศนิยมด้วย';
     }
-    return {
-      text: text, value: value, digits: digits, ok: ok, reason: reason,
-      inkDark: b.inkDark, width: W, height: H, band: band
-    };
+
+    // คะแนน: อ่านครบและผ่านด่านทุกชั้น > อ่านออกบางหลัก > ไม่ได้เรื่อง
+    var okCount = digits.filter(function (d3) { return d3.ok; }).length;
+    // สัดส่วนความสูงตัวเลขต่อความสูงแถบ — แถบที่รัดตัวเลขพอดีจะเข้าใกล้ 1
+    // ใช้ตัดสินเวลาคะแนนเท่ากัน เพราะแถบที่กินแถวอื่นเข้ามาจะได้ค่านี้ต่ำ
+    var fit = bandH > 0 ? Math.min(1, medH / bandH) : 0;
+    var score = (ok ? 1000 : 0) + (okAll ? 300 : 0) + okCount * 40 +
+                Math.round(fit * 220) + text.length * 10 + Math.min(160, medH) * 1.2;
+
+    var xs0 = Math.min.apply(null, digitBoxes.map(function (d4) { return d4.x0; }));
+    var xs1 = Math.max.apply(null, digitBoxes.map(function (d5) { return d5.x1; }));
+    return { text: text, value: value, digits: digits, ok: ok, reason: reason,
+             band: band, score: score, medH: medH,
+             box: { x0: xs0, x1: xs1, y0: band.y0, y1: band.y1 } };
+  }
+
+  function read(img, opt) {
+    opt = opt || {};
+    var W = img.width, H = img.height;
+    if (W < 40 || H < 20) return fail('กรอบเล็กเกินกว่าจะอ่านได้');
+
+    var g = toGray(img);
+    var b = binarize(g, W, H, opt.core);
+    var inkFrac = b.ink / (W * H);
+    if (inkFrac < 0.004) return fail('ในกรอบแทบไม่มีตัวเลข — เล็งกรอบให้ตรงตัวเลขก่อน');
+    if (inkFrac > 0.60) return fail('ในกรอบมืดหรือรกเกินไป — ขยับกรอบให้เหลือเฉพาะตัวเลข');
+
+    var bl = blobs(b.bin, W, H);
+    if (!bl.list.length) return fail('หาตัวเลขในกรอบไม่เจอ');
+    var keep = [], z, cz;
+    for (z = 0; z < bl.list.length; z++) {
+      cz = bl.list[z];
+      var zw = cz.x1 - cz.x0 + 1, zh = cz.y1 - cz.y0 + 1;
+      if (cz.area < 5 || zw < 2 || zh < 2) { erase(b.bin, bl.lab, cz.id); continue; }
+      // ก้อนที่ใหญ่คลุมเกือบทั้งภาพไม่ใช่ขีดของตัวเลข แต่เป็นขอบจอหรือเงาของตัวเครื่อง
+      if (cz.area > W * H * 0.22 || (zw > W * 0.70 && zh > H * 0.50)) {
+        erase(b.bin, bl.lab, cz.id);
+        continue;
+      }
+      keep.push(cz);
+    }
+    if (!keep.length) return fail('ในกรอบมีแต่จุดรบกวน ไม่มีตัวเลข');
+
+    // หาแถวที่เป็นไปได้ทั้งหมด แล้วลองอ่านทีละแถว เลือกแถวที่ให้ผลดีที่สุด
+    // จำเป็นเพราะในกรอบมักติดแถวอื่นของจอมาด้วย เช่น ค่าพีคหรือความถี่ที่อยู่คนละบรรทัด
+    var bands = rowBands(b.bin, W, H);
+    if (!bands.length) return fail('หาแถวตัวเลขไม่เจอ');
+
+    var cands = [], i, j, u;
+    for (i = 0; i < bands.length; i++) {
+      u = { y0: bands[i].y0, y1: bands[i].y1, ink: bands[i].ink };
+      cands.push({ y0: u.y0, y1: u.y1, ink: u.ink });
+      for (j = i + 1; j < Math.min(bands.length, i + 4); j++) {
+        var gap = bands[j].y0 - u.y1;
+        u = { y0: u.y0, y1: bands[j].y1, ink: u.ink + bands[j].ink };
+        // รวมแถวที่อยู่ใกล้กันเท่านั้น — ตัวเลข 1 ล้วนจะแตกเป็นสองแถวแต่ช่องว่างเล็ก
+        if (gap > (u.y1 - u.y0 + 1) * 0.45) break;
+        cands.push({ y0: u.y0, y1: u.y1, ink: u.ink });
+      }
+    }
+    cands.sort(function (a2, c2) { return c2.ink - a2.ink; });
+    cands = cands.slice(0, 10);
+
+    var best = null;
+    for (i = 0; i < cands.length; i++) {
+      var r = readBand(b.bin, bl.lab, keep, W, H, cands[i], opt);
+      if (r && (!best || r.score > best.score)) best = r;
+      // ไล่ให้ครบทุกแถบ อย่าเพิ่งหยุดที่แถบแรกที่อ่านออก
+      // เพราะแถบที่กินแถวอื่นเข้ามามักอ่านออกเหมือนกัน แค่ได้ตัวเลขไม่ครบ (จุดทศนิยมหาย)
+    }
+    if (!best) return fail('ในกรอบไม่มีตัวเลขที่อ่านได้');
+    best.inkDark = b.inkDark;
+    best.width = W; best.height = H;
+    return best;
   }
 
   function fail(reason) {
@@ -4019,7 +4099,7 @@ function txlCapClose(){
 }
 let txlCapStream = null;
 // กรอบล่าสุดที่ใช้ จำไว้ใช้กับช่องถัดไป เพราะหน้าปัดเครื่องเดิมขนาดเท่าเดิม
-let txlCapRect = { x: 0.13, y: 0.39, w: 0.74, h: 0.22 };
+let txlCapRect = { x: 0.22, y: 0.41, w: 0.56, h: 0.18 };
 async function txlCapStartCamera(){
   if(txlCapStream) return;
   const video = document.getElementById('txcVideo');
@@ -4075,7 +4155,10 @@ async function txlCapShoot(){
   txlCapStopCamera();
   beep('ok');
   txl.cap.ocr = await txlCapRunOcr();
-  if(txl.cap && txl.cap.ocr && txl.cap.ocr.ok) txl.cap.value = txl.cap.ocr.text;
+  if(txl.cap && txl.cap.ocr){
+    if(txl.cap.ocr.ok) txl.cap.value = txl.cap.ocr.text;
+    if(txl.cap.ocr.foundRect){ txl.cap.rect = txl.cap.ocr.foundRect; txlCapRect = Object.assign({}, txl.cap.rect); }
+  }
   txlCapRender();
 }
 /* เลือกรูปจากไฟล์ — ทางสำรองเมื่อกล้องในหน้าเว็บใช้ไม่ได้ */
@@ -4090,7 +4173,10 @@ async function txlCapPickFile(inp){
     txl.cap.mode = 'confirm';
     txlCapStopCamera();
     txl.cap.ocr = await txlCapRunOcr();
-    if(txl.cap && txl.cap.ocr && txl.cap.ocr.ok) txl.cap.value = txl.cap.ocr.text;
+    if(txl.cap && txl.cap.ocr){
+      if(txl.cap.ocr.ok) txl.cap.value = txl.cap.ocr.text;
+      if(txl.cap.ocr.foundRect){ txl.cap.rect = txl.cap.ocr.foundRect; txlCapRect = Object.assign({}, txl.cap.rect); }
+    }
     PEAUI.saving.hide();
     txlCapRender();
   }catch(e){
@@ -4176,28 +4262,60 @@ function txlCapRunOcr(){
     const img = new Image();
     img.onload = ()=>{
       try{
-        const sx = Math.max(0, Math.round(r.x * img.naturalWidth));
-        const sy = Math.max(0, Math.round(r.y * img.naturalHeight));
-        const sw = Math.min(img.naturalWidth - sx, Math.round(r.w * img.naturalWidth));
-        const sh = Math.min(img.naturalHeight - sy, Math.round(r.h * img.naturalHeight));
+        const IW = img.naturalWidth, IH = img.naturalHeight;
+        // อ่านจากบริเวณที่กว้างกว่ากรอบที่เล็งไว้ แล้วให้ระบบหาแถวตัวเลขเอง
+        // เพราะบนมือถือการวางกรอบให้พอดีตัวเลขทำได้ยาก ถ้ากรอบเหลื่อมนิดเดียวตัวเลขจะโดนตัดครึ่ง
+        // ขยายอย่างน้อย 10% ของความสูงภาพเสมอ กรอบเตี้ยๆ จะได้ยังครอบตัวเลขไหว
+        const padY = (window.__padY != null) ? window.__padY : Math.max(0.10, Math.min(r.h * 0.8, 0.20));
+        const padX = Math.min(r.w * 0.10, 0.05);
+        const ex = {
+          x: Math.max(0, r.x - padX), y: Math.max(0, r.y - padY),
+          x1: Math.min(1, r.x + r.w + padX), y1: Math.min(1, r.y + r.h + padY)
+        };
+        const sx = Math.round(ex.x * IW), sy = Math.round(ex.y * IH);
+        const sw = Math.max(1, Math.round((ex.x1 - ex.x) * IW));
+        const sh = Math.max(1, Math.round((ex.y1 - ex.y) * IH));
         if(sw < 20 || sh < 10){ resolve(null); return; }
-        // ขยายให้กว้างพอสมควรก่อนอ่าน ตัวเลขเล็กเกินไปจะส่องขีดไม่แม่น
-        const k = Math.min(3, Math.max(1, 520 / sw));
+        const k = Math.min(3, Math.max(1, 560 / sw));
         const c = document.createElement('canvas');
         c.width = Math.round(sw * k); c.height = Math.round(sh * k);
         const ctx = c.getContext('2d');
         ctx.imageSmoothingEnabled = true;
         ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
-        const opt = Object.assign({ scale: k }, txlOcrRange(cap.key));
+
+        // บอกตำแหน่งกรอบเดิมในภาพที่วิเคราะห์ ใช้ตัดสินว่าเลขดำบนพื้นสว่างหรือกลับกัน
+        const core = {
+          x0: Math.round((r.x - ex.x) * IW * k), y0: Math.round((r.y - ex.y) * IH * k),
+          x1: Math.round((r.x + r.w - ex.x) * IW * k), y1: Math.round((r.y + r.h - ex.y) * IH * k)
+        };
+        const opt = Object.assign({ scale: k, core: core }, txlOcrRange(cap.key));
         const res = txlSegOcr.read(ctx.getImageData(0, 0, c.width, c.height), opt);
-        // ขีดสีส้มใต้หลักที่อ่านไม่ออก — ชี้ให้ดูตรงนั้นในรูปเลย ไม่ต้องไล่นับเอง
-        (res.digits || []).forEach(d=>{
-          if(d.ok || d.x0 == null) return;
-          const bh = Math.max(4, Math.round(c.height * 0.045));
-          ctx.fillStyle = '#b26a00';
-          ctx.fillRect(d.x0, c.height - bh - 2, Math.max(6, d.x1 - d.x0 + 1), bh);
-        });
-        res.cropUrl = c.toDataURL('image/jpeg', 0.85);
+
+        if(res && res.box){
+          // ตัดภาพให้เหลือเฉพาะแถวตัวเลขที่เจอ แล้วขีดสีส้มใต้หลักที่อ่านไม่ออก
+          const mg = Math.round((res.box.y1 - res.box.y0 + 1) * 0.22);
+          const bx = Math.max(0, res.box.x0 - mg), by = Math.max(0, res.box.y0 - mg);
+          const bw = Math.min(c.width - bx, res.box.x1 - res.box.x0 + 1 + mg * 2);
+          const bh = Math.min(c.height - by, res.box.y1 - res.box.y0 + 1 + mg * 2);
+          const c2 = document.createElement('canvas');
+          c2.width = bw; c2.height = bh;
+          const g2 = c2.getContext('2d');
+          g2.drawImage(c, bx, by, bw, bh, 0, 0, bw, bh);
+          (res.digits || []).forEach(d=>{
+            if(d.ok || d.x0 == null) return;
+            const th = Math.max(4, Math.round(bh * 0.055));
+            g2.fillStyle = '#b26a00';
+            g2.fillRect(d.x0 - bx, bh - th - 2, Math.max(6, d.x1 - d.x0 + 1), th);
+          });
+          res.cropUrl = c2.toDataURL('image/jpeg', 0.88);
+          // กรอบขยับไปเกาะตัวเลขที่เจอจริง ครั้งต่อไปจะเล็งง่ายขึ้นเอง
+          res.foundRect = {
+            x: (sx + bx / k) / IW, y: (sy + by / k) / IH,
+            w: (bw / k) / IW, h: (bh / k) / IH
+          };
+        } else {
+          res.cropUrl = c.toDataURL('image/jpeg', 0.88);
+        }
         resolve(res);
       }catch(e){ resolve(null); }
     };
@@ -4267,6 +4385,9 @@ async function txlCapReread(){
   txl.cap.ocr = await txlCapRunOcr();
   const okNow = !!(txl.cap.ocr && txl.cap.ocr.ok);
   if(okNow) txl.cap.value = txl.cap.ocr.text;
+  if(txl.cap.ocr && txl.cap.ocr.foundRect && okNow){
+    txl.cap.rect = txl.cap.ocr.foundRect; txlCapRect = Object.assign({}, txl.cap.rect);
+  }
   // อ่านได้แล้วก็พากลับไปหน้าเทียบตัวเลขเลย · ยังไม่ได้ก็อยู่หน้านี้ให้ขยับกรอบต่อได้ทันที
   txl.cap.view = okNow ? 'crop' : 'full';
   beep(okNow ? 'ok' : 'err');
