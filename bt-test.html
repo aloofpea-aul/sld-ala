@@ -125,9 +125,13 @@
     <p class="muted" style="margin:0 0 11px;">ยิงคำสั่งที่เครื่องมือวัดมักรองรับทีละตัว แล้วเก็บว่าตัวไหนตอบอะไรกลับมา
       ใช้เวลาราว 1 นาที · ระหว่างนี้ให้คีบสายที่มีไฟค้างไว้ หน้าปัดจะได้มีเลขให้เครื่องส่ง</p>
 
-    <div id="huntResult" style="display:none;margin-bottom:11px;"></div>
+    <label class="f">รายการคำสั่งที่จะไล่ — บรรทัดละคำสั่ง แก้หรือวางทับได้เลย</label>
+    <textarea id="cmdList" rows="6" spellcheck="false" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid #ccc7bc;border-radius:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82rem;background:#fdfdfc;"></textarea>
+    <div class="muted" style="margin:5px 0 0;">คำตอบ <b>CMD ERR</b> = เครื่องไม่รู้จักคำสั่งนั้น · อะไรก็ตามที่ไม่ใช่ CMD ERR คือเบาะแส</div>
 
-    <label class="f">หรือพิมพ์คำสั่งเอง</label>
+    <div id="huntResult" style="display:none;margin:11px 0;"></div>
+
+    <label class="f">หรือพิมพ์คำสั่งเดียว</label>
     <div class="row">
       <input type="text" id="cmdPayload" value="*IDN?" autocomplete="off" spellcheck="false" style="flex:1;min-width:0;">
       <button class="btn blue" id="cmdSend">▶ ส่ง</button>
@@ -523,72 +527,75 @@ $('reconnBtn').addEventListener('click', async ()=>{
   await reconnect();
 });
 
-/* ชุดคำสั่งที่เครื่องมือวัดมักรองรับ — ไล่ทีละตัวแล้วเก็บว่าตัวไหนตอบอะไร
-   :SYSTem:ERRor? สำคัญมาก เพราะมันบอกว่าเครื่องเข้าใจคำสั่งก่อนหน้าหรือไม่ */
-const SCPI_HUNT = [
-  ['*IDN?',                  'ชื่อรุ่น — ตัวนี้ได้ผลแล้ว ใช้ยืนยันว่ายังคุยกันรู้เรื่อง'],
-  [':SYSTem:ERRor?',         'ถามว่ามีคำสั่งไหนผิดพลาดค้างอยู่ไหม'],
-  [':HEADer?',               'เครื่องใส่ชื่อค่ามากับคำตอบหรือไม่'],
-  [':FUNCtion?',             'ตอนนี้สวิตช์อยู่ตำแหน่งวัดอะไร'],
-  [':MEASure?',              'ขอค่าที่วัดได้ทั้งหมด'],
-  [':MEASure:VALue?',        'ขอค่าที่วัดได้'],
-  [':MEASure:VOLTage?',      'แรงดัน'],
-  [':MEASure:CURRent?',      'กระแส'],
-  [':MEASure:POWer?',        'กำลังไฟฟ้า'],
-  [':MEASure:PF?',           'ตัวประกอบกำลัง'],
-  [':MEAS:V?',               'แรงดัน (แบบย่อ)'],
-  [':MEAS:A?',               'กระแส (แบบย่อ)'],
-  [':MEAS:W?',               'กำลังไฟฟ้า (แบบย่อ)'],
-  [':READ?',                 'อ่านค่าปัจจุบัน'],
-  [':FETCh?',                'ดึงค่าที่อ่านไว้ล่าสุด'],
-  [':CONFigure?',            'การตั้งค่าปัจจุบันของเครื่อง'],
-  [':DISPlay?',              'สิ่งที่แสดงบนหน้าจอตอนนี้'],
-  [':MEMory?',               'ค่าที่บันทึกไว้ในเครื่อง'],
-  ['*OPT?',                  'ความสามารถเสริมที่ติดตั้งอยู่']
-];
+/* ชุดคำสั่งรอบนี้ — เน้นแบบไม่มีเครื่องหมาย : นำหน้า
+   เพราะผลทดสอบพบว่า *IDN? (ไม่มี :) สำเร็จ ส่วนคำสั่งที่ขึ้นต้นด้วย : ตอบ CMD ERR ทุกตัว */
+const HUNT_DEFAULT = [
+  '*IDN?', '*STB?', '*ESR?', '*TST?', '*OPC?', '*OPT?',
+  'MEAS?', 'MEASURE?', 'READ?', 'FETC?', 'FETCH?',
+  'VAL?', 'VALUE?', 'DATA?', 'DAT?', 'RESULT?', 'RES?', 'GET?',
+  'VOLT?', 'CURR?', 'POW?', 'PF?', 'FREQ?',
+  'V?', 'A?', 'W?', 'U?', 'I?', 'P?', 'D?',
+  'FUNC?', 'FUNCTION?', 'MODE?', 'RANG?', 'RANGE?', 'UNIT?',
+  'DISP?', 'DISPLAY?', 'STAT?', 'STATUS?', 'ERR?', 'ERROR?',
+  'HEAD?', 'CONF?', 'CONFIG?', 'SET?', 'SYS?', 'MEM?',
+  'VER?', 'MODEL?', 'SN?', 'BT?', 'HOLD?',
+  'MEAS', 'READ', 'D', 'R', 'M', '?'
+].join('\n');
+$('cmdList').value = HUNT_DEFAULT;
+
 let hunting = false;
 $('cmdHunt').addEventListener('click', async ()=>{
   if(hunting){ log('   กำลังไล่อยู่แล้ว รอให้จบก่อน'); return; }
   if(!device || !device.gatt.connected){ log('!! ยังไม่ได้เชื่อม — กด "ค้นหาและเชื่อม" ก่อน'); return; }
+  const list = $('cmdList').value.split('\n').map(x=> x.trim()).filter(x=> x);
+  if(!list.length){ log('!! รายการคำสั่งว่าง'); return; }
   hunting = true;
   $('cmdHunt').disabled = true;
   const rows = [];
-  log('=== ไล่หาคำสั่งอ่านค่า ' + SCPI_HUNT.length + ' คำสั่ง ===');
+  log('=== ไล่คำสั่ง ' + list.length + ' รายการ ===');
   try{
-    for(const [cmd, why] of SCPI_HUNT){
+    for(const cmd of list){
       if(!device.gatt.connected){
         log('!! สายหลุด — พยายามเชื่อมกลับ');
         if(!(await reconnect())) break;
       }
-      const res = await askDevice(cmd, 1600);
-      rows.push({ cmd, why, res });
-      await new Promise(r=> setTimeout(r, 250));
+      const res = await askDevice(cmd, 1200);
+      rows.push({ cmd, res });
+      await new Promise(r=> setTimeout(r, 150));
     }
   } finally {
     hunting = false;
     $('cmdHunt').disabled = false;
   }
-  const good = rows.filter(r=> r.res != null);
-  // คำสั่งที่ให้ตัวเลขจริง (ไม่ใช่ชื่อรุ่นหรือข้อความสถานะ) คือคำสั่งที่เราจะใช้อ่านค่า
-  const skip = ['*IDN?', ':SYSTem:ERRor?', '*OPT?'];   // คำสั่งบอกสถานะ ไม่ใช่ค่าที่วัดได้
-  const numeric = rows.find(r=> r.res != null && skip.indexOf(r.cmd) < 0 && scpiNumber(r.res) != null);
-  if(numeric){ bestCmd = numeric.cmd; $('cmdPayload').value = numeric.cmd;
-               log('   คำสั่งที่ให้ตัวเลข: ' + numeric.cmd + ' — กด "อ่านค่าต่อเนื่อง" เพื่อดูว่าขยับตามหน้าปัดไหม'); }
-  log('=== ไล่ครบแล้ว — ตอบกลับ ' + good.length + ' จาก ' + rows.length + ' คำสั่ง ===');
+  // CMD ERR แปลว่าเครื่องไม่รู้จัก — อะไรที่ไม่ใช่ CMD ERR คือของที่เราตามหา
+  const isErr = t=> t == null || /^CMD\s*ERR/i.test(String(t).trim());
+  const hits = rows.filter(r=> !isErr(r.res));
+  const skip = ['*IDN?'];
+  const numeric = hits.find(r=> skip.indexOf(r.cmd) < 0 && scpiNumber(r.res) != null);
+  if(numeric){
+    bestCmd = numeric.cmd; $('cmdPayload').value = numeric.cmd;
+    log('   คำสั่งที่ให้ตัวเลข: ' + numeric.cmd + ' — กด "อ่านค่าต่อเนื่อง" เพื่อดูว่าขยับตามหน้าปัดไหม');
+  }
+  log('=== จบ — ไม่ใช่ CMD ERR ' + hits.length + ' จาก ' + rows.length + ' คำสั่ง ===');
   const esc = t=> String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const row = r=>
+    '<div style="border-bottom:1px solid #ece9e2;padding:5px 0;display:flex;gap:9px;align-items:baseline;">' +
+      '<code style="flex:0 0 auto;min-width:88px;font-size:.8rem;font-weight:700;">' + esc(r.cmd) + '</code>' +
+      (r.res == null
+        ? '<span style="font-size:.78rem;color:#8a867c;">ไม่ตอบ</span>'
+        : '<span style="font-size:.82rem;word-break:break-all;' +
+          (isErr(r.res) ? 'color:#8a867c;' : 'color:#175c3a;font-weight:700;') + '">' + esc(r.res) + '</span>') +
+    '</div>';
   $('huntResult').style.display = '';
   $('huntResult').innerHTML =
-    '<div style="font-weight:700;margin-bottom:6px;">ผลการไล่คำสั่ง — ตอบ ' + good.length + ' จาก ' + rows.length + '</div>' +
-    rows.map(r=>
-      '<div style="border-bottom:1px solid #ece9e2;padding:6px 0;">' +
-        '<div style="font-family:ui-monospace,monospace;font-size:.82rem;font-weight:700;">' + esc(r.cmd) + '</div>' +
-        '<div class="muted" style="font-size:.72rem;">' + esc(r.why) + '</div>' +
-        (r.res == null
-          ? '<div style="font-size:.78rem;color:#8a867c;">— ไม่ตอบ</div>'
-          : '<div style="font-size:.86rem;font-weight:700;color:#175c3a;word-break:break-all;">' + esc(r.res) + '</div>') +
-      '</div>').join('');
-  if(good.length > 1) log('   มีคำสั่งที่ใช้ได้ — กดคัดลอกทั้งหมดส่งมาให้ผมได้เลย');
-  else log('   ตอบแค่ *IDN? — ส่งข้อมูลดิบมาให้ผม จะลองชุดคำสั่งแบบอื่นต่อ');
+    (hits.length
+      ? '<div style="background:#e8f5e9;border:1.5px solid #2e7d32;border-radius:9px;padding:9px 11px;margin-bottom:9px;">' +
+        '<b style="color:#175c3a;">เจอคำสั่งที่เครื่องรู้จัก ' + hits.length + ' ตัว</b>' +
+        hits.map(row).join('') + '</div>'
+      : '<div style="background:#fff4e5;border:1.5px solid #b26a00;border-radius:9px;padding:9px 11px;margin-bottom:9px;color:#6b4200;">' +
+        'รอบนี้ยังไม่เจอ — ทุกตัวตอบ CMD ERR · คัดลอกทั้งหมดส่งมา ผมจะให้รายการชุดใหม่ไปวางแทน</div>') +
+    '<details><summary style="cursor:pointer;font-size:.82rem;font-weight:700;padding:5px 0;">ดูผลทั้งหมด ' +
+      rows.length + ' คำสั่ง</summary>' + rows.map(row).join('') + '</details>';
 });
 
 /* อ่านค่าซ้ำทุก 1 วินาที — ใช้ยืนยันด้วยตาว่าตัวเลขขยับตามหน้าปัดจริง
@@ -603,6 +610,11 @@ $('cmdLoop').addEventListener('click', async ()=>{
   }
   const cmd = bestCmd || $('cmdPayload').value.trim();
   if(!cmd){ log('!! ยังไม่รู้ว่าจะใช้คำสั่งไหน — กด "ไล่หาคำสั่งอ่านค่า" ก่อน'); return; }
+  if(cmd === '*IDN?'){
+    log('!! *IDN? คืนชื่อรุ่น ไม่ใช่ค่าที่วัดได้ — วนอ่านไปก็ไม่ได้อะไร');
+    log('   ยังไม่เจอคำสั่งอ่านค่า ให้ไล่รายการคำสั่งก่อน');
+    return;
+  }
   log('=== อ่านค่าต่อเนื่องด้วย ' + cmd + ' — เทียบตัวเลขกับหน้าปัดเครื่องได้เลย ===');
   $('cmdLoop').textContent = '⏸ หยุดอ่าน';
   loopTimer = setInterval(async ()=>{
