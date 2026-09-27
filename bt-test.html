@@ -128,7 +128,8 @@
     </div>
     <div class="row" style="margin-top:9px;">
       <button class="btn blue" id="cmdSend">▶ ส่ง</button>
-      <button class="btn ghost" id="cmdProbe">🧪 ลองชุดคำสั่งที่พบบ่อยทั้งหมด</button>
+      <button class="btn ghost" id="cmdProbe">🧪 ลองชุดคำสั่งที่พบบ่อย</button>
+      <button class="btn ghost" id="reconnBtn">🔌 เชื่อมกลับ</button>
     </div>
   </div>
 
@@ -283,6 +284,8 @@ function guesses(dv){
     'Firefox และ Safari ไม่รองรับ</div>';
 })();
 
+let linkLost = false;
+
 $('scanBtn').addEventListener('click', async ()=>{
   const extra = $('extraUuid').value.split(',').map(s=> s.trim().toLowerCase()).filter(s=> s);
   const optionalServices = CANDIDATES.concat(extra);
@@ -296,10 +299,23 @@ $('scanBtn').addEventListener('click', async ()=>{
     setState('กำลังเชื่อม ' + (device.name || '') + ' ...', '');
 
     device.addEventListener('gattserverdisconnected', ()=>{
+      linkLost = true;
       setState('หลุดการเชื่อมต่อ', 'err');
       log('!! เครื่องตัดการเชื่อมต่อ');
     });
 
+    await enumerate();
+  }catch(e){
+    setState('ไม่สำเร็จ', 'err');
+    log('!! ' + (e && e.message ? e.message : String(e)));
+    if(String(e).indexOf('cancel') >= 0) log('   (ปิดรายการอุปกรณ์ไปเอง — กดค้นหาใหม่ได้)');
+  }
+});
+
+/* เชื่อม GATT แล้วไล่ service/characteristic — แยกออกมาเพื่อเรียกซ้ำได้ตอนสายหลุดกลางทาง */
+async function enumerate(quiet){
+  {
+    linkLost = false;
     server = await device.gatt.connect();
     setState('เชื่อมแล้ว — ' + (device.name || 'อุปกรณ์'), 'on');
     log('เชื่อม GATT สำเร็จ');
@@ -381,29 +397,44 @@ $('scanBtn').addEventListener('click', async ()=>{
       setState('เชื่อมได้ แต่ยังไม่เจอช่องข้อมูล', 'err');
       return;
     }
+    // เรียงช่องที่รับค่าได้ด้วยไว้หน้า — ช่องที่เขียนได้อย่างเดียวมักเป็นช่องควบคุม
+    // ซึ่งถ้าส่งอะไรที่มันไม่รู้จักเข้าไป เครื่องจะตัดการเชื่อมต่อทิ้ง จึงเก็บไว้ลองทีหลังสุด
+    writables.sort((a, b)=> (b.ch.properties.notify ? 1 : 0) - (a.ch.properties.notify ? 1 : 0));
+
     log('=== ไล่ครบแล้ว — สมัครรับข้อมูล ' + notifyCount + ' ช่อง · เขียนได้ ' + writables.length + ' ช่อง ===');
-    log('   หมุนสวิตช์ที่เครื่องวัดดู ถ้าค่าวิ่งเข้ามาแปลว่าเสร็จ');
+    if(!quiet) log('   หมุนสวิตช์ไปตำแหน่งที่วัดได้จริง แล้วคีบสายที่มีไฟ ถ้าค่าวิ่งเข้ามาแปลว่าเสร็จ');
     $('liveCard').style.display = '';
     if(writables.length){
       const sel = $('cmdTarget');
       sel.innerHTML = writables.map((w, i)=>
-        '<option value="' + i + '">' + w.uuid.slice(0, 8) + ' … (service ' + w.svc.slice(0, 8) + ')</option>').join('');
+        '<option value="' + i + '">' + w.uuid.slice(0, 8) + ' … ' +
+        (w.ch.properties.notify ? '(ช่องข้อมูล)' : '(ช่องควบคุม)') + '</option>').join('');
       $('cmdCard').style.display = '';
     }
     // เงียบเกิน 10 วินาที แปลว่าเครื่องรอคำสั่งอยู่ ไม่ได้ส่งเอง
-    setTimeout(()=>{
+    if(!quiet) setTimeout(()=>{
       if(packetCount === 0 && notifyCount){
         log('!! ผ่านไป 10 วินาทีแล้วยังไม่มีข้อมูลเข้ามาเลย');
-        log('   แปลว่าเครื่องรอให้สั่งก่อน — เลื่อนขึ้นไปกด "ลองชุดคำสั่งที่พบบ่อยทั้งหมด" ในข้อ 3.5');
+        log('   ถ้ายังไม่ได้คีบสายที่มีไฟ ให้ลองคีบก่อน — เครื่องบางรุ่นเงียบเมื่อไม่มีค่าให้ส่ง');
+        log('   ถ้าคีบแล้วยังเงียบ ค่อยกด "ลองชุดคำสั่งที่พบบ่อย" ในข้อ 3.5');
         if(writables.length) $('cmdCard').scrollIntoView({ behavior:'smooth', block:'center' });
       }
     }, 10000);
-  }catch(e){
-    setState('ไม่สำเร็จ', 'err');
-    log('!! ' + (e && e.message ? e.message : String(e)));
-    if(String(e).indexOf('cancel') >= 0) log('   (ปิดรายการอุปกรณ์ไปเอง — กดค้นหาใหม่ได้)');
   }
-});
+}
+/* เชื่อมกลับหลังเครื่องตัดสาย — ใช้ตอนไล่คำสั่งแล้วโดนตัดกลางทาง */
+async function reconnect(){
+  for(let i = 1; i <= 3; i++){
+    try{
+      log('   กำลังเชื่อมกลับ (ครั้งที่ ' + i + ') ...');
+      await new Promise(r=> setTimeout(r, 1500));
+      await enumerate(true);
+      if(device.gatt.connected){ log('   เชื่อมกลับได้แล้ว'); return true; }
+    }catch(e){ log('   เชื่อมกลับไม่ได้: ' + e.message); }
+  }
+  log('!! เชื่อมกลับไม่ได้ — ปิดแล้วเปิดบลูทูธที่เครื่องวัดใหม่ แล้วกด "ค้นหาและเชื่อม"');
+  return false;
+}
 
 /* ฟังสัญญาณที่เครื่องประกาศออกมาเป็นระยะ — บางเครื่องบอก UUID ของตัวเองมาในนั้นเลย
    ต้องเปิด chrome://flags/#enable-experimental-web-platform-features ก่อน จึงจะมีคำสั่งนี้ */
@@ -464,14 +495,15 @@ function toBytes(text, mode){
   return new TextEncoder().encode(text + '\r\n');
 }
 async function sendTo(w, bytes, label){
+  if(!device || !device.gatt.connected){ log('!! สายหลุดอยู่ ส่งไม่ได้'); return 'nolink'; }
   try{
     if(w.ch.properties.write) await w.ch.writeValueWithResponse(bytes);
     else await w.ch.writeValueWithoutResponse(bytes);
     log('>> ส่ง ' + label + ' ไปที่ ' + w.uuid.slice(0, 8) + ' สำเร็จ');
-    return true;
+    return 'ok';
   }catch(e){
     log('!! ส่ง ' + label + ' ไปที่ ' + w.uuid.slice(0, 8) + ' ไม่ได้: ' + e.message);
-    return false;
+    return 'err';
   }
 }
 $('cmdSend').addEventListener('click', async ()=>{
@@ -481,34 +513,66 @@ $('cmdSend').addEventListener('click', async ()=>{
   const txt = $('cmdPayload').value;
   await sendTo(w, toBytes(txt, mode), '"' + txt + '"');
 });
+$('reconnBtn').addEventListener('click', async ()=>{
+  if(!device){ log('!! ยังไม่เคยเลือกอุปกรณ์ — กด "ค้นหาและเชื่อม" ก่อน'); return; }
+  if(device.gatt.connected){ log('   เชื่อมอยู่แล้ว'); return; }
+  await reconnect();
+});
+
+/* ไล่คำสั่งทีละตัว — หยุดทันทีที่เครื่องตัดสาย แล้วเชื่อมกลับก่อนไปช่องถัดไป
+   ถ้าช่องไหนทำให้หลุดซ้ำ แปลว่าช่องนั้นต้องใช้รหัสจับมือเฉพาะ จึงข้ามไปเลย */
+let probing = false;
 $('cmdProbe').addEventListener('click', async ()=>{
+  if(probing){ log('   กำลังไล่อยู่แล้ว รอให้จบก่อน'); return; }
   if(!writables.length){ log('!! ไม่มีช่องที่เขียนได้'); return; }
+  probing = true;
+  $('cmdProbe').disabled = true;
   const before = packetCount;
-  log('=== ลองชุดคำสั่งที่พบบ่อย — ไล่ทุกช่องที่เขียนได้ ===');
   const probes = [
-    ['text', '*IDN?'],          // ถามชื่อรุ่น — มาตรฐาน SCPI ที่เครื่องมือวัดเกือบทุกยี่ห้อรองรับ
-    ['text', ':MEAS?'],         // ขอค่าที่วัดได้ตอนนี้
-    ['text', ':READ?'],
-    ['text', 'MEAS?'],
-    ['hex',  '01'],             // ไบต์สั้นๆ ที่มักใช้เป็นสวิตช์เปิดการส่งค่า
-    ['hex',  '0101'],
+    ['hex',  '01'],             // ไบต์สั้นที่สุดก่อน — เสี่ยงน้อยสุดถ้าเครื่องไม่รู้จัก
+    ['hex',  '00'],
     ['hex',  '02'],
-    ['hex',  'aa55'],
-    ['hex',  '55aa']
+    ['hex',  '0101'],
+    ['text', '*IDN?'],          // ชุดคำสั่งมาตรฐาน SCPI ของเครื่องมือวัด
+    ['text', ':MEAS?'],
+    ['text', ':READ?']
   ];
-  for(const w of writables){
-    for(const [mode, txt] of probes){
-      await sendTo(w, toBytes(txt, mode), (mode === 'hex' ? '0x' : '') + txt);
-      await new Promise(r=> setTimeout(r, 700));   // เว้นจังหวะให้เครื่องตอบก่อนยิงคำสั่งถัดไป
-      if(packetCount > before){
-        log('=== มีข้อมูลตอบกลับแล้ว! คำสั่งที่ได้ผลคือ ' + (mode === 'hex' ? '0x' : '') + txt +
-            ' ที่ช่อง ' + w.uuid + ' ===');
-        log('   กดคัดลอกทั้งหมดแล้วส่งมาให้ผมได้เลย');
-        return;
+  log('=== ไล่คำสั่ง — เริ่มจากช่องข้อมูลก่อน ช่องควบคุมไว้ท้ายสุด ===');
+  try{
+    for(const w of writables){
+      const kind = w.ch.properties.notify ? 'ช่องข้อมูล' : 'ช่องควบคุม';
+      log('-- ' + kind + ' ' + w.uuid.slice(0, 8));
+      let killed = 0;
+      for(const [mode, txt] of probes){
+        if(!device.gatt.connected){
+          log('!! สายหลุด — หยุดไล่ช่องนี้ไว้ก่อน');
+          if(!(await reconnect())){ log('=== จบการไล่คำสั่ง (เชื่อมกลับไม่ได้) ==='); return; }
+          killed++;
+          if(killed >= 2){
+            log('!! ช่อง ' + w.uuid.slice(0, 8) + ' ทำให้เครื่องตัดสายซ้ำ — ข้ามช่องนี้');
+            break;
+          }
+          // หา object ตัวใหม่หลังเชื่อมกลับ (ตัวเดิมใช้ไม่ได้แล้ว)
+          const again = writables.find(x=> x.uuid === w.uuid);
+          if(again) w.ch = again.ch; else break;
+        }
+        const res = await sendTo(w, toBytes(txt, mode), (mode === 'hex' ? '0x' : '') + txt);
+        if(res === 'nolink') continue;
+        await new Promise(r=> setTimeout(r, 900));   // เว้นจังหวะให้เครื่องตอบก่อนยิงตัวถัดไป
+        if(packetCount > before){
+          log('=== มีข้อมูลตอบกลับแล้ว! คำสั่งที่ได้ผลคือ ' + (mode === 'hex' ? '0x' : '') + txt +
+              ' ที่ช่อง ' + w.uuid + ' ===');
+          log('   กดคัดลอกทั้งหมดแล้วส่งมาให้ผมได้เลย');
+          return;
+        }
       }
     }
+    log('=== ไล่ครบทุกช่องแล้วยังเงียบ ===');
+    log('   แปลว่า HIOKI ใช้รหัสจับมือเฉพาะที่เดาไม่ได้ — คัดลอกทั้งหมดส่งมาให้ผม จะบอกทางเลือกต่อไป');
+  } finally {
+    probing = false;
+    $('cmdProbe').disabled = false;
   }
-  log('=== ลองครบแล้วยังเงียบ — คัดลอกทั้งหมดส่งมาให้ผม จะหาทางอื่นต่อ ===');
 });
 
 let packetCount = 0;
