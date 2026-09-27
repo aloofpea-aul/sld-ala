@@ -2714,10 +2714,11 @@ const TXL_CONFIGS = {
             hint:'วัด IA IB IC — แรงดัน VAB VBC VCA (ไม่มีนิวทรัล)' }
 };
 const TXL_POINTS = ['ขั้วหม้อแปลง', 'ตู้แรงต่ำรวม', 'รายวงจร'];
+/* รูปของตัวหม้อแปลง — ถ่ายในขั้นที่ 2 ก่อนลงมือวัด
+   รูปหน้าปัดเครื่องวัดย้ายไปผูกกับค่าแต่ละช่องในขั้นที่ 3 (kind = meter_va, meter_ia ...) */
 const TXL_PHOTOS = [
   { key:'pole',  title:'1) รูปต้นหม้อแปลง',      hint:'ถ่ายให้เห็นทั้งต้นเสาและหม้อแปลง พร้อมสภาพรอบข้าง', req:true  },
-  { key:'tank',  title:'2) รูปตัวถังหม้อแปลง',   hint:'ถ่ายให้อ่านหมายเลขบนตัวถังได้ชัดเจน (ซูมเข้าได้)',    req:true  },
-  { key:'meter', title:'3) รูปหน้าปัดเครื่องวัด', hint:'ถ่ายหน้าปัดแคลมป์มิเตอร์เป็นหลักฐานค่าที่อ่านได้',   req:false }
+  { key:'tank',  title:'2) รูปตัวถังหม้อแปลง',   hint:'ถ่ายให้อ่านหมายเลขบนตัวถังได้ชัดเจน (ซูมเข้าได้)',    req:true  }
 ];
 const TXL_RECOMMEND = [
   'ขอเพิ่มขนาดหม้อแปลง',
@@ -2727,6 +2728,60 @@ const TXL_RECOMMEND = [
   'ไม่ต้องดำเนินการ — เก็บเป็นข้อมูลอ้างอิง'
 ];
 const TXL_KVA_LADDER = [10, 20, 30, 50, 100, 160, 250, 315, 400, 500, 630, 800, 1000, 1250];
+/* คำอธิบายแต่ละช่องค่า — ขึ้นบนหัวหน้าจอถ่าย เพื่อให้รู้ว่ากำลังวัดอะไร คีบที่ไหน */
+const TXL_FIELD_INFO = {
+  va:  { unit:'V', label:'VA',   desc:'แรงดันเฟส A เทียบนิวทรัล ที่ขั้วแรงต่ำ' },
+  vb:  { unit:'V', label:'VB',   desc:'แรงดันเฟส B เทียบนิวทรัล ที่ขั้วแรงต่ำ' },
+  vc:  { unit:'V', label:'VC',   desc:'แรงดันเฟส C เทียบนิวทรัล ที่ขั้วแรงต่ำ' },
+  vng: { unit:'V', label:'VN–G', desc:'แรงดันระหว่างนิวทรัลกับดิน — ปกติควรใกล้ 0' },
+  vab: { unit:'V', label:'VAB',  desc:'แรงดันระหว่างเฟส A กับ B' },
+  vbc: { unit:'V', label:'VBC',  desc:'แรงดันระหว่างเฟส B กับ C' },
+  vca: { unit:'V', label:'VCA',  desc:'แรงดันระหว่างเฟส C กับ A' },
+  ia:  { unit:'A', label:'IA',   desc:'กระแสสายเฟส A — คีบแคลมป์รอบสายเฟส A' },
+  ib:  { unit:'A', label:'IB',   desc:'กระแสสายเฟส B — คีบแคลมป์รอบสายเฟส B' },
+  ic:  { unit:'A', label:'IC',   desc:'กระแสสายเฟส C — คีบแคลมป์รอบสายเฟส C' },
+  in:  { unit:'A', label:'IN',   desc:'กระแสสายนิวทรัล — คีบแคลมป์รอบสายนิวทรัล' }
+};
+/* คีย์ของช่องอาจเป็นของรายวงจร เช่น f2.ia = กระแสเฟส A ของวงจรที่ 2 */
+function txlFieldInfoOf(key){
+  const m = String(key).match(/^f(\d+)\.(.+)$/);
+  const base = TXL_FIELD_INFO[m ? m[2] : key] || { unit:'', label:String(key).toUpperCase(), desc:'' };
+  if(!m) return base;
+  return { unit: base.unit, label: base.label + ' · วงจร ' + m[1],
+           desc: base.desc + ' (วงจรแรงต่ำที่ ' + m[1] + ')' };
+}
+/* อ่าน/เขียนค่าของช่อง ไม่ว่าจะเป็นค่ารวมหรือรายวงจร — ใช้คีย์เดียวกันทั้งระบบ */
+function txlGetVal(key){
+  const m = String(key).match(/^f(\d+)\.(.+)$/);
+  if(!m) return txl.v[key];
+  const fd = txl.feeders.find(x=> x.no === parseInt(m[1], 10));
+  return fd ? fd[m[2]] : '';
+}
+function txlSetVal(key, val){
+  const m = String(key).match(/^f(\d+)\.(.+)$/);
+  if(!m){ txl.v[key] = val; return; }
+  const fd = txl.feeders.find(x=> x.no === parseInt(m[1], 10));
+  if(fd) fd[m[2]] = val;
+}
+/* รายการช่องทั้งหมดที่ต้องวัดในรอบนี้ ตามรูปแบบระบบและจุดที่วัด */
+function txlFieldList(){
+  const cfg = TXL_CONFIGS[txl.sysConfig];
+  const volt = [];
+  if(cfg.neutral){ cfg.phases.forEach(p=> volt.push('v' + p.toLowerCase())); volt.push('vng'); }
+  if(cfg.ll) (cfg.phases.length === 2 ? ['vab'] : ['vab','vbc','vca']).forEach(k=> volt.push(k));
+  const iBase = cfg.phases.map(p=> 'i' + p.toLowerCase());
+  if(cfg.neutral) iBase.push('in');
+  const amp = txl.measurePoint === 'รายวงจร'
+    ? [].concat.apply([], txl.feeders.map(fd=> iBase.map(k=> 'f' + fd.no + '.' + k)))
+    : iBase;
+  return { volt, amp, all: volt.concat(amp) };
+}
+/* สถานะของช่อง: done = มีค่า+มีรูป · noph = มีค่าแต่ไม่มีรูป · empty = ยังไม่วัด */
+function txlFieldState(key){
+  const has = txlNum(txlGetVal(key)) != null;
+  if(!has) return 'empty';
+  return txl.vPhoto[key] ? 'done' : 'noph';
+}
 const TXL_LONGDO_KEY = 'f61a87ff70c39e610385809783d5a1b3';
 
 let txl = null;           // สถานะฟอร์มที่กำลังกรอก
@@ -3029,6 +3084,9 @@ function txlOpen(feederId, deviceId){
     ratedKva: txlRatedKva(d),
     v: { va:'', vb:'', vc:'', vng:'', vab:'', vbc:'', vca:'' },
     photos: {}, extras: [],
+    vPhoto: {},        // คีย์ช่อง → รูปหน้าปัดเครื่องวัดของค่านั้น
+    vSrc: {},          // คีย์ช่อง → ที่มาของตัวเลข: photo | manual | bt
+    cap: null,         // สถานะหน้าจอถ่ายอ่านค่าที่เปิดอยู่
     recommend: {}, note: '', meterModel: localStorage.getItem('txl_meter') || '',
     weather: '', period: 'ช่วงพีค',
     activeFeeder: 1,
@@ -3042,6 +3100,9 @@ function txlOpen(feederId, deviceId){
 }
 function txlClose(){
   if(txlSaving) return;
+  txlCapStopCamera();
+  const cap = document.getElementById('txlCapOverlay');
+  if(cap) cap.classList.remove('show');
   document.getElementById('txlOverlay').classList.remove('show');
   txl = null;
 }
@@ -3063,8 +3124,9 @@ function txlRender(){
   document.getElementById('txlBars').innerHTML =
     [1,2,3,4].map(n=> '<i class="' + (n <= txl.step ? 'on' : '') + '"></i>').join('');
   const body = document.getElementById('txlBody');
-  body.innerHTML = txl.step === 1 ? txlStep1() : txl.step === 2 ? txlStep2()
-                 : txl.step === 3 ? txlStep3() : txlStep4();
+  // ลำดับใหม่ — ขั้นที่ 2 ถ่ายรูปหม้อแปลงก่อน แล้วขั้นที่ 3 จึงลงมือวัดค่าพร้อมถ่ายหน้าปัด
+  body.innerHTML = txl.step === 1 ? txlStep1() : txl.step === 2 ? txlStepPhotos()
+                 : txl.step === 3 ? txlStepValues() : txlStep4();
   body.scrollTop = 0;
   txlBind();
   txlUpdateStrip();
@@ -3110,78 +3172,105 @@ function txlStep1(){
     '<input class="txl-in" id="txlMeter" placeholder="เช่น Fluke 376 FC" value="' + escapeHtml(txl.meterModel) + '">' +
     '<label class="txl-f">ช่วงเวลา</label><div class="txl-chips">' + periods + '</div>' +
     '<label class="txl-f">สภาพอากาศ</label><div class="txl-chips">' + weathers + '</div></div>' +
-  '<div class="txl-preview">จากที่เลือก ขั้นต่อไปจะขึ้นช่องให้กรอก <b>แรงดัน ' + nV + ' ช่อง</b> และ <b>กระแส ' +
-    nI + ' ช่อง' + (perFeeder ? ' × ' + txl.feeders.length + ' วงจร' : '') + '</b></div>' +
-  '<button type="button" class="txl-main" data-txl-next="2">ถัดไป — กรอกค่าที่วัดได้ ›</button>';
+  '<div class="txl-preview">จากที่เลือก ขั้นวัดค่าจะมี <b>แรงดัน ' + nV + ' ช่อง</b> และ <b>กระแส ' +
+    nI + ' ช่อง' + (perFeeder ? ' × ' + txl.feeders.length + ' วงจร' : '') + '</b>' +
+    ' — ถ่ายรูปหม้อแปลงให้เสร็จก่อน แล้วค่อยลงมือวัด</div>' +
+  '<button type="button" class="txl-main" data-txl-next="2">ถัดไป — ถ่ายรูปหม้อแปลง ›</button>';
 }
 
-function txlField(id, label, value, warn){
-  return '<label class="txl-num' + (warn ? ' warn' : '') + '"><span>' + label + '</span>' +
-    '<input type="number" inputmode="decimal" step="0.1" data-txl-v="' + id + '" value="' +
-    escapeHtml(value == null ? '' : value) + '"></label>';
+/* ---------- ขั้นที่ 3 · วัดค่า — การ์ดแตะได้ 3 สถานะ ---------- */
+function txlValueCard(key, shortLabel){
+  const info = txlFieldInfoOf(key);
+  const st   = txlFieldState(key);
+  const val  = txlGetVal(key);
+  const ph   = txl.vPhoto[key];
+  const src  = txl.vSrc[key] || '';
+  const label = shortLabel ? (TXL_FIELD_INFO[String(key).split('.').pop()] || {}).label || info.label : info.label;
+  let cls = 'txl-vc ' + st;
+  // เตือนแรงดันเฉพาะช่องเฟส–นิวทรัล ที่เทียบเกณฑ์ 230 V ±10% ได้
+  const cfg = TXL_CONFIGS[txl.sysConfig];
+  const isPhaseV = cfg.neutral && ['va','vb','vc'].indexOf(key) >= 0;
+  const n = txlNum(val);
+  const vLo = TXL_RULES.vNominal * (1 - TXL_RULES.vTolerance / 100);
+  const vHi = TXL_RULES.vNominal * (1 + TXL_RULES.vTolerance / 100);
+  if(isPhaseV && n != null && (n < vLo || n > vHi)) cls += ' bad';
+  const head = '<span class="txl-vc-h"><em>' + escapeHtml(label) + '</em>' +
+    (ph ? '<img src="' + ph.dataUrl + '" alt="รูปหน้าปัด">' : '') +
+    (st === 'done' ? '<i class="ok">✓</i>' : st === 'noph' ? '<i class="warn">⚠</i>' : '') +
+    (st !== 'empty' ? '<b class="txl-vc-ed" data-txl-man="' + escapeHtml(key) + '" role="button" aria-label="แก้ตัวเลขเอง">✎</b>' : '') +
+    '</span>';
+  if(st === 'empty'){
+    return '<div class="' + cls + '" data-txl-cap="' + escapeHtml(key) + '" role="button" tabindex="0">' + head +
+      '<span class="txl-vc-cta">📷 แตะเพื่อวัด</span></div>';
+  }
+  return '<div class="' + cls + '" data-txl-cap="' + escapeHtml(key) + '" role="button" tabindex="0">' + head +
+    '<span class="txl-vc-n"><b>' + escapeHtml(String(val)) + '</b><i>' + escapeHtml(info.unit) + '</i></span>' +
+    (st === 'noph' ? '<span class="txl-vc-no">ยังไม่มีรูปหน้าปัด</span>'
+                   : '<span class="txl-vc-ok">' + (src === 'bt' ? 'จากเครื่องวัด' : 'มีรูปหน้าปัด') + '</span>') +
+    '</div>';
 }
-function txlStep2(){
+function txlLegend(){
+  return '<div class="txl-vleg">' +
+    '<span><i class="ok">✓</i> มีค่า + มีรูป</span>' +
+    '<span><i class="warn">⚠</i> มีค่า ไม่มีรูป</span>' +
+    '<span><i class="dash"></i> ยังไม่วัด</span></div>';
+}
+function txlStepValues(){
   const cfg = TXL_CONFIGS[txl.sysConfig];
   const c = txlCompute(txlMerged());
-  const vWarn = k=>{
-    const n = txlNum(txl.v[k]);
-    return n != null && (n < c.vLo || n > c.vHi);
-  };
-  let vFields = '';
-  if(cfg.neutral){
-    vFields += '<div class="txl-grid">' +
-      cfg.phases.map(p=> txlField('v' + p.toLowerCase(), 'V' + p, txl.v['v' + p.toLowerCase()], vWarn('v' + p.toLowerCase()))).join('') +
-      txlField('vng', 'VN–G', txl.v.vng, false) + '</div>';
-  }
-  if(cfg.ll){
-    const lls = cfg.phases.length === 2 ? [['vab','VAB']] : [['vab','VAB'],['vbc','VBC'],['vca','VCA']];
-    vFields += '<div class="txl-grid">' + lls.map(([k,l])=> txlField(k, l, txl.v[k], false)).join('') + '</div>';
-  }
-  const vAlert = (c.vMin != null && c.vMin < c.vLo) ? 'แรงดันต่ำสุด ' + c.vMin + ' V ต่ำกว่าเกณฑ์ ' + Math.round(c.vLo) + '–' + Math.round(c.vHi) + ' V — ตรวจจุดต่อสายและการกระจายโหลด'
-                : (c.vMax != null && c.vMax > c.vHi) ? 'แรงดันสูงสุด ' + c.vMax + ' V สูงกว่าเกณฑ์ ' + Math.round(c.vLo) + '–' + Math.round(c.vHi) + ' V'
-                : '';
-
+  const F = txlFieldList();
   const perFeeder = txl.measurePoint === 'รายวงจร';
-  const iKeys = cfg.phases.map(p=> ['i' + p.toLowerCase(), 'I' + p]);
-  if(cfg.neutral) iKeys.push(['in', 'IN']);
+
+  const vAlert = (c.vMin != null && c.vMin < c.vLo) ? 'แรงดันต่ำสุด ' + c.vMin + ' V ต่ำกว่าเกณฑ์ ' + Math.round(c.vLo) + '–' + Math.round(c.vHi) + ' V — ตรวจจุดต่อสายและการกระจายโหลด'
+              : (c.vMax != null && c.vMax > c.vHi) ? 'แรงดันสูงสุด ' + c.vMax + ' V สูงกว่าเกณฑ์ ' + Math.round(c.vLo) + '–' + Math.round(c.vHi) + ' V'
+              : '';
 
   let iBlock = '';
   if(perFeeder){
+    const iBase = cfg.phases.map(p=> 'i' + p.toLowerCase());
+    if(cfg.neutral) iBase.push('in');
     const tabs = txl.feeders.map(fd=>{
-      const done = iKeys.some(([k])=> txlNum(fd[k]) != null);
+      const done = iBase.filter(k=> txlNum(fd[k]) != null).length;
       return '<button type="button" class="txl-seg' + (txl.activeFeeder === fd.no ? ' on' : '') +
-        '" data-txl-fd="' + fd.no + '">วงจร ' + fd.no + (done ? ' ✓' : '') + '</button>';
+        '" data-txl-fd="' + fd.no + '">วงจร ' + fd.no + (done === iBase.length ? ' ✓' : done ? ' ' + done + '/' + iBase.length : '') + '</button>';
     }).join('');
     const fd = txl.feeders.find(x=> x.no === txl.activeFeeder) || txl.feeders[0];
     iBlock = '<div class="txl-segs">' + tabs + '</div>' +
-      '<div class="txl-grid">' + iKeys.map(([k,l])=>
-        '<label class="txl-num"><span>' + l + '</span><input type="number" inputmode="decimal" step="0.1" data-txl-fv="' +
-        k + '" value="' + escapeHtml(fd[k] == null ? '' : fd[k]) + '"></label>').join('') + '</div>' +
+      '<div class="txl-vgrid">' + iBase.map(k=> txlValueCard('f' + fd.no + '.' + k, true)).join('') + '</div>' +
       '<div class="txl-grid2">' +
         '<label class="txl-num wide"><span>ขนาดสายวงจร</span><input data-txl-fs="cableSize" value="' + escapeHtml(fd.cableSize) + '" placeholder="เช่น 4×95 AL"></label>' +
         '<label class="txl-num wide"><span>เมนเบรกเกอร์</span><input data-txl-fs="breakerSize" value="' + escapeHtml(fd.breakerSize) + '" placeholder="เช่น 250 AT"></label>' +
       '</div>';
     const sum = txlSumFeeders(txl.feeders);
     if(sum) iBlock += '<div class="txl-sum">รวม ' + txl.feeders.length + ' วงจร &nbsp;' +
-      iKeys.map(([k,l])=> l + ' ' + Math.round(sum[k] || 0)).join(' · ') + '</div>';
+      iBase.map(k=> (TXL_FIELD_INFO[k] || {}).label + ' ' + Math.round(sum[k] || 0)).join(' · ') + '</div>';
   } else {
-    iBlock = '<div class="txl-grid">' + iKeys.map(([k,l])=> txlField(k, l, txl.v[k], false)).join('') + '</div>';
+    iBlock = '<div class="txl-vgrid">' + F.amp.map(k=> txlValueCard(k)).join('') + '</div>';
   }
 
+  const filled = F.all.filter(k=> txlNum(txlGetVal(k)) != null).length;
+  const withPh = F.all.filter(k=> txl.vPhoto[k]).length;
+  const pct = F.all.length ? Math.round(filled / F.all.length * 100) : 0;
+
   return '' +
-  '<div class="txl-ctx">' + escapeHtml(TXL_CONFIGS[txl.sysConfig].label) + ' · ' + escapeHtml(txl.measurePoint) +
+  '<div class="txl-ctx">' + escapeHtml(cfg.label) + ' · ' + escapeHtml(txl.measurePoint) +
     (perFeeder ? ' ' + txl.feeders.length + ' วงจร' : '') + '</div>' +
-  '<div class="txl-sec"><div class="txl-sec-t">แรงดัน ที่ขั้วแรงต่ำหม้อแปลง (V)</div>' + vFields +
+  '<div class="txl-sec"><div class="txl-sec-t">แรงดัน ที่ขั้วแรงต่ำหม้อแปลง (V) <small>— แตะช่องเพื่อวัด</small></div>' +
+    '<div class="txl-vgrid">' + F.volt.map(k=> txlValueCard(k)).join('') + '</div>' +
+    txlLegend() +
     (vAlert ? '<div class="txl-alert">⚠ ' + escapeHtml(vAlert) + '</div>' : '') + '</div>' +
   '<div class="txl-sec"><div class="txl-sec-t">กระแส' + (perFeeder ? ' รายวงจรแรงต่ำ' : '') + ' (A)</div>' + iBlock + '</div>' +
   (!cfg.neutral ? '<div class="txl-note">ระบบ 3 เฟส 3 สาย ไม่มีนิวทรัล จึงคิด kVA จาก √3 × แรงดันเฟส–เฟสเฉลี่ย × กระแสเฉลี่ย</div>' : '') +
   (cfg.phases.length === 1 ? '<div class="txl-note">ระบบ 1 เฟส 2 สาย นิวทรัลรับกระแสเท่าสายเฟสตามธรรมชาติ ระบบจึงไม่ตัดสินเรื่องกระแสนิวทรัลและความไม่สมดุล</div>' : '') +
+  '<div class="txl-prog"><span>วัดแล้ว <b>' + filled + ' / ' + F.all.length + '</b> ช่อง · มีรูป <b class="g">' + withPh +
+    '</b></span><i><em style="width:' + pct + '%"></em></i></div>' +
   '<div class="txl-row2">' +
-    '<button type="button" class="txl-back" data-txl-next="1">‹ ย้อนกลับ</button>' +
-    '<button type="button" class="txl-main" data-txl-next="3">ถัดไป — ถ่ายรูป ›</button></div>';
+    '<button type="button" class="txl-back" data-txl-next="2">‹ ย้อนกลับ</button>' +
+    '<button type="button" class="txl-main" data-txl-next="4">ถัดไป — สรุปผล ›</button></div>';
 }
 
-function txlStep3(){
+/* ---------- ขั้นที่ 2 · รูปตัวหม้อแปลง — ถ่ายก่อนลงมือวัด ---------- */
+function txlStepPhotos(){
   const slots = TXL_PHOTOS.map(sl=>{
     const p = txl.photos[sl.key];
     return '<div class="txl-slot' + (sl.req ? ' req' : '') + (p ? ' has' : '') + '">' +
@@ -3199,7 +3288,9 @@ function txlStep3(){
     '<div class="txl-extra"><img src="' + p.dataUrl + '" alt="รูปเพิ่มเติม ' + (i+1) + '">' +
     '<button type="button" class="txl-x" data-txl-rmextra="' + i + '" aria-label="ลบรูปเพิ่มเติม">✕</button></div>').join('');
   const stamp = txlStampLines();
-  return '' + slots +
+  return '' +
+  '<div class="txl-preview">ถ่ายรูปหม้อแปลงตอนเพิ่งถึงหน้างานให้เสร็จก่อน — ขั้นต่อไปคือลงมือวัด ' +
+    'ซึ่งจะถ่ายหน้าปัดเครื่องวัดแยกทีละค่าอยู่แล้ว</div>' + slots +
   '<div class="txl-sec"><div class="txl-sec-t">รูปเพิ่มเติม — ไม่จำกัดจำนวน</div>' +
     '<div class="txl-extras">' + extras +
       '<label class="txl-addph"><span>＋</span><input type="file" accept="image/*" capture="environment" data-txl-photo="extra"></label></div>' +
@@ -3207,8 +3298,8 @@ function txlStep3(){
   '<div class="txl-stamp"><b>ลายน้ำที่จะฝังในรูป</b>' + stamp.map(l=> '<div>' + escapeHtml(l) + '</div>').join('') +
     '<small>ฝังลงไฟล์ภาพตอนถ่าย จึงติดไปกับรูปเสมอเมื่อดาวน์โหลดหรือส่งต่อ</small></div>' +
   '<div class="txl-row2">' +
-    '<button type="button" class="txl-back" data-txl-next="2">‹ ย้อนกลับ</button>' +
-    '<button type="button" class="txl-main" data-txl-next="4">ถัดไป — สรุปผล ›</button></div>';
+    '<button type="button" class="txl-back" data-txl-next="1">‹ ย้อนกลับ</button>' +
+    '<button type="button" class="txl-main" data-txl-next="3">ถัดไป — ลงมือวัดค่า ›</button></div>';
 }
 function txlStampLines(){
   const d = txl.d;
@@ -3252,6 +3343,9 @@ function txlStep4(){
   }).join('');
 
   const missing = TXL_PHOTOS.filter(sl=> sl.req && !txl.photos[sl.key]).map(sl=> sl.title);
+  // ค่าที่กรอกไว้แต่ไม่มีรูปหน้าปัดกำกับ — ไม่ห้ามบันทึก แต่บอกให้รู้ว่าช่องไหนไม่มีหลักฐาน
+  const noPhoto = txlFieldList().all.filter(k=> txlNum(txlGetVal(k)) != null && !txl.vPhoto[k])
+                    .map(k=> txlFieldInfoOf(k).label);
   return '' +
   '<div class="txl-verdict-card ' + cls + '"><b>' + escapeHtml(c.verdict) + '</b>' +
     '<span>' + (c.kva == null ? '-' : c.kva) + ' kVA' +
@@ -3267,6 +3361,8 @@ function txlStep4(){
     '<textarea class="txl-in" id="txlNote" rows="2" placeholder="เช่น วัดช่วงบ่าย อากาศร้อนจัด มีโรงงานในวงจร 1">' +
       escapeHtml(txl.note) + '</textarea></div>' +
   (missing.length ? '<div class="txl-alert">⚠ ยังไม่มีรูปที่จำเป็น: ' + escapeHtml(missing.join(' · ')) + '</div>' : '') +
+  (noPhoto.length ? '<div class="txl-note">ค่าที่ไม่มีรูปหน้าปัดกำกับ: <b>' + escapeHtml(noPhoto.join(' · ')) +
+    '</b> — บันทึกได้ แต่ย้อนตรวจภายหลังไม่ได้ว่าอ่านมาจากหน้าปัดจริง</div>' : '') +
   (!navigator.onLine ? '<div class="txl-offline">ตอนนี้ไม่มีสัญญาณ — กดบันทึกได้เลย ระบบจะเก็บไว้ในเครื่องแล้วส่งเองเมื่อกลับมาออนไลน์</div>' : '') +
   '<div class="txl-row2">' +
     '<button type="button" class="txl-back" data-txl-next="3">‹ ย้อนกลับ</button>' +
@@ -3275,61 +3371,22 @@ function txlStep4(){
 }
 
 /* อัปเดตสิ่งที่เปลี่ยนตามค่าที่พิมพ์ โดยไม่วาดหน้าใหม่ — คีย์บอร์ดและโฟกัสจึงไม่เด้ง */
+/* วาดตารางค่าใหม่หลังได้ค่าจากหน้าจอถ่าย — คงตำแหน่งเลื่อนหน้าไว้ ไม่ให้กระโดด */
 function txlLiveUpdate(){
-  if(!txl || txl.step !== 2) return;
+  if(!txl || txl.step !== 3) return;
   const body = document.getElementById('txlBody');
   if(!body) return;
-  const cfg = TXL_CONFIGS[txl.sysConfig];
-  const c = txlCompute(txlMerged());
-
-  // กรอบเตือนแรงดันเฉพาะช่องเฟส–นิวทรัล (เทียบเกณฑ์ 230 V ±10%)
-  cfg.phases.forEach(p=>{
-    const k = 'v' + p.toLowerCase();
-    const inp = body.querySelector('[data-txl-v="' + k + '"]');
-    if(!inp) return;
-    const n = txlNum(txl.v[k]);
-    const bad = cfg.neutral && n != null && (n < c.vLo || n > c.vHi);
-    if(inp.parentElement) inp.parentElement.classList.toggle('warn', !!bad);
-  });
-
-  // ข้อความเตือนแรงดัน
-  const vAlert = (c.vMin != null && c.vMin < c.vLo)
-      ? 'แรงดันต่ำสุด ' + c.vMin + ' V ต่ำกว่าเกณฑ์ ' + Math.round(c.vLo) + '–' + Math.round(c.vHi) + ' V — ตรวจจุดต่อสายและการกระจายโหลด'
-    : (c.vMax != null && c.vMax > c.vHi)
-      ? 'แรงดันสูงสุด ' + c.vMax + ' V สูงกว่าเกณฑ์ ' + Math.round(c.vLo) + '–' + Math.round(c.vHi) + ' V' : '';
-  let box = body.querySelector('.txl-alert');
-  if(vAlert){
-    if(!box){
-      box = document.createElement('div');
-      box.className = 'txl-alert';
-      const sec = body.querySelector('.txl-sec');
-      if(sec) sec.appendChild(box);
-    }
-    box.textContent = '⚠ ' + vAlert;
-  } else if(box) box.remove();
-
-  // แถวผลรวมกระแสทุกวงจร และเครื่องหมาย ✓ บนแท็บวงจรที่กรอกแล้ว
-  if(txl.measurePoint === 'รายวงจร'){
-    const iKeys = cfg.phases.map(p=> ['i' + p.toLowerCase(), 'I' + p]);
-    if(cfg.neutral) iKeys.push(['in', 'IN']);
-    const sum = txlSumFeeders(txl.feeders);
-    const sumEl = body.querySelector('.txl-sum');
-    if(sumEl && sum) sumEl.innerHTML = 'รวม ' + txl.feeders.length + ' วงจร &nbsp;' +
-      iKeys.map(([k, l])=> l + ' ' + Math.round(sum[k] || 0)).join(' · ');
-    txl.feeders.forEach(fd=>{
-      const tab = body.querySelector('[data-txl-fd="' + fd.no + '"]');
-      if(!tab) return;
-      const done = iKeys.some(([k])=> txlNum(fd[k]) != null);
-      tab.textContent = 'วงจร ' + fd.no + (done ? ' ✓' : '');
-    });
-  }
+  const y = body.scrollTop;
+  body.innerHTML = txlStepValues();
+  txlBind();
+  body.scrollTop = y;
   txlUpdateStrip();
 }
 /* แถบผลคำนวณสดท้ายจอ — เห็นตัวเลขขณะกรอกทันที ไม่ต้องรอถึงขั้นสรุป */
 function txlUpdateStrip(){
   const el = document.getElementById('txlStrip');
   if(!el) return;
-  if(!txl || txl.step !== 2){ el.style.display = 'none'; return; }
+  if(!txl || txl.step !== 3){ el.style.display = 'none'; return; }
   const c = txlCompute(txlMerged());
   if(c.kva == null || !c.kva){ el.style.display = 'none'; return; }
   el.style.display = '';
@@ -3379,17 +3436,18 @@ function txlBind(){
   const note = document.getElementById('txlNote');
   if(note) note.addEventListener('input', ()=>{ txl.note = note.value; });
 
-  // ช่องแรงดัน/กระแสรวม — เก็บเข้า txl.v แล้วอัปเดตแถบผลสด (ไม่วาดใหม่ทั้งหน้า คีย์บอร์ดจึงไม่เด้ง)
-  body.querySelectorAll('[data-txl-v]').forEach(inp=>{
-    inp.addEventListener('input', ()=>{ txl.v[inp.dataset.txlV] = inp.value; txlLiveUpdate(); });
-  });
-  // ช่องกระแสรายวงจร
-  body.querySelectorAll('[data-txl-fv]').forEach(inp=>{
-    inp.addEventListener('input', ()=>{
-      const fd = txl.feeders.find(x=> x.no === txl.activeFeeder);
-      if(fd) fd[inp.dataset.txlFv] = inp.value;
-      txlLiveUpdate();
+  // การ์ดค่าที่วัด — แตะการ์ดเปิดหน้าถ่าย · แตะดินสอพิมพ์เลขเองโดยไม่ต้องถ่ายใหม่
+  body.querySelectorAll('[data-txl-cap]').forEach(el=>{
+    el.addEventListener('click', e=>{
+      if(e.target.closest('[data-txl-man]')) return;
+      txlCapOpen(el.dataset.txlCap, false);
     });
+    el.addEventListener('keydown', e=>{
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); txlCapOpen(el.dataset.txlCap, false); }
+    });
+  });
+  body.querySelectorAll('[data-txl-man]').forEach(el=>{
+    el.addEventListener('click', e=>{ e.stopPropagation(); txlCapOpen(el.dataset.txlMan, true); });
   });
   body.querySelectorAll('[data-txl-fs]').forEach(inp=>{
     inp.addEventListener('input', ()=>{
@@ -3426,15 +3484,244 @@ function txlGoStep(n){
 }
 function txlValidate(step){
   if(step === 1 && !TXL_CONFIGS[txl.sysConfig]) return 'เลือกรูปแบบระบบแรงต่ำก่อน';
-  if(step === 2){
-    const c = txlCompute(txlMerged());
-    if(!c.kva) return 'กรอกแรงดันและกระแสให้ครบก่อน — ยังคำนวณโหลดไม่ได้';
-  }
-  if(step === 3){
+  if(step === 2){                       // ขั้นรูปตัวหม้อแปลง
     const missing = TXL_PHOTOS.filter(sl=> sl.req && !txl.photos[sl.key]);
     if(missing.length) return 'ต้องมีรูป: ' + missing.map(sl=> sl.title.replace(/^\d\)\s*/, '')).join(' และ ');
   }
+  if(step === 3){                       // ขั้นวัดค่า
+    const c = txlCompute(txlMerged());
+    if(!c.kva) return 'วัดแรงดันและกระแสให้ครบก่อน — ยังคำนวณโหลดไม่ได้';
+  }
   return '';
+}
+
+/* ==========================================================================
+ *  หน้าจอถ่ายหน้าปัดเครื่องวัด แล้วตัวเลขเข้าช่อง
+ *  เล็งกรอบ → กดถ่าย → เด้งไปช่องตัวเลขให้พิมพ์/ยืนยัน → ไปช่องถัดไปเอง
+ *  ทุกค่าที่วัดได้จึงมีรูปหน้าปัดของตัวเองผูกอยู่ ย้อนตรวจได้ว่าอ่านถูกหรือกรอกผิด
+ *  ถ่ายไม่ได้ (กล้องไม่ยอม/จอมืด) ก็เลือก "ข้ามรูป พิมพ์เอง" ได้ ช่องนั้นจะติด ⚠ ว่าไม่มีหลักฐาน
+ * ========================================================================== */
+function txlCapOpen(key, manualOnly){
+  if(!txl) return;
+  // ถ้าช่องถัดไปเป็นของอีกวงจร ให้สลับแท็บวงจรตามไปเอง ไม่ต้องกดเลือกใหม่
+  const fm = String(key).match(/^f(\d+)\./);
+  if(fm) txl.activeFeeder = parseInt(fm[1], 10);
+  const info = txlFieldInfoOf(key);
+  txl.cap = { key, info, mode: manualOnly ? 'manual' : 'aim',
+              shot: null, value: txlGetVal(key) == null ? '' : String(txlGetVal(key)),
+              camErr: '' };
+  document.getElementById('txlCapOverlay').classList.add('show');
+  txlCapRender();
+  if(!manualOnly) txlCapStartCamera();
+}
+function txlCapClose(){
+  txlCapStopCamera();
+  txl && (txl.cap = null);
+  document.getElementById('txlCapOverlay').classList.remove('show');
+}
+let txlCapStream = null;
+async function txlCapStartCamera(){
+  if(txlCapStream) return;
+  const video = document.getElementById('txcVideo');
+  if(!video || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    if(txl && txl.cap){ txl.cap.camErr = 'เบราว์เซอร์นี้เปิดกล้องในหน้าเว็บไม่ได้ — ใช้ปุ่มเลือกรูปด้านล่างแทน'; txlCapRender(); }
+    return;
+  }
+  try{
+    txlCapStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 } }, audio: false });
+    video.srcObject = txlCapStream;
+    await video.play().catch(()=>{});
+  }catch(e){
+    txlCapStream = null;
+    if(txl && txl.cap){
+      txl.cap.camErr = (e && e.name === 'NotAllowedError')
+        ? 'ยังไม่ได้อนุญาตให้ใช้กล้อง — กดอนุญาตในเบราว์เซอร์ หรือใช้ปุ่มเลือกรูปด้านล่าง'
+        : 'เปิดกล้องไม่ได้ — ใช้ปุ่มเลือกรูปด้านล่างแทน';
+      txlCapRender();
+    }
+  }
+}
+function txlCapStopCamera(){
+  const video = document.getElementById('txcVideo');
+  if(video) video.srcObject = null;
+  if(txlCapStream){ txlCapStream.getTracks().forEach(t=> t.stop()); txlCapStream = null; }
+}
+/* ย่อภาพจาก dataUrl ให้ไม่เกิน PHOTO_MAX_DIM เหมือนรูปที่มาจากไฟล์ */
+function txlShrink(dataUrl){
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const scale = Math.min(1, PHOTO_MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * scale);
+      c.height = Math.round(img.naturalHeight * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL('image/jpeg', PHOTO_QUALITY));
+    };
+    img.onerror = ()=> resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+async function txlCapShoot(){
+  if(!txl || !txl.cap) return;
+  const video = document.getElementById('txcVideo');
+  if(!txlCapStream || !video || !video.videoWidth){ showToast('กล้องยังไม่พร้อม รอสักครู่', 'warn'); return; }
+  const c = document.createElement('canvas');
+  c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext('2d').drawImage(video, 0, 0);
+  txl.cap.shot = await txlShrink(c.toDataURL('image/jpeg', 0.92));
+  txl.cap.mode = 'confirm';
+  txlCapStopCamera();
+  beep('ok');
+  txlCapRender();
+}
+/* เลือกรูปจากไฟล์ — ทางสำรองเมื่อกล้องในหน้าเว็บใช้ไม่ได้ */
+async function txlCapPickFile(inp){
+  const file = inp.files && inp.files[0];
+  inp.value = '';
+  if(!file || !txl || !txl.cap) return;
+  try{
+    PEAUI.saving.show('กำลังย่อรูป');
+    const c = await compressImage(file);
+    txl.cap.shot = c.dataUrl;
+    txl.cap.mode = 'confirm';
+    txlCapStopCamera();
+    PEAUI.saving.hide();
+    txlCapRender();
+  }catch(e){
+    PEAUI.saving.hide();
+    showToast('อ่านไฟล์รูปไม่ได้ ลองใหม่', 'err');
+  }
+}
+/* ช่องถัดไปที่ยังไม่มีค่า — ใช้บอกว่ากดยืนยันแล้วจะไปไหนต่อ */
+function txlCapNextKey(key){
+  const all = txlFieldList().all;
+  const i = all.indexOf(key);
+  for(let j = i + 1; j < all.length; j++) if(txlNum(txlGetVal(all[j])) == null) return all[j];
+  for(let j = 0; j < all.length; j++) if(j !== i && txlNum(txlGetVal(all[j])) == null) return all[j];
+  return '';
+}
+/* บันทึกค่าลงช่อง (พร้อมรูปถ้ามี) แล้วไปช่องถัดไปหรือปิดหน้าจอ */
+async function txlCapUse(){
+  if(!txl || !txl.cap) return;
+  const cap = txl.cap;
+  const el = document.getElementById('txcNum');
+  const raw = el ? el.value : cap.value;
+  const n = txlNum(raw);
+  if(n == null){ showToast('ใส่ตัวเลขที่อ่านได้ก่อน', 'warn'); if(el) el.focus(); return; }
+  if(n < 0){ showToast('ค่าติดลบไม่ได้', 'warn'); return; }
+  txlSetVal(cap.key, String(n));
+  txl.vSrc[cap.key] = cap.shot ? 'photo' : 'manual';
+  if(cap.shot){
+    const lines = txlStampLines();
+    lines.splice(1, 0, cap.info.label + ' = ' + n + ' ' + cap.info.unit);
+    const stamped = await txlStampPhoto(cap.shot, lines);
+    txl.vPhoto[cap.key] = { dataUrl: stamped, base64: stamped.split(',')[1], mime:'image/jpeg',
+                            bytes: Math.round(stamped.length * 0.75), value: n };
+  } else {
+    delete txl.vPhoto[cap.key];
+  }
+  const next = txlCapNextKey(cap.key);
+  beep('save');
+  txlCapClose();
+  txlLiveUpdate();
+  if(next) txlCapOpen(next, false);
+  else showToast('วัดครบทุกช่องแล้ว — กด "ถัดไป" เพื่อดูสรุปผล', 'ok');
+}
+/* เก็บรูปไว้แต่ยังไม่ใส่ค่า — ใช้ตอนหน้าปัดอ่านไม่ออกแต่อยากเก็บหลักฐานไว้ก่อน */
+async function txlCapKeepOnly(){
+  if(!txl || !txl.cap || !txl.cap.shot) return;
+  const cap = txl.cap;
+  const lines = txlStampLines();
+  lines.splice(1, 0, 'ช่องที่วัด ' + cap.info.label);
+  const stamped = await txlStampPhoto(cap.shot, lines);
+  txl.vPhoto[cap.key] = { dataUrl: stamped, base64: stamped.split(',')[1], mime:'image/jpeg',
+                          bytes: Math.round(stamped.length * 0.75), value: null };
+  txlCapClose();
+  txlLiveUpdate();
+  showToast('เก็บรูปหน้าปัดไว้แล้ว — ยังไม่มีตัวเลขในช่อง ' + cap.info.label, 'warn');
+}
+function txlCapRetake(){
+  if(!txl || !txl.cap) return;
+  txl.cap.shot = null;
+  txl.cap.mode = 'aim';
+  txlCapRender();
+  txlCapStartCamera();
+}
+function txlCapManual(){
+  if(!txl || !txl.cap) return;
+  txl.cap.mode = 'manual';
+  txl.cap.shot = null;
+  txlCapStopCamera();
+  txlCapRender();
+}
+function txlCapRender(){
+  if(!txl || !txl.cap) return;
+  const cap = txl.cap, m = cap.mode;
+  const head = document.getElementById('txcHead');
+  head.innerHTML = '<span class="txc-h-l"><b>กำลังวัด — ' + escapeHtml(cap.info.label) + '</b>' +
+    '<small>' + escapeHtml(cap.info.desc) + ' · ' + escapeHtml(txl.d.id) + '</small></span>' +
+    '<button type="button" class="txc-x" id="txcClose" aria-label="ปิด">✕</button>';
+  document.getElementById('txcClose').addEventListener('click', txlCapClose);
+
+  const stage = document.getElementById('txcStage');
+  const video = document.getElementById('txcVideo');
+  const shot  = document.getElementById('txcShot');
+  stage.style.display = m === 'manual' ? 'none' : '';
+  video.style.display = m === 'aim' ? '' : 'none';
+  shot.style.display  = m === 'confirm' ? '' : 'none';
+  if(m === 'confirm' && cap.shot) shot.src = cap.shot;
+  document.getElementById('txcFrame').style.display = m === 'aim' ? '' : 'none';
+  document.getElementById('txcNote').innerHTML = m === 'aim'
+    ? (cap.camErr ? '<span class="err">' + escapeHtml(cap.camErr) + '</span>'
+                  : 'เล็งกรอบให้ตรงตัวเลขหลักบนหน้าปัด แล้วกดปุ่มถ่าย')
+    : m === 'confirm' ? 'รูปนี้จะถูกเก็บไว้พร้อมค่า และฝังลายน้ำวันเวลา พิกัด หมายเลขหม้อแปลง' : '';
+
+  const nextKey = txlCapNextKey(cap.key);
+  const nextLab = nextKey ? txlFieldInfoOf(nextKey).label : '';
+  const useLabel = nextKey ? 'ใช้ค่านี้ — ไปช่อง ' + nextLab : 'ใช้ค่านี้ — วัดครบแล้ว';
+  const foot = document.getElementById('txcFoot');
+
+  if(m === 'aim'){
+    foot.className = 'txc-foot aim';
+    foot.innerHTML =
+      '<label class="txc-file"><span>🖼 เลือกรูป</span>' +
+        '<input type="file" accept="image/*" capture="environment" id="txcFile"></label>' +
+      '<button type="button" class="txc-shutter" id="txcShoot" aria-label="ถ่ายรูปหน้าปัด"></button>' +
+      '<button type="button" class="txc-skip" id="txcManual">ข้ามรูป<br>พิมพ์เอง</button>';
+    document.getElementById('txcShoot').addEventListener('click', txlCapShoot);
+    document.getElementById('txcManual').addEventListener('click', txlCapManual);
+    document.getElementById('txcFile').addEventListener('change', e=> txlCapPickFile(e.target));
+    return;
+  }
+
+  const manual = m === 'manual';
+  foot.className = 'txc-foot ' + (manual ? 'manual' : 'confirm');
+  foot.innerHTML =
+    '<div class="txc-card' + (manual ? ' warn' : '') + '">' +
+      '<div class="txc-card-t">' + (manual
+        ? '⚠ พิมพ์เอง ไม่มีรูปหน้าปัด — ช่องนี้จะติดเครื่องหมายว่าไม่มีหลักฐาน'
+        : 'ตัวเลขที่อ่านได้จากหน้าปัด — ตรวจอีกครั้งก่อนยืนยัน') + '</div>' +
+      '<div class="txc-numrow">' +
+        '<input type="number" inputmode="decimal" step="0.1" id="txcNum" value="' +
+          escapeHtml(cap.value == null ? '' : String(cap.value)) + '" placeholder="0.0">' +
+        '<span>' + escapeHtml(cap.info.unit) + '</span></div>' +
+      '<button type="button" class="txc-use" id="txcUse">✓ ' + escapeHtml(useLabel) + '</button>' +
+      '<div class="txc-row2">' +
+        (manual ? '<button type="button" class="txc-alt" id="txcRetake">📷 ถ่ายรูปหน้าปัดด้วย</button>'
+                : '<button type="button" class="txc-alt" id="txcRetake">🔄 ถ่ายใหม่</button>' +
+                  '<button type="button" class="txc-alt" id="txcKeep">เก็บรูป ไม่ใช้ค่า</button>') +
+      '</div></div>';
+  const num = document.getElementById('txcNum');
+  num.addEventListener('input', ()=>{ cap.value = num.value; });
+  num.addEventListener('keydown', e=>{ if(e.key === 'Enter'){ e.preventDefault(); txlCapUse(); } });
+  document.getElementById('txcUse').addEventListener('click', txlCapUse);
+  document.getElementById('txcRetake').addEventListener('click', txlCapRetake);
+  const keep = document.getElementById('txcKeep');
+  if(keep) keep.addEventListener('click', txlCapKeepOnly);
+  // เด้งไปที่ช่องตัวเลขให้แป้นตัวเลขขึ้นมาเองทันที ไม่ต้องแตะอีกครั้ง
+  setTimeout(()=>{ try{ num.focus(); num.select(); }catch(e){} }, 60);
 }
 
 async function txlTakePhoto(inp){
@@ -3461,7 +3748,7 @@ async function txlTakePhoto(inp){
 /* ---------- บันทึก ---------- */
 async function txlSave(){
   if(txlSaving || !txl) return;
-  const err = txlValidate(3);
+  const err = txlValidate(2) || txlValidate(3);
   if(err){ showToast(err, 'warn'); beep('err'); return; }
   if(!(await requireAuth())){ showToast('ต้องเข้าสู่ระบบก่อนจึงจะบันทึกได้', 'warn'); return; }
 
@@ -3476,6 +3763,16 @@ async function txlSave(){
     const p = txl.photos[sl.key];
     if(p) photos.push({ kind: sl.key, base64: p.base64, mimeType: p.mime, takenAt: txl.measuredAt.toISOString(),
                         lat: txl.lat, lon: txl.lon });
+  });
+  // รูปหน้าปัดเครื่องวัดของแต่ละค่า — kind = meter_va, meter_ia, meter_f2.ib ...
+  // เก็บค่าที่อ่านได้ไว้ใน caption ด้วย เพื่อย้อนตรวจได้ว่ารูปนี้ให้เลขเท่าไร
+  Object.keys(txl.vPhoto).forEach(k=>{
+    const p = txl.vPhoto[k];
+    if(!p) return;
+    const info = txlFieldInfoOf(k);
+    photos.push({ kind: 'meter_' + k, base64: p.base64, mimeType: p.mime,
+                  takenAt: txl.measuredAt.toISOString(), lat: txl.lat, lon: txl.lon,
+                  caption: info.label + (p.value == null ? ' (ยังไม่ใส่ค่า)' : ' = ' + p.value + ' ' + info.unit) });
   });
   txl.extras.forEach(p=> photos.push({ kind:'extra', base64: p.base64, mimeType: p.mime,
                         takenAt: txl.measuredAt.toISOString(), lat: txl.lat, lon: txl.lon }));
@@ -3578,6 +3875,18 @@ function txlAfterSave(){
 
 /* ---------- ประวัติการวัด — ดูค่าที่วัดย้อนหลังได้ครบทุกตัว ---------- */
 const TXL_PHOTO_LABEL = { pole:'ต้นหม้อแปลง', tank:'ตัวถัง', meter:'เครื่องวัด', extra:'เพิ่มเติม' };
+/* ป้ายใต้รูปในประวัติ — รูปหน้าปัดของแต่ละค่ามาเป็น meter_va, meter_f2.ib ฯลฯ */
+function txlPhotoLabel(kind){
+  const k = String(kind || '').trim();
+  if(TXL_PHOTO_LABEL[k]) return TXL_PHOTO_LABEL[k];
+  if(k.indexOf('meter_') === 0){
+    const key = k.slice(6);
+    const m = key.match(/^f(\d+)\.(.+)$/);
+    const base = (TXL_FIELD_INFO[m ? m[2] : key] || {}).label || key.toUpperCase();
+    return 'หน้าปัด ' + base + (m ? ' ว.' + m[1] : '');
+  }
+  return 'รูป';
+}
 let txlHist = { deviceId:'', records:[], open:'', confirmCancel:'' };
 
 function txlHistNum(v){ const n = parseFloat(v); return isNaN(n) ? null : n; }
@@ -3675,7 +3984,7 @@ function txlHistDetailHtml(rec){
 
   const photos = (rec.photos || []).map(p=>{
     const th = driveThumb(p.DriveUrl);
-    const lab = TXL_PHOTO_LABEL[String(p.PhotoKind || '').trim()] || 'รูป';
+    const lab = txlPhotoLabel(p.PhotoKind);
     return '<a href="' + escapeHtml(String(p.DriveUrl || '')) + '" target="_blank" rel="noopener" class="txl-hph2">' +
       (th ? '<img src="' + escapeHtml(th) + '" alt="' + escapeHtml(lab) + '" loading="lazy" referrerpolicy="no-referrer">' : '') +
       '<span>' + escapeHtml(lab) + '</span></a>';
@@ -4669,6 +4978,68 @@ let txlCarry = null;    // การตั้งค่าของการว�
     '.txl-hphs{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap;}',
     '.txl-hph{width:52px;height:52px;border-radius:7px;overflow:hidden;border:1px solid #ccc7bc;display:flex;align-items:center;justify-content:center;font-size:.6rem;color:var(--muted);}',
     '.txl-hph img{width:100%;height:100%;object-fit:cover;}',
+    /* การ์ดค่าที่วัด 3 สถานะ — เขียว ✓ มีค่า+รูป · เหลือง ⚠ มีค่าไม่มีรูป · เส้นประ ยังไม่วัด */
+    '.txl-vgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:8px;}',
+    '.txl-vc{border:1px dashed #b3ada0;border-radius:10px;padding:8px 10px;background:#fdfdfc;display:flex;flex-direction:column;gap:4px;cursor:pointer;min-height:64px;}',
+    '.txl-vc:focus-visible{outline:2px solid var(--pea-purple);outline-offset:1px;}',
+    '.txl-vc.done{border:1.5px solid #2e7d32;background:#fff;}',
+    '.txl-vc.noph{border:1.5px solid #b26a00;background:#fffaf2;}',
+    '.txl-vc.bad{border-color:#c62828;background:#fdecea;}',
+    '.txl-vc-h{display:flex;align-items:center;gap:5px;}',
+    '.txl-vc-h em{flex:1;font-style:normal;font-size:.7rem;font-weight:700;color:var(--muted);}',
+    '.txl-vc.bad .txl-vc-h em{color:#b0201f;}',
+    '.txl-vc-h img{width:24px;height:19px;object-fit:cover;border-radius:4px;border:1px solid #b3ada0;}',
+    '.txl-vc-h i{font-style:normal;font-size:.78rem;font-weight:700;}',
+    '.txl-vc-h i.ok{color:#1b5e20;} .txl-vc-h i.warn{color:#8a5200;}',
+    '.txl-vc-ed{font-weight:400;font-size:.8rem;color:var(--pea-purple);padding:0 2px;cursor:pointer;}',
+    '.txl-vc-cta{display:flex;align-items:center;gap:5px;color:var(--pea-purple);font-size:.78rem;font-weight:700;}',
+    '.txl-vc-n{display:flex;align-items:baseline;gap:4px;}',
+    '.txl-vc-n b{font-size:1.28rem;line-height:1;} .txl-vc-n i{font-style:normal;font-size:.7rem;color:var(--muted);}',
+    '.txl-vc.bad .txl-vc-n b{color:#b0201f;}',
+    '.txl-vc-no{font-size:.62rem;color:#8a5200;} .txl-vc-ok{font-size:.62rem;color:#175c3a;}',
+    '.txl-vleg{display:flex;gap:9px;flex-wrap:wrap;border-top:1px dashed #e3dfd6;padding-top:7px;font-size:.66rem;color:#46443e;}',
+    '.txl-vleg span{display:inline-flex;align-items:center;gap:3px;}',
+    '.txl-vleg i{font-style:normal;font-weight:700;} .txl-vleg i.ok{color:#1b5e20;} .txl-vleg i.warn{color:#8a5200;}',
+    '.txl-vleg i.dash{width:10px;height:10px;border:1px dashed #b3ada0;border-radius:3px;}',
+    '.txl-prog{display:flex;align-items:center;gap:9px;background:#fff;border:1px solid var(--line,#e3dfd6);border-radius:10px;padding:9px 11px;margin-bottom:9px;font-size:.74rem;color:var(--muted);}',
+    '.txl-prog b{color:#191816;} .txl-prog b.g{color:#175c3a;}',
+    '.txl-prog i{flex:1;height:6px;background:#efedE8;border-radius:3px;overflow:hidden;}',
+    '.txl-prog em{display:block;height:100%;background:var(--pea-purple);}',
+    /* หน้าจอถ่ายหน้าปัดเครื่องวัด */
+    '#txlCapOverlay{position:fixed;inset:0;background:#0f0e0d;z-index:9200;display:none;}',
+    '#txlCapOverlay.show{display:block;}',
+    '.txc-wrap{height:100vh;height:100dvh;display:flex;flex-direction:column;}',
+    '.txc-head{flex:0 0 auto;display:flex;align-items:flex-start;gap:10px;padding:12px 14px;padding-top:calc(12px + env(safe-area-inset-top));background:#0f0e0d;color:#fff;}',
+    '.txc-h-l{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}',
+    '.txc-h-l b{font-size:.98rem;} .txc-h-l small{font-size:.7rem;opacity:.78;line-height:1.4;}',
+    '.txc-x{width:32px;height:32px;border:0;background:rgba(255,255,255,.2);border-radius:8px;color:#fff;font-size:.95rem;font-family:inherit;cursor:pointer;flex:0 0 auto;}',
+    '.txc-stage{flex:1 1 auto;position:relative;background:#2b2b2b;overflow:hidden;min-height:180px;}',
+    '#txcVideo,#txcShot{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#2b2b2b;}',
+    '.txc-frame{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;}',
+    '.txc-frame i{display:block;width:76%;height:34%;border:2.5px solid #7fd88a;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.4);}',
+    '.txc-note{position:absolute;left:10px;right:10px;bottom:10px;background:rgba(15,14,13,.72);color:#fff;border-radius:9px;padding:7px 10px;font-size:.72rem;line-height:1.45;text-align:center;}',
+    '.txc-note .err{color:#ffb4ab;font-weight:700;}',
+    '.txc-foot{flex:0 0 auto;padding:12px 14px;padding-bottom:calc(14px + env(safe-area-inset-bottom));background:#0f0e0d;}',
+    '.txc-foot.aim{display:flex;align-items:center;gap:12px;}',
+    '.txc-shutter{width:70px;height:70px;border-radius:50%;border:4px solid #fff;background:rgba(255,255,255,.22);flex:0 0 auto;cursor:pointer;}',
+    '.txc-shutter:active{background:rgba(255,255,255,.45);}',
+    '.txc-file{flex:1;display:flex;align-items:center;justify-content:flex-start;color:rgba(255,255,255,.85);font-size:.74rem;font-weight:700;cursor:pointer;}',
+    '.txc-file input{display:none;}',
+    '.txc-skip{flex:1;text-align:right;border:0;background:rgba(255,255,255,.16);color:#fff;font-size:.72rem;font-weight:700;font-family:inherit;padding:8px 10px;border-radius:8px;line-height:1.35;cursor:pointer;}',
+    '.txc-card{background:#fff;border-radius:12px;border:1.5px solid #2e7d32;padding:12px;display:flex;flex-direction:column;gap:9px;}',
+    '.txc-card.warn{border-color:#b26a00;}',
+    '.txc-card-t{font-size:.72rem;font-weight:700;color:#175c3a;line-height:1.45;}',
+    '.txc-card.warn .txc-card-t{color:#8a5200;}',
+    '.txc-numrow{display:flex;align-items:baseline;gap:8px;}',
+    '#txcNum{flex:1;min-width:0;border:1.5px solid #ccc7bc;border-radius:9px;padding:8px 10px;font-size:2rem;font-weight:700;font-family:inherit;background:#fdfdfc;text-align:center;}',
+    '#txcNum:focus{outline:2px solid var(--pea-purple);outline-offset:-2px;}',
+    '#txcNum::-webkit-outer-spin-button,#txcNum::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}',
+    '#txcNum{-moz-appearance:textfield;}',
+    '.txc-numrow span{font-size:1.05rem;color:#46443e;font-weight:700;flex:0 0 auto;}',
+    '.txc-use{width:100%;min-height:52px;border:0;border-radius:10px;background:#1e6b45;color:#fff;font-size:1rem;font-weight:700;font-family:inherit;cursor:pointer;}',
+    '.txc-row2{display:flex;gap:7px;}',
+    '.txc-alt{flex:1;min-height:42px;border-radius:8px;border:1px solid #ccc7bc;background:#fff;color:#46443e;font-size:.78rem;font-weight:700;font-family:inherit;cursor:pointer;}',
+    '@media(min-width:600px){.txc-wrap{max-width:560px;margin:0 auto;}}',
     '@media(min-width:600px){.txl-panel{border-radius:14px;max-height:88vh;max-height:88dvh;}.txl-top{padding-top:10px;}#txlOverlay,#txlReportOverlay,#txPlanOverlay{align-items:center;padding:16px;}}'
   ].join('\n');
   document.head.appendChild(css);
@@ -4692,6 +5063,16 @@ let txlCarry = null;    // การตั้งค่าของการว�
       '<div class="txl-top"><div class="txl-top-r"><h2 id="txPlanTitle">📋 แผนงานวัดโหลด</h2>' +
         '<button type="button" class="txl-x-btn" id="txPlanClose" aria-label="ปิด">✕</button></div></div>' +
       '<div id="txPlanBody"></div>' +
+    '</div></div>' +
+    '<div id="txlCapOverlay"><div class="txc-wrap" role="dialog" aria-modal="true" aria-label="ถ่ายหน้าปัดเครื่องวัด">' +
+      '<div class="txc-head" id="txcHead"></div>' +
+      '<div class="txc-stage" id="txcStage">' +
+        '<video id="txcVideo" playsinline autoplay muted></video>' +
+        '<img id="txcShot" alt="รูปหน้าปัดที่ถ่ายได้">' +
+        '<div class="txc-frame" id="txcFrame"><i></i></div>' +
+        '<div class="txc-note" id="txcNote"></div>' +
+      '</div>' +
+      '<div class="txc-foot" id="txcFoot"></div>' +
     '</div></div>' +
     '<div id="txlNextBar"></div>';
   while(wrap.firstChild) document.body.appendChild(wrap.firstChild);
