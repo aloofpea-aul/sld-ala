@@ -3085,6 +3085,8 @@ function txlOpen(feederId, deviceId){
     v: { va:'', vb:'', vc:'', vng:'', vab:'', vbc:'', vca:'' },
     photos: {}, extras: [],
     vPhoto: {},        // คีย์ช่อง → รูปหน้าปัดเครื่องวัดของค่านั้น
+    vCrop: {},         // คีย์ช่อง → ภาพช่วงตัวเลขไว้ย้อนดูเทียบ
+    openCrop: '',      // ช่องที่กำลังกางรูปดูอยู่ในตารางค่า
     vSrc: {},          // คีย์ช่อง → ที่มาของตัวเลข: photo | manual | bt
     cap: null,         // สถานะหน้าจอถ่ายอ่านค่าที่เปิดอยู่
     recommend: {}, note: '', meterModel: localStorage.getItem('txl_meter') || '',
@@ -3194,8 +3196,10 @@ function txlValueCard(key, shortLabel){
   const vLo = TXL_RULES.vNominal * (1 - TXL_RULES.vTolerance / 100);
   const vHi = TXL_RULES.vNominal * (1 + TXL_RULES.vTolerance / 100);
   if(isPhaseV && n != null && (n < vLo || n > vHi)) cls += ' bad';
+  const crop = txl.vCrop[key];
   const head = '<span class="txl-vc-h"><em>' + escapeHtml(label) + '</em>' +
-    (ph ? '<img src="' + ph.dataUrl + '" alt="รูปหน้าปัด">' : '') +
+    (ph ? '<img src="' + (crop ? crop.url : ph.dataUrl) + '" alt="รูปหน้าปัด"' +
+          (crop ? ' class="tap" data-txl-crop="' + escapeHtml(key) + '" role="button" aria-label="ดูภาพหน้าปัดเดิม"' : '') + '>' : '') +
     (st === 'done' ? '<i class="ok">✓</i>' : st === 'noph' ? '<i class="warn">⚠</i>' : '') +
     (st !== 'empty' ? '<b class="txl-vc-ed" data-txl-man="' + escapeHtml(key) + '" role="button" aria-label="แก้ตัวเลขเอง">✎</b>' : '') +
     '</span>';
@@ -3252,6 +3256,24 @@ function txlStepValues(){
   const withPh = F.all.filter(k=> txl.vPhoto[k]).length;
   const pct = F.all.length ? Math.round(filled / F.all.length * 100) : 0;
 
+  // แผงย้อนดู — วัดหม้อแปลงหนึ่งเครื่องมี 11 ช่อง กว่าจะถึงช่องท้ายๆ ก็จำไม่ได้แล้วว่าช่องแรกเห็นเลขอะไร
+  let cropPanel = '';
+  const oc = txl.openCrop, ocData = oc && txl.vCrop[oc];
+  if(ocData){
+    const info = txlFieldInfoOf(oc);
+    cropPanel =
+      '<div class="txl-cropbox">' +
+        '<div class="txl-cropbox-h"><b>ภาพหน้าปัดของ ' + escapeHtml(info.label) + '</b>' +
+          '<span>' + escapeHtml(txlLocalStamp(ocData.at).slice(11)) + ' น.</span>' +
+          '<button type="button" class="txl-cropx" data-txl-cropclose="1" aria-label="ปิด">✕</button></div>' +
+        '<img src="' + ocData.url + '" alt="ภาพหน้าปัดของ ' + escapeHtml(info.label) + '">' +
+        '<div class="txl-cropfoot">ค่าที่บันทึกไว้ <b>' + escapeHtml(String(txlGetVal(oc))) + ' ' +
+          escapeHtml(info.unit) + '</b>' +
+          '<button type="button" class="txl-cropedit" data-txl-man="' + escapeHtml(oc) + '">✎ แก้ค่า</button></div>' +
+        '<div class="txl-cropnote">เทียบรูปกับค่าที่บันทึกได้ทันที ถ้าตอนนั้นกดผิดก็เห็นตรงนี้ก่อนบันทึกขึ้นระบบ</div>' +
+      '</div>';
+  }
+
   return '' +
   '<div class="txl-ctx">' + escapeHtml(cfg.label) + ' · ' + escapeHtml(txl.measurePoint) +
     (perFeeder ? ' ' + txl.feeders.length + ' วงจร' : '') + '</div>' +
@@ -3259,7 +3281,9 @@ function txlStepValues(){
     '<div class="txl-vgrid">' + F.volt.map(k=> txlValueCard(k)).join('') + '</div>' +
     txlLegend() +
     (vAlert ? '<div class="txl-alert">⚠ ' + escapeHtml(vAlert) + '</div>' : '') + '</div>' +
+  (oc && F.volt.indexOf(oc) >= 0 ? cropPanel : '') +
   '<div class="txl-sec"><div class="txl-sec-t">กระแส' + (perFeeder ? ' รายวงจรแรงต่ำ' : '') + ' (A)</div>' + iBlock + '</div>' +
+  (oc && F.volt.indexOf(oc) < 0 ? cropPanel : '') +
   (!cfg.neutral ? '<div class="txl-note">ระบบ 3 เฟส 3 สาย ไม่มีนิวทรัล จึงคิด kVA จาก √3 × แรงดันเฟส–เฟสเฉลี่ย × กระแสเฉลี่ย</div>' : '') +
   (cfg.phases.length === 1 ? '<div class="txl-note">ระบบ 1 เฟส 2 สาย นิวทรัลรับกระแสเท่าสายเฟสตามธรรมชาติ ระบบจึงไม่ตัดสินเรื่องกระแสนิวทรัลและความไม่สมดุล</div>' : '') +
   '<div class="txl-prog"><span>วัดแล้ว <b>' + filled + ' / ' + F.all.length + '</b> ช่อง · มีรูป <b class="g">' + withPh +
@@ -3447,8 +3471,21 @@ function txlBind(){
     });
   });
   body.querySelectorAll('[data-txl-man]').forEach(el=>{
-    el.addEventListener('click', e=>{ e.stopPropagation(); txlCapOpen(el.dataset.txlMan, true); });
+    el.addEventListener('click', e=>{ e.stopPropagation(); txl.openCrop = ''; txlCapOpen(el.dataset.txlMan, true); });
   });
+  // แตะรูปย่อบนการ์ด แล้วภาพช่วงตัวเลขเดิมกางออกมาให้เทียบ กางได้ทีละใบ
+  body.querySelectorAll('[data-txl-crop]').forEach(el=>{
+    el.addEventListener('click', e=>{
+      e.stopPropagation();
+      const k = el.dataset.txlCrop;
+      txl.openCrop = (txl.openCrop === k) ? '' : k;
+      txlLiveUpdate();
+      const box = document.querySelector('.txl-cropbox');
+      if(box) box.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    });
+  });
+  const cx = body.querySelector('[data-txl-cropclose]');
+  if(cx) cx.addEventListener('click', ()=>{ txl.openCrop = ''; txlLiveUpdate(); });
   body.querySelectorAll('[data-txl-fs]').forEach(inp=>{
     inp.addEventListener('input', ()=>{
       const fd = txl.feeders.find(x=> x.no === txl.activeFeeder);
@@ -3883,6 +3920,13 @@ function txlValidate(step){
     var hs = digitBoxes.map(function (d) { return d.y1 - d.y0 + 1; }).sort(function (a, c) { return a - c; });
     var medH = hs[Math.floor(hs.length / 2)];
     var thick = strokeThickness(b.bin, W, band.y0, band.y1);
+    // ตัวเลขเล็กกว่านี้ขีดจะกลืนกันจนอ่านเพี้ยน และเพี้ยนแบบดูน่าเชื่อด้วย
+    // ต้องวัดจากขนาดในรูปจริง ไม่ใช่ขนาดหลังขยาย เพราะขยายแล้วไม่ได้รายละเอียดเพิ่ม
+    var realH = medH / (opt.scale > 0 ? opt.scale : 1);
+    if (realH < 24) {
+      return fail('ตัวเลขในรูปเล็กเกินไป (สูงราว ' + Math.round(realH) +
+                  ' จุด ต้องการอย่างน้อย 24) — เข้าไปใกล้อีกนิดแล้วถ่ายใหม่');
+    }
 
     var digits = [], text = '';
     for (var k = 0; k < items.length; k++) {
@@ -3896,6 +3940,7 @@ function txlValidate(step){
         box.y1 = Math.min(band.y1, Math.round(cy + medH / 2));
       }
       var d = readDigit(b.bin, W, box, thick);
+      d.x0 = box.x0; d.x1 = box.x1;      // ตำแหน่งในภาพที่วิเคราะห์ ใช้ขีดชี้ใต้รูปให้ช่างดู
       digits.push(d);
       text += d.ch;
     }
@@ -3923,7 +3968,7 @@ function txlValidate(step){
     }
     return {
       text: text, value: value, digits: digits, ok: ok, reason: reason,
-      inkDark: b.inkDark
+      inkDark: b.inkDark, width: W, height: H, band: band
     };
   }
 
@@ -3962,7 +4007,7 @@ function txlCapOpen(key, manualOnly){
   const info = txlFieldInfoOf(key);
   txl.cap = { key, info, mode: manualOnly ? 'manual' : 'aim',
               shot: null, value: txlGetVal(key) == null ? '' : String(txlGetVal(key)),
-              camErr: '', ocr: null, rect: Object.assign({}, txlCapRect) };
+              camErr: '', ocr: null, view: 'crop', rect: Object.assign({}, txlCapRect) };
   document.getElementById('txlCapOverlay').classList.add('show');
   txlCapRender();
   if(!manualOnly) txlCapStartCamera();
@@ -4143,7 +4188,16 @@ function txlCapRunOcr(){
         const ctx = c.getContext('2d');
         ctx.imageSmoothingEnabled = true;
         ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
-        const res = txlSegOcr.read(ctx.getImageData(0, 0, c.width, c.height), txlOcrRange(cap.key));
+        const opt = Object.assign({ scale: k }, txlOcrRange(cap.key));
+        const res = txlSegOcr.read(ctx.getImageData(0, 0, c.width, c.height), opt);
+        // ขีดสีส้มใต้หลักที่อ่านไม่ออก — ชี้ให้ดูตรงนั้นในรูปเลย ไม่ต้องไล่นับเอง
+        (res.digits || []).forEach(d=>{
+          if(d.ok || d.x0 == null) return;
+          const bh = Math.max(4, Math.round(c.height * 0.045));
+          ctx.fillStyle = '#b26a00';
+          ctx.fillRect(d.x0, c.height - bh - 2, Math.max(6, d.x1 - d.x0 + 1), bh);
+        });
+        res.cropUrl = c.toDataURL('image/jpeg', 0.85);
         resolve(res);
       }catch(e){ resolve(null); }
     };
@@ -4169,7 +4223,12 @@ async function txlCapUse(){
   const n = txlNum(raw);
   if(n == null){ showToast('ใส่ตัวเลขที่อ่านได้ก่อน', 'warn'); if(el) el.focus(); return; }
   if(n < 0){ showToast('ค่าติดลบไม่ได้', 'warn'); return; }
-  txlSetVal(cap.key, String(n));
+  // เก็บตามที่พิมพ์ เช่น 231.0 ไม่ใช่ 231 เวลาย้อนดูจะได้ตรงกับหน้าปัดในรูปพอดี
+  const keep = String(raw).trim();
+  txlSetVal(cap.key, (keep && txlNum(keep) === n) ? keep : String(n));
+  // เก็บภาพช่วงตัวเลขไว้ในเครื่อง เพื่อให้ย้อนดูเทียบได้ตอนตรวจก่อนบันทึก (ไม่ได้ส่งขึ้นระบบ)
+  if(cap.ocr && cap.ocr.cropUrl) txl.vCrop[cap.key] = { url: cap.ocr.cropUrl, at: new Date(), read: cap.ocr.text };
+  else delete txl.vCrop[cap.key];
   if(cap.shot) txlCapRect = Object.assign({}, cap.rect);
   txl.vSrc[cap.key] = cap.shot ? 'photo' : 'manual';
   if(cap.shot){
@@ -4206,8 +4265,12 @@ async function txlCapReread(){
   if(!txl || !txl.cap || !txl.cap.shot) return;
   txlCapRect = Object.assign({}, txl.cap.rect);   // จำกรอบนี้ไว้ใช้กับช่องถัดไป
   txl.cap.ocr = await txlCapRunOcr();
-  if(txl.cap.ocr && txl.cap.ocr.ok) txl.cap.value = txl.cap.ocr.text;
-  beep(txl.cap.ocr && txl.cap.ocr.ok ? 'ok' : 'err');
+  const okNow = !!(txl.cap.ocr && txl.cap.ocr.ok);
+  if(okNow) txl.cap.value = txl.cap.ocr.text;
+  // อ่านได้แล้วก็พากลับไปหน้าเทียบตัวเลขเลย · ยังไม่ได้ก็อยู่หน้านี้ให้ขยับกรอบต่อได้ทันที
+  txl.cap.view = okNow ? 'crop' : 'full';
+  beep(okNow ? 'ok' : 'err');
+  if(!okNow) showToast('ยังอ่านไม่ออก — ลองขยับกรอบให้เหลือเฉพาะตัวเลขแล้วกดอีกครั้ง', 'warn');
   txlCapRender();
 }
 function txlCapRetake(){
@@ -4227,6 +4290,8 @@ function txlCapManual(){
 function txlCapRender(){
   if(!txl || !txl.cap) return;
   const cap = txl.cap, m = cap.mode;
+  // ยืนยันมีสองมุมมอง — ดูเฉพาะช่วงตัวเลขเพื่อเทียบ หรือดูรูปเต็มใบเพื่อขยับกรอบ
+  const fullView = m === 'confirm' && cap.view === 'full';
   const head = document.getElementById('txcHead');
   head.innerHTML = '<span class="txc-h-l"><b>กำลังวัด — ' + escapeHtml(cap.info.label) + '</b>' +
     '<small>' + escapeHtml(cap.info.desc) + ' · ' + escapeHtml(txl.d.id) + '</small></span>' +
@@ -4236,15 +4301,16 @@ function txlCapRender(){
   const stage = document.getElementById('txcStage');
   const video = document.getElementById('txcVideo');
   const shot  = document.getElementById('txcShot');
-  stage.style.display = m === 'manual' ? 'none' : '';
+  // ตอนยืนยัน ไม่ต้องโชว์รูปเต็มจอ — ย้ายภาพช่วงตัวเลขไปไว้ชิดช่องกรอกแทน จะได้เทียบง่ายและแป้นไม่บัง
+  stage.style.display = (m === 'aim' || fullView) ? '' : 'none';
   video.style.display = m === 'aim' ? '' : 'none';
-  shot.style.display  = m === 'confirm' ? '' : 'none';
-  if(m === 'confirm' && cap.shot) shot.src = cap.shot;
+  shot.style.display  = fullView ? '' : 'none';
+  if(fullView && cap.shot) shot.src = cap.shot;
   const frame = document.getElementById('txcFrame');
-  frame.style.display = m === 'manual' ? 'none' : '';
-  frame.className = 'txc-frame' + (m === 'confirm' ? ' edit' : '');
+  frame.style.display = (m === 'aim' || fullView) ? '' : 'none';
+  frame.className = 'txc-frame' + (fullView ? ' edit' : '');
   // ตอนเล็งกรอบเป็นเส้นเขียวนิ่งๆ · ตอนดูรูปนิ่งเปลี่ยนเป็นเส้นประลากปรับได้แล้วกดอ่านใหม่
-  if(m === 'confirm' && cap.shot){
+  if(fullView && cap.shot){
     shot.onload = ()=> txlCapPlaceFrame();
     if(shot.complete) setTimeout(txlCapPlaceFrame, 0);
   } else if(m === 'aim'){
@@ -4252,13 +4318,12 @@ function txlCapRender(){
     setTimeout(txlCapPlaceFrame, 400);
   }
   const ocr = cap.ocr;
-  document.getElementById('txcNote').innerHTML = m === 'aim'
+  const note = document.getElementById('txcNote');
+  note.style.display = (m === 'aim' || fullView) ? '' : 'none';
+  note.innerHTML = m === 'aim'
     ? (cap.camErr ? '<span class="err">' + escapeHtml(cap.camErr) + '</span>'
                   : 'วางกรอบให้คลุมเฉพาะตัวเลขใหญ่ ไม่ต้องเอาหน่วยหรือสัญลักษณ์เข้ามา')
-    : m === 'confirm'
-      ? (ocr && ocr.ok ? 'อ่านเลขจากในกรอบได้แล้ว · รูปที่เก็บเป็นภาพเต็มใบเหมือนเดิม'
-                       : 'อ่านไม่ออก — ลากกรอบให้ตรงตัวเลขแล้วกด "อ่านใหม่"')
-      : '';
+    : 'ลากกรอบให้คลุมเฉพาะตัวเลข แล้วกด "อ่านใหม่จากกรอบ" · รูปที่เก็บยังเป็นภาพเต็มใบนี้';
 
   const nextKey = txlCapNextKey(cap.key);
   const nextLab = nextKey ? txlFieldInfoOf(nextKey).label : '';
@@ -4282,59 +4347,93 @@ function txlCapRender(){
   const good = !!(ocr && ocr.ok);
   foot.className = 'txc-foot ' + (manual ? 'manual' : 'confirm');
 
-  // แถบบอกความมั่นใจทีละหลัก — ไม่ใช่บอกรวมๆ ว่ามั่นใจกี่เปอร์เซ็นต์
-  let chips = '';
-  if(!manual && ocr && ocr.digits && ocr.digits.length){
-    let di = 0, cells = '';
-    for(const ch of String(ocr.text)){
-      if(ch === '.'){
-        cells += '<div class="txc-chip"><b>.</b><span>จุด</span></div>';
-        continue;
-      }
-      const d = ocr.digits[di++] || { ok:false, ch:'?' };
-      cells += '<div class="txc-chip' + (d.ok ? '' : ' bad') + '"><b>' + escapeHtml(d.ok ? d.ch : '?') +
-               '</b><span>' + (d.ok ? 'ชัด' : 'ไม่ชัด') + '</span></div>';
-    }
-    chips = '<div class="txc-chips">' + cells + '</div>';
+  // ---- โหมดดูรูปเต็มใบเพื่อขยับกรอบ ----
+  if(fullView){
+    foot.innerHTML =
+      '<div class="txc-card">' +
+        '<div class="txc-card-t">ลากกรอบไปคลุมตัวเลข · ลากวงกลมส้มมุมขวาล่างเพื่อย่อขยาย</div>' +
+        '<button type="button" class="txc-use" id="txcReread">✥ อ่านใหม่จากกรอบนี้</button>' +
+        '<div class="txc-row2">' +
+          '<button type="button" class="txc-alt" id="txcBack">‹ กลับไปดูตัวเลข</button>' +
+          '<button type="button" class="txc-alt" id="txcRetake">🔄 ถ่ายใหม่</button>' +
+        '</div></div>';
+    document.getElementById('txcReread').addEventListener('click', txlCapReread);
+    document.getElementById('txcRetake').addEventListener('click', txlCapRetake);
+    document.getElementById('txcBack').addEventListener('click', ()=>{ cap.view = 'crop'; txlCapRender(); });
+    return;
   }
-  const head2 = manual
-    ? '⚠ พิมพ์เอง ไม่มีรูปหน้าปัด — ช่องนี้จะติดเครื่องหมายว่าไม่มีหลักฐาน'
-    : good ? 'อ่านจากรูปได้ — ตรวจอีกครั้งก่อนยืนยัน'
-           : 'อ่านจากรูปไม่ครบ — กรอกเองหรือลากกรอบแล้วอ่านใหม่';
-  const badge = manual ? '' :
-    '<span class="txc-badge ' + (good ? 'ok' : 'no') + '">' + (good ? '✓ ทุกหลักชัด' : '⚠ ต้องตรวจ') + '</span>';
+
+  // ---- แถบรูปช่วงตัวเลข วางชิดเหนือช่องกรอก เพื่อเทียบโดยไม่ต้องใช้ความจำ ----
+  const cropBox = (!manual && ocr && ocr.cropUrl)
+    ? '<div class="txc-crop' + (good ? '' : ' warn') + '">' +
+        '<img src="' + ocr.cropUrl + '" alt="ภาพหน้าปัดเฉพาะช่วงตัวเลข">' +
+        '<span class="txc-crop-t">ภาพจริงจากหน้าปัด · ขยายให้ดูชัด</span></div>'
+    : '';
+  const divider = cropBox
+    ? '<div class="txc-vs"><i></i><span>เทียบกับที่จะบันทึก</span><i></i></div>' : '';
+
+  // ตำแหน่งหลักที่อ่านไม่ออก ใช้บอกช่างว่าต้องเติมตัวที่เท่าไร
+  let badPos = [];
+  if(ocr && ocr.digits) ocr.digits.forEach((d, i)=>{ if(!d.ok) badPos.push(i + 1); });
+
+  const statusLine = manual
+    ? '<div class="txc-hint">⚠ พิมพ์เอง ไม่มีรูปหน้าปัด — ช่องนี้จะติดเครื่องหมายว่าไม่มีหลักฐาน</div>'
+    : good
+      ? '<div class="txc-okline">✓ ระบบอ่านได้ทุกหลัก — กวาดตาดูว่าสองแถวตรงกันแล้วกดยืนยัน</div>'
+      : '<div class="txc-hint">' + escapeHtml(
+          badPos.length
+            ? 'หลักที่ ' + badPos.join(' และ ') + ' อ่านไม่ออก — ขีดส้มใต้รูปชี้ไว้แล้วว่าหลักไหน ดูในรูปแล้วพิมพ์ทั้งชุด'
+            : (ocr && ocr.reason) || 'อ่านจากรูปไม่ได้ — กรอกเองได้เลย') + '</div>' +
+          // โชว์ว่าอ่านได้แค่ไหนไว้เป็นตัวช่วย แต่ไม่เติมลงช่อง
+          // เพราะค่าที่เติมไม่ครบจะดูเหมือนครบแล้วกดผ่านไปโดยไม่ทันสังเกต
+          ((ocr && ocr.text)
+            ? '<div class="txc-partial">ระบบอ่านได้ <b>' +
+              escapeHtml(String(ocr.text).replace(/\?/g, '_')) + '</b></div>' : '');
 
   foot.innerHTML =
     '<div class="txc-card' + (manual || !good ? ' warn' : '') + '">' +
-      '<div class="txc-card-t" style="display:flex;align-items:center;gap:7px;">' +
-        '<span style="flex:1">' + escapeHtml(head2) + '</span>' + badge + '</div>' +
-      chips +
-      ((!manual && ocr && !ocr.ok && ocr.reason)
-        ? '<div class="txc-hint">' + escapeHtml(ocr.reason) + '</div>' : '') +
+      cropBox + divider +
       '<div class="txc-numrow">' +
-        '<input type="number" inputmode="decimal" step="0.1" id="txcNum" value="' +
+        '<input type="text" inputmode="decimal" id="txcNum" value="' +
           escapeHtml(cap.value == null ? '' : String(cap.value)) + '" placeholder="0.0">' +
         '<span>' + escapeHtml(cap.info.unit) + '</span></div>' +
-      '<button type="button" class="txc-use" id="txcUse">✓ ' + escapeHtml(useLabel) + '</button>' +
+      statusLine +
+      '<button type="button" class="txc-use' + (good || manual ? '' : ' wait') + '" id="txcUse">' +
+        (good || manual ? '✓ ' + escapeHtml(useLabel) : 'กรอกเลขให้ครบก่อนจึงยืนยันได้') + '</button>' +
       '<div class="txc-row2">' +
-        (manual ? '<button type="button" class="txc-alt" id="txcRetake">📷 ถ่ายรูปหน้าปัดด้วย</button>'
-                : '<button type="button" class="txc-alt" id="txcReread">✥ อ่านใหม่จากกรอบ</button>' +
-                  '<button type="button" class="txc-alt" id="txcRetake">🔄 ถ่ายใหม่</button>') +
+        (manual
+          ? '<button type="button" class="txc-alt" id="txcRetake">📷 ถ่ายรูปหน้าปัดด้วย</button>'
+          : '<button type="button" class="txc-alt" id="txcFull">🖼 ดูรูปเต็มใบ</button>' +
+            '<button type="button" class="txc-alt" id="txcRetake">🔄 ถ่ายใหม่</button>') +
       '</div>' +
       (manual ? '' :
         '<button type="button" class="txc-alt" id="txcKeep" style="width:100%;margin-top:7px;">เก็บรูป ไม่ใช้ค่า</button>') +
     '</div>';
   const num = document.getElementById('txcNum');
-  num.addEventListener('input', ()=>{ cap.value = num.value; });
+  const useBtn = document.getElementById('txcUse');
+  const syncUse = ()=>{
+    const ready = txlNum(num.value) != null;
+    useBtn.className = 'txc-use' + (ready ? '' : ' wait');
+    useBtn.textContent = ready ? '✓ ' + useLabel : 'กรอกเลขให้ครบก่อนจึงยืนยันได้';
+  };
+  num.addEventListener('input', ()=>{ cap.value = num.value; syncUse(); });
   num.addEventListener('keydown', e=>{ if(e.key === 'Enter'){ e.preventDefault(); txlCapUse(); } });
-  document.getElementById('txcUse').addEventListener('click', txlCapUse);
+  syncUse();
+  useBtn.addEventListener('click', txlCapUse);
   document.getElementById('txcRetake').addEventListener('click', txlCapRetake);
   const keep = document.getElementById('txcKeep');
   if(keep) keep.addEventListener('click', txlCapKeepOnly);
-  const rr = document.getElementById('txcReread');
-  if(rr) rr.addEventListener('click', txlCapReread);
+  const full = document.getElementById('txcFull');
+  if(full) full.addEventListener('click', ()=>{ cap.view = 'full'; txlCapRender(); });
   // เด้งไปที่ช่องตัวเลขให้แป้นตัวเลขขึ้นมาเองทันที ไม่ต้องแตะอีกครั้ง
-  setTimeout(()=>{ try{ num.focus(); num.select(); }catch(e){} }, 60);
+  setTimeout(()=>{
+    try{
+      num.focus();
+      // อ่านครบก็เลือกทั้งชุดไว้ให้พิมพ์ทับได้ทันที · อ่านไม่ครบให้เคอร์เซอร์ไปรอท้ายเลข
+      if(good || manual) num.select();
+      else num.setSelectionRange(num.value.length, num.value.length);
+    }catch(e){}
+  }, 60);
 }
 
 async function txlTakePhoto(inp){
@@ -5614,6 +5713,16 @@ let txlCarry = null;    // การตั้งค่าของการว�
     '.txl-vleg span{display:inline-flex;align-items:center;gap:3px;}',
     '.txl-vleg i{font-style:normal;font-weight:700;} .txl-vleg i.ok{color:#1b5e20;} .txl-vleg i.warn{color:#8a5200;}',
     '.txl-vleg i.dash{width:10px;height:10px;border:1px dashed #b3ada0;border-radius:3px;}',
+    '.txl-vc-h img.tap{cursor:pointer;border-color:var(--pea-purple);border-width:1.5px;}',
+    '.txl-cropbox{background:#fff;border:2px solid var(--pea-purple);border-radius:12px;padding:11px;margin-bottom:10px;}',
+    '.txl-cropbox-h{display:flex;align-items:center;gap:7px;margin-bottom:8px;}',
+    '.txl-cropbox-h b{flex:1;font-size:.8rem;color:#3a2266;} .txl-cropbox-h span{font-size:.68rem;color:var(--muted);}',
+    '.txl-cropx{width:24px;height:24px;border:0;border-radius:7px;background:#efedE8;color:#46443e;font-size:.75rem;font-family:inherit;cursor:pointer;flex:0 0 auto;}',
+    '.txl-cropbox img{display:block;width:100%;max-height:140px;object-fit:contain;background:#c9d2cf;border-radius:9px;}',
+    '.txl-cropfoot{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:.76rem;color:#46443e;}',
+    '.txl-cropfoot b{font-size:.98rem;flex:1;}',
+    '.txl-cropedit{min-height:34px;padding:0 12px;border:1px solid #ccc7bc;border-radius:8px;background:#fff;color:#46443e;font-size:.74rem;font-weight:700;font-family:inherit;cursor:pointer;}',
+    '.txl-cropnote{margin-top:8px;background:#fdecea;border-radius:8px;padding:7px 9px;font-size:.68rem;line-height:1.5;color:#8f1a19;}',
     '.txl-prog{display:flex;align-items:center;gap:9px;background:#fff;border:1px solid var(--line,#e3dfd6);border-radius:10px;padding:9px 11px;margin-bottom:9px;font-size:.74rem;color:var(--muted);}',
     '.txl-prog b{color:#191816;} .txl-prog b.g{color:#175c3a;}',
     '.txl-prog i{flex:1;height:6px;background:#efedE8;border-radius:3px;overflow:hidden;}',
@@ -5648,13 +5757,25 @@ let txlCarry = null;    // การตั้งค่าของการว�
     '.txc-card-t{font-size:.72rem;font-weight:700;color:#175c3a;line-height:1.45;}',
     '.txc-card.warn .txc-card-t{color:#8a5200;}',
     '.txc-numrow{display:flex;align-items:baseline;gap:8px;}',
-    '#txcNum{flex:1;min-width:0;border:1.5px solid #ccc7bc;border-radius:9px;padding:8px 10px;font-size:2rem;font-weight:700;font-family:inherit;background:#fdfdfc;text-align:center;}',
+    '#txcNum{flex:1;min-width:0;border:2px solid var(--pea-purple);border-radius:10px;padding:6px 10px;font-size:2.1rem;font-weight:700;letter-spacing:3px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#fff;text-align:center;}',
     '#txcNum:focus{outline:2px solid var(--pea-purple);outline-offset:-2px;}',
     '#txcNum::-webkit-outer-spin-button,#txcNum::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}',
     '#txcNum{-moz-appearance:textfield;}',
     '.txc-numrow span{font-size:1.05rem;color:#46443e;font-weight:700;flex:0 0 auto;}',
     '.txc-use{width:100%;min-height:52px;border:0;border-radius:10px;background:#1e6b45;color:#fff;font-size:1rem;font-weight:700;font-family:inherit;cursor:pointer;}',
     '.txc-row2{display:flex;gap:7px;}',
+    /* แถบรูปช่วงตัวเลข วางชิดเหนือช่องกรอก — เทียบสองแถวโดยไม่ต้องใช้ความจำ */
+    '.txc-crop{position:relative;background:#c9d2cf;border:2px solid #2e7d32;border-radius:11px;padding:6px;}',
+    '.txc-crop.warn{border-color:#b26a00;}',
+    '.txc-crop img{display:block;width:100%;max-height:132px;object-fit:contain;border-radius:7px;}',
+    '.txc-crop-t{position:absolute;left:10px;top:10px;font-size:.56rem;font-weight:700;background:rgba(15,14,13,.72);color:#fff;padding:2px 7px;border-radius:6px;}',
+    '.txc-vs{display:flex;align-items:center;gap:8px;}',
+    '.txc-vs i{flex:1;height:1px;background:#ddd9d0;}',
+    '.txc-vs span{font-size:.62rem;font-weight:700;color:var(--muted);}',
+    '.txc-okline{background:#e8f5e9;color:#175c3a;border-radius:8px;padding:7px 9px;font-size:.7rem;font-weight:700;line-height:1.45;}',
+    '.txc-partial{font-size:.68rem;color:#46443e;text-align:center;}',
+    '.txc-partial b{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86rem;letter-spacing:1px;}',
+    '.txc-use.wait{background:#b26a00;font-size:.92rem;}',
     '.txc-chips{display:flex;gap:5px;}',
     '.txc-chip{flex:1;border:1.5px solid #2e7d32;border-radius:8px;padding:5px 0;text-align:center;background:#fff;}',
     '.txc-chip b{display:block;font-size:1.15rem;line-height:1;}',
