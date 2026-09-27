@@ -3654,8 +3654,8 @@ function txlExportCsv(){
     '.txl-hist{min-height:44px;padding:0 14px;border:1.5px solid var(--pea-purple);border-radius:9px;background:#fff;color:var(--pea-purple);font-size:.82rem;font-weight:700;font-family:inherit;cursor:pointer;}',
     '#txlOverlay,#txlReportOverlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:8000;display:none;align-items:flex-end;justify-content:center;}',
     '#txlOverlay.show,#txlReportOverlay.show{display:flex;}',
-    '.txl-panel{background:var(--bg,#f6f5f2);width:100%;max-width:560px;max-height:94vh;border-radius:14px 14px 0 0;display:flex;flex-direction:column;overflow:hidden;}',
-    '.txl-top{background:var(--pea-purple);color:#fff;padding:10px 14px 11px;flex:0 0 auto;}',
+    '.txl-panel{background:var(--bg,#f6f5f2);width:100%;max-width:560px;max-height:92vh;max-height:92dvh;border-radius:14px 14px 0 0;display:flex;flex-direction:column;overflow:hidden;}',
+    '.txl-top{background:var(--pea-purple);color:#fff;padding:10px 14px 11px;padding-top:calc(10px + env(safe-area-inset-top));flex:0 0 auto;}',
     '.txl-top-r{display:flex;align-items:center;gap:10px;}',
     '#txlTitle,#txlReportTitle{flex:1;font-size:1rem;font-weight:700;display:flex;flex-direction:column;gap:1px;margin:0;}',
     '#txlTitle small{font-size:.68rem;opacity:.86;font-weight:400;}',
@@ -3664,7 +3664,7 @@ function txlExportCsv(){
     '#txlBars{display:flex;gap:4px;margin-top:8px;}',
     '#txlBars i{flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.3);}',
     '#txlBars i.on{background:#fff;}',
-    '#txlBody,#txlReportBody{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:11px 12px 16px;}',
+    '#txlBody,#txlReportBody{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:11px 12px;padding-bottom:calc(16px + env(safe-area-inset-bottom));}',
     '.txl-sec{background:#fff;border:1px solid var(--line,#e3dfd6);border-radius:11px;padding:11px 12px;margin-bottom:10px;}',
     '.txl-sec-t{font-size:.86rem;font-weight:700;margin-bottom:8px;}',
     '.txl-sec-t small{font-weight:400;color:var(--muted);font-size:.72rem;}',
@@ -3735,7 +3735,7 @@ function txlExportCsv(){
     '.txl-kv span{color:var(--muted);} .txl-kv b.hi{color:#b0201f;} .txl-kv b.mid{color:#8a5200;}',
     '.txl-check{display:flex;align-items:flex-start;gap:9px;font-size:.84rem;line-height:1.45;padding:5px 0;cursor:pointer;}',
     '.txl-check input{width:18px;height:18px;margin:1px 0 0;accent-color:var(--pea-purple);flex:0 0 auto;}',
-    '.txl-strip{flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:9px 12px;background:#fff;border-top:1px solid var(--line,#e3dfd6);}',
+    '.txl-strip{flex:0 0 auto;display:flex;align-items:center;gap:9px;padding:9px 12px;padding-bottom:calc(9px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid var(--line,#e3dfd6);}',
     '.txl-strip span{display:flex;flex-direction:column;} .txl-strip b{font-size:1.02rem;line-height:1.15;}',
     '.txl-strip small{font-size:.62rem;color:var(--muted);}',
     '.txl-strip i{flex:1;} .txl-strip em{font-size:.66rem;font-weight:700;font-style:normal;background:#eee;color:#46443e;padding:2px 7px;border-radius:7px;}',
@@ -3761,7 +3761,7 @@ function txlExportCsv(){
     '.txl-hphs{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap;}',
     '.txl-hph{width:52px;height:52px;border-radius:7px;overflow:hidden;border:1px solid #ccc7bc;display:flex;align-items:center;justify-content:center;font-size:.6rem;color:var(--muted);}',
     '.txl-hph img{width:100%;height:100%;object-fit:cover;}',
-    '@media(min-width:600px){.txl-panel{border-radius:14px;max-height:88vh;}#txlOverlay,#txlReportOverlay{align-items:center;}}'
+    '@media(min-width:600px){.txl-panel{border-radius:14px;max-height:88vh;max-height:88dvh;}.txl-top{padding-top:10px;}#txlOverlay,#txlReportOverlay{align-items:center;padding:16px;}}'
   ].join('\n');
   document.head.appendChild(css);
 
