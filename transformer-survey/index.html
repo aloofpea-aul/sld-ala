@@ -383,6 +383,7 @@
       <button class="chip" data-filter="loadmeasured">⚡ วัดโหลดแล้ว<span class="n"></span></button>
       <button class="chip" data-filter="loadover">⚡ โหลดเกิน<span class="n"></span></button>
       <button class="chip" data-filter="loadstale">🕓 ควรวัดใหม่<span class="n"></span></button>
+      <button class="chip" id="txPlanBtn">📋 แผนงานวัดโหลด</button>
       <button class="chip" id="txlReportBtn">📊 รายงานโหลด</button>
       <span id="txlQueueChip" class="chip" style="display:none;background:#fff4e5;color:#6b4200;border-color:#e8c48e;"></span>
       <span style="width:1px;background:var(--line);flex:0 0 auto;margin:2px 2px;"></span>
@@ -974,6 +975,7 @@ document.querySelectorAll('#filterRow .chip[data-tx]').forEach(chip=>{
   });
 });
 document.getElementById('txlReportBtn').addEventListener('click', ()=> txlReport());
+document.getElementById('txPlanBtn').addEventListener('click', ()=> txPlanShow());
 document.querySelectorAll('#filterRow .chip[data-filter]').forEach(chip=>{
   chip.addEventListener('click', ()=>{
     document.querySelectorAll('#filterRow .chip[data-filter]').forEach(c=>c.classList.remove('on'));
@@ -1152,6 +1154,7 @@ function transformerMarkerHtml(f, d){
         ${warn ? tri(size+9, warn) + tri(size+4, '#fff') : tri(size+4, dashed ? '#fff' : shellCol)}
         ${tri(dashed ? size - 1 : size - 2, innerFill)}
         <span class="tm-badge" style="background:${statusColor(status)};${status==='unverified'?'box-shadow:0 0 0 1px #999;':''}"></span>
+        ${txlMarkerBadge(d)}
       </div>
     </div>`;
 }
@@ -1249,7 +1252,8 @@ function showMapPopup(f, d){
     </div>
     <div class="mc-line">${escapeHtml(d.desc||'(ไม่ทราบจุดติดตั้ง)')}</div>
     <div class="mc-status">${statusDot}<span>${statusText}</span>${dist!=null?`<span style="color:#1a73e8;font-weight:700;">· ห่าง ${fmtDist(dist)}</span>`:''}
-      ${d.parentConfidence==='confirmed' ? '<span class="pc-badge ok">ต้นทางยืนยันแล้ว</span>' : ''}</div>
+      ${d.parentConfidence==='confirmed' ? '<span class="pc-badge ok">ต้นทางยืนยันแล้ว</span>' : ''}
+      ${txlBadge(d)}</div>
     <div class="mc-actions">
       ${hasGps(d) ? `<a href="https://www.google.com/maps/dir/?api=1&destination=${d.lat},${d.lon}" target="_blank" rel="noopener">🧭 นำทาง</a>` : ''}
       <button class="btn-main" id="mapCardOpen">📍 สำรวจ / ดูรายละเอียด</button>
@@ -3525,8 +3529,10 @@ async function txlSave(){
       PEAUI.saving.done('เก็บไว้ในเครื่องแล้ว', 'จะส่งขึ้นระบบเองเมื่อมีสัญญาณ');
       beep('save');
       const id = txl.d.id;
+      const nextOff = txlAfterSave();
       txlClose(); closeDetail(); refreshView();
       showToast('บันทึกผลวัด ' + id + ' ไว้ในเครื่องแล้ว — รอส่งเมื่อมีสัญญาณ', 'warn');
+      if(nextOff) txlShowNext(nextOff);
       return;
     }catch(e){
       txlSaving = false;
@@ -3548,8 +3554,26 @@ async function txlSave(){
   const warn = json.photoFailed && json.photoFailed.length
     ? 'แต่อัปโหลดรูปไม่สำเร็จ ' + json.photoFailed.length + ' รูป' : '';
   const id = txl.d.id;
+  const inPlans = json.plans || [];
+  const nextTarget = txlAfterSave();   // ชื่อ next ถูกใช้ไปแล้วด้านบน (ขนาดหม้อแปลงที่เสนอ)
   txlClose(); closeDetail(); refreshView();
-  showToast(warn ? '⚠ บันทึกผลวัด ' + id + ' แล้ว ' + warn : '✓ บันทึกผลวัดโหลด ' + id + ' แล้ว', warn ? 'warn' : 'ok');
+  showToast(warn ? '⚠ บันทึกผลวัด ' + id + ' แล้ว ' + warn
+    : '✓ บันทึกผลวัดโหลด ' + id + ' แล้ว' + (inPlans.length ? ' · ติ๊กในแผนแล้ว' : ''), warn ? 'warn' : 'ok');
+  if(nextTarget) txlShowNext(nextTarget);
+}
+
+/* เก็บการตั้งค่าไว้ใช้กับเครื่องถัดไป · อัปเดตความคืบหน้าของแผนที่เปิดอยู่ · หาเครื่องถัดไป
+   เรียกก่อนปิดฟอร์ม เพราะต้องใช้ค่าใน txl ที่กำลังจะถูกล้าง */
+function txlAfterSave(){
+  if(!txl) return null;
+  txlCarry = { sysConfig: txl.sysConfig, measurePoint: txl.measurePoint,
+               meterModel: txl.meterModel, period: txl.period, weather: txl.weather };
+  const doneDev = txl.d, planId = txl.planId || '';
+  if(txPlanOpen){
+    const it = txPlanOpen.items.find(x=> x.DeviceID === doneDev.id && x.Status === TXPLAN_WAIT);
+    if(it){ it.Status = TXPLAN_DONE; it.MeasuredAt = txlLocalStamp(txl.measuredAt); }
+  }
+  return txlNextTarget(doneDev, planId);
 }
 
 /* ---------- ประวัติการวัด — ดูค่าที่วัดย้อนหลังได้ครบทุกตัว ---------- */
@@ -3874,38 +3898,139 @@ async function txlCancelRecord(loadId){
   }
 }
 
+/* ---------- ป้ายผลวัดบนหมุดแผนที่ — ขึ้นเฉพาะเครื่องที่วัดแล้ว ---------- */
+function txlMarkerBadge(d){
+  const L = txlLoadOf(d);
+  if(!L) return '';
+  const col = L.level === 'hi' ? '#b0201f' : L.level === 'mid' ? '#8a5200'
+            : L.level === 'old' ? '#6b6860' : '#1b5e20';
+  return '<span class="tm-load" style="background:' + col + ';" title="วัดโหลด ' + Math.round(L.pct) + '%"></span>';
+}
+
 /* ---------- รายงานภาพรวม ---------- */
-function txlReport(){
+let txlRepTab = 'load';        // load = ผลวัด · opsa = เทียบ OPSA
+let txlRepFeeder = '', txlRepDays = 0, txlRepWho = '';
+
+/* ผลวัดทั้งหมดที่ผ่านตัวกรอง — ใช้ร่วมกันทั้งการแสดงผลและการส่งออก */
+function txlRepRows(){
+  const now = Date.now();
+  return allTransformers().map(x=> ({ x, L: txlLoadOf(x.d) })).filter(o=>{
+    if(!o.L) return false;
+    if(txlRepFeeder && o.x.f.id !== txlRepFeeder) return false;
+    if(txlRepDays){
+      const at = new Date(String(o.L.at).replace(' ', 'T'));
+      if(isNaN(at.getTime()) || now - at.getTime() > txlRepDays * 86400000) return false;
+    }
+    return true;
+  });
+}
+
+function txlRepFilterBar(){
+  const feeders = (DATA.feeders || []).map(f=> f.id);
+  const chip = (label, on, attr)=> '<button type="button" class="txl-chip' + (on ? ' on' : '') + '" ' + attr + '>' +
+    escapeHtml(label) + '</button>';
+  return '<div class="txl-repfilter">' +
+    '<div class="txl-chips">' +
+      chip('ทุกวงจร', !txlRepFeeder, 'data-rep-feeder=""') +
+      feeders.map(id=> chip(id, txlRepFeeder === id, 'data-rep-feeder="' + escapeHtml(id) + '"')).join('') +
+    '</div>' +
+    '<div class="txl-chips">' +
+      chip('ทุกช่วงเวลา', !txlRepDays, 'data-rep-days="0"') +
+      chip('30 วัน', txlRepDays === 30, 'data-rep-days="30"') +
+      chip('90 วัน', txlRepDays === 90, 'data-rep-days="90"') +
+      chip('1 ปี', txlRepDays === 365, 'data-rep-days="365"') +
+    '</div></div>';
+}
+
+function txlRepLoadView(rows){
   const all = allTransformers();
-  const withL = all.map(x=> ({ x, L: txlLoadOf(x.d) })).filter(o=> o.L);
-  const over  = withL.filter(o=> o.L.pct > TXL_RULES.overload);
-  const near  = withL.filter(o=> o.L.pct >= TXL_RULES.nearFull && o.L.pct <= TXL_RULES.overload);
-  const stale = withL.filter(o=> o.L.stale);
-  const top = withL.slice().sort((a,b)=> b.L.pct - a.L.pct).slice(0, 25);
-  const maxPct = top.length ? Math.max(top[0].L.pct, 120) : 120;
+  const over  = rows.filter(o=> o.L.pct > TXL_RULES.overload);
+  const near  = rows.filter(o=> o.L.pct >= TXL_RULES.nearFull && o.L.pct <= TXL_RULES.overload);
+  const stale = rows.filter(o=> o.L.stale);
+  const scope = txlRepFeeder ? all.filter(x=> x.f.id === txlRepFeeder) : all;
   const tile = (n, t, cls)=> '<div class="txl-tile ' + (cls || '') + '"><b>' + n + '</b><span>' + t + '</span></div>';
-  const rows = top.map(o=>{
+  const top = rows.slice().sort((a, b)=> b.L.pct - a.L.pct).slice(0, 30);
+  const maxPct = top.length ? Math.max(top[0].L.pct, 120) : 120;
+  const list = top.map(o=>{
     const cls = o.L.pct > TXL_RULES.overload ? 'hi' : o.L.pct >= TXL_RULES.nearFull ? 'mid' : 'ok';
     return '<div class="txl-rrow" data-feeder="' + escapeHtml(o.x.f.id) + '" data-id="' + escapeHtml(o.x.d.id) + '">' +
       '<div class="txl-rline"><span>' + escapeHtml(o.x.d.id) + '</span>' +
-        '<small>' + escapeHtml(o.x.d.rating || '') + ' · ' + escapeHtml((o.x.d.desc || '-').slice(0, 24)) + '</small>' +
+        '<small>' + escapeHtml(o.x.d.rating || '') + ' · ' + escapeHtml((o.x.d.desc || '-').slice(0, 22)) + '</small>' +
         '<b class="' + cls + '">' + Math.round(o.L.pct) + '%</b></div>' +
       '<div class="txl-rbar"><i class="' + cls + '" style="width:' + Math.min(100, o.L.pct / maxPct * 100) + '%"></i></div></div>';
   }).join('');
-  document.getElementById('txlReportBody').innerHTML =
-    '<div class="txl-tiles">' +
-      tile(withL.length, 'วัดแล้ว', '') +
-      tile(all.length - withL.length, 'ยังไม่วัด', '') +
+  return '<div class="txl-tiles">' +
+      tile(rows.length, 'วัดแล้ว', '') +
+      tile(scope.length - rows.length, 'ยังไม่วัด', '') +
       tile(over.length, 'โหลดเกิน ' + TXL_RULES.overload + '%', 'hi') +
       tile(near.length, 'ใกล้เต็ม ≥ ' + TXL_RULES.nearFull + '%', 'mid') +
     '</div>' +
-    (stale.length ? '<div class="txl-note">🕓 วัดเกิน ' + TXL_RULES.reMeasureMonths + ' เดือน ' + stale.length + ' เครื่อง — ควรวัดใหม่</div>' : '') +
-    (rows ? '<div class="txl-sec"><div class="txl-sec-t">โหลดสูงสุด — เรียงตาม % ของพิกัด</div>' + rows + '</div>'
-          : '<div class="txl-empty">ยังไม่มีผลวัดในระบบ<br><small>เปิดหม้อแปลงเครื่องใดก็ได้ แล้วกดปุ่มวัดโหลด</small></div>') +
+    (stale.length ? '<div class="txl-note">🕓 วัดเกิน ' + TXL_RULES.reMeasureMonths + ' เดือน ' + stale.length +
+      ' เครื่อง — ควรวัดใหม่</div>' : '') +
+    (list ? '<div class="txl-sec"><div class="txl-sec-t">โหลดสูงสุด — เรียงตาม % ของพิกัด</div>' + list + '</div>'
+          : '<div class="txl-empty">ไม่มีผลวัดที่ตรงตัวกรอง<br><small>ลองเปลี่ยนวงจรหรือช่วงเวลา</small></div>') +
     '<div class="txl-note">เกณฑ์ที่ใช้ตัดสิน — โหลดเกิน &gt; ' + TXL_RULES.overload + '% · ใกล้เต็ม ≥ ' + TXL_RULES.nearFull +
       '% · ไม่สมดุล &gt; ' + TXL_RULES.unbalance + '% · IN &gt; ' + TXL_RULES.inPercent + '% ของค่าเฉลี่ย · แรงดัน ' +
       TXL_RULES.vNominal + ' V ±' + TXL_RULES.vTolerance + '%</div>';
-  document.getElementById('txlReportBody').querySelectorAll('.txl-rrow').forEach(r=>{
+}
+
+/* เทียบค่าที่วัดจริงกับข้อมูล OPSA — ส่วนต่างมากแปลว่าข้อมูลฝั่งใดฝั่งหนึ่งไม่ตรงความจริง */
+function txlRepOpsaView(rows){
+  const pairs = rows.filter(o=> o.x.d.opsa && o.x.d.opsa.loadPercent != null)
+    .map(o=> ({ ...o, opsa: o.x.d.opsa.loadPercent, diff: o.L.pct - o.x.d.opsa.loadPercent }));
+  const noOpsa = rows.length - pairs.length;
+  if(!pairs.length){
+    return '<div class="txl-empty">ยังไม่มีเครื่องที่มีทั้งผลวัดจริงและข้อมูล OPSA<br>' +
+      '<small>วัดเครื่องที่อยู่ในชุดข้อมูล OPSA แล้วหน้านี้จะเทียบให้อัตโนมัติ</small></div>';
+  }
+  const big = pairs.filter(p=> Math.abs(p.diff) >= 20);
+  const higher = pairs.filter(p=> p.diff >= 20).length;
+  const lower  = pairs.filter(p=> p.diff <= -20).length;
+  const avg = Math.round(pairs.reduce((s, p)=> s + Math.abs(p.diff), 0) / pairs.length);
+  const sorted = pairs.slice().sort((a, b)=> Math.abs(b.diff) - Math.abs(a.diff)).slice(0, 30);
+  const maxAbs = Math.max(40, Math.abs(sorted[0].diff));
+  const rowsHtml = sorted.map(p=>{
+    const w = Math.min(50, Math.abs(p.diff) / maxAbs * 50);
+    const cls = Math.abs(p.diff) >= 20 ? 'hi' : Math.abs(p.diff) >= 10 ? 'mid' : 'ok';
+    const up = p.diff >= 0;
+    return '<div class="txl-rrow" data-feeder="' + escapeHtml(p.x.f.id) + '" data-id="' + escapeHtml(p.x.d.id) + '">' +
+      '<div class="txl-rline"><span>' + escapeHtml(p.x.d.id) + '</span>' +
+        '<small>' + escapeHtml((p.x.d.desc || '-').slice(0, 18)) + ' · OPSA ' + Math.round(p.opsa) +
+        '% → วัด ' + Math.round(p.L.pct) + '%</small>' +
+        '<b class="' + cls + '">' + (up ? '+' : '−') + Math.abs(Math.round(p.diff)) + '</b></div>' +
+      '<div class="txl-dbar"><span class="mid-line"></span>' +
+        '<i class="' + cls + '" style="' + (up ? 'left:50%;' : 'right:50%;') + 'width:' + w + '%"></i></div></div>';
+  }).join('');
+  return '<div class="txl-tiles">' +
+      '<div class="txl-tile"><b>' + pairs.length + '</b><span>เทียบได้</span></div>' +
+      '<div class="txl-tile"><b>' + avg + '</b><span>ส่วนต่างเฉลี่ย (จุด)</span></div>' +
+      '<div class="txl-tile hi"><b>' + higher + '</b><span>วัดจริงสูงกว่า ≥ 20 จุด</span></div>' +
+      '<div class="txl-tile mid"><b>' + lower + '</b><span>วัดจริงต่ำกว่า ≥ 20 จุด</span></div>' +
+    '</div>' +
+    '<div class="txl-note">ส่วนต่างมากแปลว่า OPSA กับหน้างานไม่ตรงกัน — อาจเป็นเพราะ OPSA คิดจากหน่วยเฉลี่ยทั้งเดือน ' +
+      'ขณะที่หน้างานวัดช่วงพีค หรือพิกัด kVA ในระบบไม่ตรงของจริง' +
+      (noOpsa ? ' · อีก ' + noOpsa + ' เครื่องไม่มีข้อมูล OPSA จึงเทียบไม่ได้' : '') + '</div>' +
+    '<div class="txl-sec"><div class="txl-sec-t">ส่วนต่างมากที่สุด ' +
+      (big.length ? '· เกิน 20 จุด ' + big.length + ' เครื่อง' : '') + '</div>' + rowsHtml + '</div>';
+}
+
+function txlReport(){
+  const rows = txlRepRows();
+  const tab = (key, label)=> '<button type="button" class="txl-seg' + (txlRepTab === key ? ' on' : '') +
+    '" data-rep-tab="' + key + '">' + escapeHtml(label) + '</button>';
+  document.getElementById('txlReportBody').innerHTML =
+    '<div class="txl-segs">' + tab('load', 'ผลวัดโหลด') + tab('opsa', 'เทียบกับ OPSA') + '</div>' +
+    txlRepFilterBar() +
+    (txlRepTab === 'load' ? txlRepLoadView(rows) : txlRepOpsaView(rows));
+
+  const body = document.getElementById('txlReportBody');
+  body.querySelectorAll('[data-rep-tab]').forEach(b=>
+    b.addEventListener('click', ()=>{ txlRepTab = b.dataset.repTab; txlReport(); }));
+  body.querySelectorAll('[data-rep-feeder]').forEach(b=>
+    b.addEventListener('click', ()=>{ txlRepFeeder = b.dataset.repFeeder; txlReport(); }));
+  body.querySelectorAll('[data-rep-days]').forEach(b=>
+    b.addEventListener('click', ()=>{ txlRepDays = parseInt(b.dataset.repDays, 10) || 0; txlReport(); }));
+  body.querySelectorAll('.txl-rrow').forEach(r=>{
     r.addEventListener('click', ()=>{
       document.getElementById('txlReportOverlay').classList.remove('show');
       openDetail(r.dataset.feeder, r.dataset.id);
@@ -3913,28 +4038,438 @@ function txlReport(){
   });
   document.getElementById('txlReportOverlay').classList.add('show');
 }
-/* ส่งออกผลวัดทั้งหมดเป็น CSV — ใช้ค่าสดจากข้อมูลในเครื่อง จึงตรงกับที่เห็นบนจอ */
+
+/* ส่งออกผลวัดตามตัวกรองที่เลือกอยู่ — ตรงกับที่เห็นบนจอ */
 function txlExportCsv(){
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const rows = txlRepRows().sort((a, b)=> b.L.pct - a.L.pct);
+  if(!rows.length){ showToast('ไม่มีผลวัดที่ตรงตัวกรองให้ส่งออก', 'warn'); return; }
   const head = ['วงจร','รหัสหม้อแปลง','จุดติดตั้ง','พิกัด kVA','เฟส','ผู้ใช้ไฟ',
-                'วัดล่าสุด','kVA ที่วัดได้','% โหลด','ข้อสังเกต','เลขเสา'];
-  const rows = allTransformers().map(({f, d})=> ({ f, d, L: txlLoadOf(d) })).filter(o=> o.L)
-    .sort((a, b)=> b.L.pct - a.L.pct)
-    .map(({f, d, L})=> [f.id, d.id, d.desc || '', txlRatedKva(d) || '', d.phase || '',
-                        d.meterCount == null ? '' : d.meterCount,
-                        L.at || '', L.kva == null ? '' : L.kva, L.pct == null ? '' : Math.round(L.pct),
-                        L.verdict || '', d.poleTag || '']);
-  if(!rows.length){ showToast('ยังไม่มีผลวัดให้ส่งออก', 'warn'); return; }
-  const csv = '﻿' + [head, ...rows].map(r=> r.map(q).join(',')).join('\r\n');
+                'วัดล่าสุด','kVA ที่วัดได้','% โหลด','ข้อสังเกต','OPSA %','ส่วนต่าง (จุด)','เลขเสา'];
+  const body = rows.map(({ x, L })=>{
+    const opsa = x.d.opsa && x.d.opsa.loadPercent;
+    return [x.f.id, x.d.id, x.d.desc || '', txlRatedKva(x.d) || '', x.d.phase || '',
+      x.d.meterCount == null ? '' : x.d.meterCount,
+      L.at || '', L.kva == null ? '' : L.kva, L.pct == null ? '' : Math.round(L.pct), L.verdict || '',
+      opsa == null ? '' : Math.round(opsa), opsa == null ? '' : Math.round(L.pct - opsa), x.d.poleTag || ''];
+  });
+  const csv = '﻿' + [head, ...body].map(r=> r.map(q).join(',')).join('\r\n');
   const t = new Date(), p2 = n=> String(n).padStart(2, '0');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8;' }));
-  a.download = 'ผลวัดโหลดหม้อแปลง_' + t.getFullYear() + p2(t.getMonth()+1) + p2(t.getDate()) +
-               '_' + rows.length + 'รายการ.csv';
+  a.download = 'ผลวัดโหลดหม้อแปลง' + (txlRepFeeder ? '_' + txlRepFeeder : '') +
+               '_' + t.getFullYear() + p2(t.getMonth()+1) + p2(t.getDate()) + '_' + body.length + 'รายการ.csv';
   a.click();
   setTimeout(()=> URL.revokeObjectURL(a.href), 4000);
-  showToast('ส่งออก ' + rows.length + ' รายการแล้ว', 'ok');
+  showToast('ส่งออก ' + body.length + ' รายการแล้ว', 'ok');
 }
+
+/* ==========================================================================
+ *  แผนงานวัดโหลด — เลือกชุดหม้อแปลงที่จะวัด แล้วติดตามความคืบหน้า
+ *  และ "วัดต่อเนื่อง" — บันทึกเสร็จแล้วเสนอเครื่องถัดไปที่ใกล้ที่สุด
+ * ========================================================================== */
+const TXPLAN_WAIT = 'รอวัด', TXPLAN_DONE = 'วัดแล้ว', TXPLAN_SKIP = 'ข้าม';
+const TXPLAN_SKIP_REASONS = ['เข้าไม่ถึง / ทางปิด', 'หม้อแปลงถูกรื้อถอน', 'ไม่พบหม้อแปลงตามพิกัด',
+  'ดับไฟอยู่ / วัดไม่ได้', 'อื่นๆ'];
+let txPlans = [];                 // รายการแผนทั้งหมด (โหลดครั้งเดียวแล้วแคชไว้)
+let txPlanOpen = null;            // แผนที่กำลังเปิดดู { plan, items }
+let txPlanFilter = { feeder:'', never:true, minMeter:0, minOpsa:0, staleOnly:false };
+let txPlanBusy = false;
+
+function txPlanMonthNow(){
+  const d = new Date();
+  return (d.getFullYear() + 543) + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+function txPlanPct(p){ return p.total ? Math.round((p.done + p.skip) / p.total * 100) : 0; }
+
+/* ---------- คัดหม้อแปลงตามเงื่อนไข — คิดจากข้อมูลในเครื่อง เห็นจำนวนทันทีก่อนสร้าง ---------- */
+function txPlanMatch(){
+  const f = txPlanFilter;
+  return allTransformers().filter(({ f: fd, d })=>{
+    if(f.feeder && fd.id !== f.feeder) return false;
+    const L = txlLoadOf(d);
+    if(f.never && L) return false;                       // เอาเฉพาะที่ยังไม่เคยวัด
+    if(f.staleOnly && !(L && L.stale)) return false;     // เอาเฉพาะที่วัดเกิน 1 ปี
+    if(f.minMeter && !(d.meterCount >= f.minMeter)) return false;
+    if(f.minOpsa){
+      const lp = d.opsa && d.opsa.loadPercent;
+      if(lp == null || lp < f.minOpsa) return false;
+    }
+    return true;
+  });
+}
+function txPlanCriteriaText(){
+  const f = txPlanFilter, parts = [];
+  parts.push(f.feeder ? 'วงจร ' + f.feeder : 'ทุกวงจร');
+  if(f.never) parts.push('ยังไม่เคยวัด');
+  if(f.staleOnly) parts.push('วัดเกิน ' + TXL_RULES.reMeasureMonths + ' เดือน');
+  if(f.minMeter) parts.push('ผู้ใช้ไฟ ≥ ' + f.minMeter + ' ราย');
+  if(f.minOpsa) parts.push('OPSA ≥ ' + f.minOpsa + '%');
+  return parts.join(' · ');
+}
+
+/* ---------- หน้าแผนงาน ---------- */
+async function txPlanShow(){
+  document.getElementById('txPlanOverlay').classList.add('show');
+  txPlanOpen = null;
+  document.getElementById('txPlanBody').innerHTML = '<div class="txl-note">⏳ กำลังโหลดแผนงาน ...</div>';
+  await txPlanLoad();
+  txPlanRender();
+}
+async function txPlanLoad(){
+  try{
+    const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'txLoadPlanList',
+        changedBy: CURRENT_USER.name, changedByPassword: CURRENT_USER.password }) });
+    const json = await res.json();
+    txPlans = (json && json.ok) ? (json.plans || []) : [];
+    return json && json.ok;
+  }catch(e){ txPlans = []; return false; }
+}
+
+function txPlanRender(){
+  const body = document.getElementById('txPlanBody');
+  document.getElementById('txPlanTitle').textContent = '📋 แผนงานวัดโหลด';
+  const open = txPlans.filter(p=> String(p.Status || '') !== 'ปิด');
+  const closed = txPlans.filter(p=> String(p.Status || '') === 'ปิด');
+  const card = p=>{
+    const pct = txPlanPct(p);
+    const left = p.total - p.done - p.skip;
+    return '<div class="txp-card" data-txp-open="' + escapeHtml(p.PlanID) + '">' +
+      '<div class="txp-h"><b>' + escapeHtml(String(p.PlanName || '')) + '</b>' +
+        (String(p.Status || '') === 'ปิด' ? '<span class="txp-tag">ปิดแล้ว</span>' : '') + '</div>' +
+      '<div class="txp-meta">' + escapeHtml(String(p.TargetMonth || '')) +
+        (p.AssignedTo ? ' · ' + escapeHtml(String(p.AssignedTo)) : '') +
+        ' · สร้างโดย ' + escapeHtml(String(p.CreatedBy || '')) + '</div>' +
+      '<div class="txp-bar"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="txp-nums"><b>' + p.done + '</b> วัดแล้ว' +
+        (p.skip ? ' · <b>' + p.skip + '</b> ข้าม' : '') +
+        ' · เหลือ <b>' + left + '</b> จาก ' + p.total + ' เครื่อง<span>' + pct + '%</span></div>' +
+    '</div>';
+  };
+  body.innerHTML =
+    '<button type="button" class="txl-main" id="txPlanNewBtn" style="margin-bottom:11px;">+ สร้างแผนงานใหม่</button>' +
+    (open.length ? '<div class="txl-sec-t">กำลังดำเนินการ ' + open.length + ' แผน</div>' + open.map(card).join('')
+                 : '<div class="txl-empty">ยังไม่มีแผนงาน<br><small>กดปุ่มด้านบนเพื่อเลือกชุดหม้อแปลงที่จะวัดรอบนี้</small></div>') +
+    (closed.length ? '<div class="txl-sec-t" style="margin-top:12px;">ปิดแล้ว ' + closed.length + ' แผน</div>' +
+                     closed.map(card).join('') : '');
+  body.querySelector('#txPlanNewBtn').addEventListener('click', txPlanNewForm);
+  body.querySelectorAll('[data-txp-open]').forEach(c=>
+    c.addEventListener('click', ()=> txPlanOpenDetail(c.dataset.txpOpen)));
+}
+
+/* ---------- สร้างแผนใหม่ ---------- */
+function txPlanNewForm(){
+  const feeders = (DATA.feeders || []).map(f=> f.id);
+  const f = txPlanFilter;
+  const matched = txPlanMatch();
+  const body = document.getElementById('txPlanBody');
+  body.innerHTML =
+    '<div class="txl-sec"><div class="txl-sec-t">1. เลือกหม้อแปลงที่จะวัดรอบนี้</div>' +
+      '<label class="txl-f">วงจร</label>' +
+      '<select class="txl-in" id="txpFeeder"><option value="">ทุกวงจร</option>' +
+        feeders.map(id=> '<option value="' + escapeHtml(id) + '"' + (f.feeder === id ? ' selected' : '') + '>' +
+          escapeHtml(id) + '</option>').join('') + '</select>' +
+      '<label class="txl-check" style="margin-top:8px;"><input type="checkbox" id="txpNever"' +
+        (f.never ? ' checked' : '') + '><span>เฉพาะเครื่องที่ยังไม่เคยวัด</span></label>' +
+      '<label class="txl-check"><input type="checkbox" id="txpStale"' + (f.staleOnly ? ' checked' : '') +
+        '><span>เฉพาะเครื่องที่วัดเกิน ' + TXL_RULES.reMeasureMonths + ' เดือน (ควรวัดใหม่)</span></label>' +
+      '<label class="txl-f">ผู้ใช้ไฟตั้งแต่ (ราย) — เว้นว่างคือไม่จำกัด</label>' +
+      '<input class="txl-in" type="number" inputmode="numeric" id="txpMeter" value="' + (f.minMeter || '') + '" placeholder="เช่น 50">' +
+      '<label class="txl-f">OPSA โหลดตั้งแต่ (%) — เว้นว่างคือไม่จำกัด</label>' +
+      '<input class="txl-in" type="number" inputmode="numeric" id="txpOpsa" value="' + (f.minOpsa || '') + '" placeholder="เช่น 70">' +
+    '</div>' +
+    '<div class="txp-count" id="txpCount"></div>' +
+    '<div class="txl-sec"><div class="txl-sec-t">2. รายละเอียดแผนงาน</div>' +
+      '<label class="txl-f">ชื่อแผนงาน</label>' +
+      '<input class="txl-in" id="txpName" placeholder="เช่น วัดโหลดหม้อแปลงโหลดสูง ต.ค. 69">' +
+      '<label class="txl-f">เดือนเป้าหมาย</label>' +
+      '<input class="txl-in" id="txpMonth" value="' + txPlanMonthNow() + '" placeholder="2569-10">' +
+      '<label class="txl-f">ผู้รับผิดชอบ</label>' +
+      '<input class="txl-in" id="txpWho" value="' + escapeHtml(CURRENT_USER.name || '') + '">' +
+      '<label class="txl-f">หมายเหตุ</label>' +
+      '<textarea class="txl-in" id="txpNote" rows="2" placeholder="ไม่บังคับ"></textarea>' +
+    '</div>' +
+    '<div class="txl-row2"><button type="button" class="txl-back" id="txpCancel">‹ ย้อนกลับ</button>' +
+      '<button type="button" class="txl-main" id="txpSave">สร้างแผนงาน</button></div>';
+
+  const refresh = ()=>{
+    txPlanFilter = {
+      feeder: document.getElementById('txpFeeder').value,
+      never: document.getElementById('txpNever').checked,
+      staleOnly: document.getElementById('txpStale').checked,
+      minMeter: parseInt(document.getElementById('txpMeter').value, 10) || 0,
+      minOpsa: parseFloat(document.getElementById('txpOpsa').value) || 0
+    };
+    const list = txPlanMatch();
+    const el = document.getElementById('txpCount');
+    el.className = 'txp-count' + (list.length ? '' : ' none');
+    el.innerHTML = list.length
+      ? 'เข้าเงื่อนไข <b>' + list.length + '</b> เครื่อง<small>' + escapeHtml(txPlanCriteriaText()) + '</small>'
+      : 'ไม่มีเครื่องไหนเข้าเงื่อนไขนี้<small>ลองผ่อนเงื่อนไขลง</small>';
+    const btn = document.getElementById('txpSave');
+    btn.disabled = !list.length;
+    btn.style.opacity = list.length ? '' : '.5';
+  };
+  ['txpFeeder','txpNever','txpStale','txpMeter','txpOpsa'].forEach(id=>{
+    const el = document.getElementById(id);
+    el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', refresh);
+  });
+  refresh();
+  document.getElementById('txpCancel').addEventListener('click', txPlanRender);
+  document.getElementById('txpSave').addEventListener('click', txPlanSubmit);
+}
+
+async function txPlanSubmit(){
+  if(txPlanBusy) return;
+  const list = txPlanMatch();
+  if(!list.length){ showToast('ยังไม่มีเครื่องเข้าเงื่อนไข', 'warn'); return; }
+  const name = document.getElementById('txpName').value.trim();
+  if(!name){ showToast('ตั้งชื่อแผนงานก่อน', 'warn'); beep('err'); return; }
+  if(!(await requireAuth())){ showToast('ต้องเข้าสู่ระบบก่อน', 'warn'); return; }
+  txPlanBusy = true;
+  PEAUI.saving.show('กำลังสร้างแผนงาน ' + list.length + ' เครื่อง');
+  try{
+    const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'txLoadPlanCreate', planName: name,
+        targetMonth: document.getElementById('txpMonth').value.trim(),
+        assignedTo: document.getElementById('txpWho').value.trim(),
+        note: document.getElementById('txpNote').value.trim(),
+        criteria: txPlanCriteriaText(),
+        deviceIds: list.map(x=> x.d.id),
+        changedBy: CURRENT_USER.name, changedByPassword: CURRENT_USER.password }) });
+    const json = await res.json();
+    txPlanBusy = false;
+    if(!json || !json.ok){ PEAUI.saving.fail('สร้างแผนไม่สำเร็จ', (json && json.error) || 'ชีตตอบกลับว่าไม่สำเร็จ'); return; }
+    PEAUI.saving.done('สร้างแผนงานแล้ว', json.count + ' เครื่อง');
+    beep('save');
+    await txPlanLoad();
+    txPlanOpenDetail(json.planId);
+  }catch(e){
+    txPlanBusy = false;
+    PEAUI.saving.fail('สร้างแผนไม่สำเร็จ', 'เชื่อมต่อไม่ได้ — ต้องมีสัญญาณตอนสร้างแผน');
+  }
+}
+
+/* ---------- เปิดดูแผน ---------- */
+async function txPlanOpenDetail(planId){
+  const body = document.getElementById('txPlanBody');
+  body.innerHTML = '<div class="txl-note">⏳ กำลังโหลดรายการในแผน ...</div>';
+  try{
+    const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'txLoadPlanDetail', planId,
+        changedBy: CURRENT_USER.name, changedByPassword: CURRENT_USER.password }) });
+    const json = await res.json();
+    if(!json || !json.ok){ body.innerHTML = '<div class="txl-note">เปิดแผนไม่สำเร็จ — ' +
+      escapeHtml((json && json.error) || '') + '</div>'; return; }
+    txPlanOpen = { plan: json.plan, items: json.items || [] };
+    txPlanRenderDetail();
+  }catch(e){
+    body.innerHTML = '<div class="txl-note">เปิดแผนไม่ได้ — ตรวจสอบสัญญาณ</div>';
+  }
+}
+
+/* จัดลำดับรายการที่ยังไม่วัด: ใกล้ฉันก่อนถ้ารู้ตำแหน่ง ไม่งั้นเรียงตามรหัส */
+function txPlanSortItems(items, fromLat, fromLon){
+  const withPos = items.map(it=>{
+    const found = findTransformer(it.Feeder, it.DeviceID);
+    const d = found ? found.d : null;
+    let dist = null;
+    if(d && d.lat != null && fromLat != null) dist = metresBetween(fromLat, fromLon, d.lat, d.lon);
+    return { it, d, dist };
+  });
+  withPos.sort((a, b)=>{
+    if(a.dist == null && b.dist == null) return String(a.it.DeviceID).localeCompare(String(b.it.DeviceID));
+    if(a.dist == null) return 1;
+    if(b.dist == null) return -1;
+    return a.dist - b.dist;
+  });
+  return withPos;
+}
+function metresBetween(la1, lo1, la2, lo2){
+  const k = Math.cos(la1 * Math.PI / 180);
+  return Math.hypot((lo2 - lo1) * k, la2 - la1) * 111320;
+}
+
+function txPlanRenderDetail(){
+  const { plan, items } = txPlanOpen;
+  const done = items.filter(i=> i.Status === TXPLAN_DONE).length;
+  const skip = items.filter(i=> i.Status === TXPLAN_SKIP).length;
+  const wait = items.filter(i=> i.Status === TXPLAN_WAIT);
+  const pct = items.length ? Math.round((done + skip) / items.length * 100) : 0;
+  const closed = String(plan.Status || '') === 'ปิด';
+  document.getElementById('txPlanTitle').textContent = '📋 ' + String(plan.PlanName || '');
+
+  const sorted = txPlanSortItems(wait, myPos && myPos.lat, myPos && myPos.lon);
+  const rowOf = (o)=>{
+    const d = o.d;
+    return '<div class="txp-item" data-txp-go="' + escapeHtml(o.it.DeviceID) + '" data-feeder="' +
+        escapeHtml(o.it.Feeder || '') + '">' +
+      '<div class="txp-item-l"><b>' + escapeHtml(o.it.DeviceID) + '</b>' +
+        '<span>' + escapeHtml(d ? ((d.rating || '') + (d.desc ? ' · ' + d.desc.slice(0, 22) : '')) : 'ไม่พบในข้อมูล') + '</span></div>' +
+      (o.dist != null ? '<span class="txp-dist">' + fmtDist(o.dist) + '</span>' : '') +
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#8a867c" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>' +
+    '</div>';
+  };
+  const doneRows = items.filter(i=> i.Status !== TXPLAN_WAIT).map(i=>{
+    const found = findTransformer(i.Feeder, i.DeviceID);
+    const L = found ? txlLoadOf(found.d) : null;
+    const isSkip = i.Status === TXPLAN_SKIP;
+    return '<div class="txp-item done' + (isSkip ? ' skip' : '') + '">' +
+      '<div class="txp-item-l"><b>' + escapeHtml(i.DeviceID) + '</b>' +
+        '<span>' + (isSkip ? 'ข้าม — ' + escapeHtml(String(i.SkipReason || 'ไม่ระบุเหตุผล'))
+                           : escapeHtml(String(i.MeasuredAt || ''))) + '</span></div>' +
+      (!isSkip && L ? '<span class="txl-tag ' + L.level + '">⚡ ' + Math.round(L.pct) + '%</span>' : '') +
+      (isSkip ? '<button type="button" class="txp-undo" data-txp-unskip="' + escapeHtml(i.DeviceID) + '">คืนรายการ</button>' : '') +
+    '</div>';
+  }).join('');
+
+  document.getElementById('txPlanBody').innerHTML =
+    '<button type="button" class="txp-back" id="txpBack">‹ กลับไปรายการแผนงาน</button>' +
+    '<div class="txl-sec">' +
+      '<div class="txp-meta">' + escapeHtml(String(plan.TargetMonth || '')) +
+        (plan.AssignedTo ? ' · ' + escapeHtml(String(plan.AssignedTo)) : '') + '</div>' +
+      (plan.Criteria ? '<div class="txp-meta">เงื่อนไข: ' + escapeHtml(String(plan.Criteria)) + '</div>' : '') +
+      (plan.Note ? '<div class="txp-meta">' + escapeHtml(String(plan.Note)) + '</div>' : '') +
+      '<div class="txp-bar" style="margin-top:8px;"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="txp-nums"><b>' + done + '</b> วัดแล้ว' + (skip ? ' · <b>' + skip + '</b> ข้าม' : '') +
+        ' · เหลือ <b>' + wait.length + '</b> จาก ' + items.length + ' เครื่อง<span>' + pct + '%</span></div>' +
+      '<div class="txl-row2" style="margin-top:9px;">' +
+        (wait.length && !closed ? '<button type="button" class="txl-main" id="txpStart">⚡ เริ่มวัดเครื่องที่ใกล้ที่สุด</button>' : '') +
+        '<button type="button" class="txl-back" id="txpToggle">' + (closed ? 'เปิดแผนอีกครั้ง' : 'ปิดแผน') + '</button>' +
+      '</div>' +
+    '</div>' +
+    (wait.length ? '<div class="txl-sec-t">ยังไม่ได้วัด ' + wait.length + ' เครื่อง' +
+        (myPos ? ' <small>— เรียงตามระยะจากตำแหน่งคุณ</small>' : '') + '</div>' +
+        sorted.map(rowOf).join('')
+      : '<div class="txl-empty">วัดครบทุกเครื่องในแผนแล้ว 🎉</div>') +
+    (doneRows ? '<div class="txl-sec-t" style="margin-top:12px;">เสร็จแล้ว ' + (done + skip) + ' เครื่อง</div>' + doneRows : '');
+
+  const body = document.getElementById('txPlanBody');
+  body.querySelector('#txpBack').addEventListener('click', txPlanRender);
+  const start = body.querySelector('#txpStart');
+  if(start) start.addEventListener('click', ()=>{
+    const first = sorted[0];
+    if(first) txPlanGoMeasure(first.it.Feeder, first.it.DeviceID);
+  });
+  body.querySelector('#txpToggle').addEventListener('click', ()=> txPlanToggleStatus(closed ? 'เปิด' : 'ปิด'));
+  body.querySelectorAll('[data-txp-go]').forEach(r=>
+    r.addEventListener('click', ()=> txPlanGoMeasure(r.dataset.feeder, r.dataset.txpGo)));
+  body.querySelectorAll('[data-txp-unskip]').forEach(b=>
+    b.addEventListener('click', e=>{ e.stopPropagation(); txPlanSetItem(b.dataset.txpUnskip, TXPLAN_WAIT, ''); }));
+}
+
+async function txPlanToggleStatus(status){
+  if(!(await requireAuth())) return;
+  PEAUI.saving.show(status === 'ปิด' ? 'กำลังปิดแผน' : 'กำลังเปิดแผน');
+  try{
+    const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'txLoadPlanUpdate', planId: txPlanOpen.plan.PlanID, status,
+        changedBy: CURRENT_USER.name, changedByPassword: CURRENT_USER.password }) });
+    const json = await res.json();
+    if(!json || !json.ok){ PEAUI.saving.fail('ไม่สำเร็จ', (json && json.error) || ''); return; }
+    PEAUI.saving.done(status === 'ปิด' ? 'ปิดแผนแล้ว' : 'เปิดแผนแล้ว', '');
+    txPlanOpen.plan.Status = status;
+    await txPlanLoad();
+    txPlanRenderDetail();
+  }catch(e){ PEAUI.saving.fail('ไม่สำเร็จ', 'เชื่อมต่อไม่ได้'); }
+}
+
+async function txPlanSetItem(deviceId, status, skipReason){
+  if(!(await requireAuth())) return;
+  PEAUI.saving.show('กำลังบันทึก');
+  try{
+    const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'txLoadPlanItemSet', planId: txPlanOpen.plan.PlanID, deviceId, status, skipReason,
+        changedBy: CURRENT_USER.name, changedByPassword: CURRENT_USER.password }) });
+    const json = await res.json();
+    if(!json || !json.ok){ PEAUI.saving.fail('ไม่สำเร็จ', (json && json.error) || ''); return; }
+    PEAUI.saving.hide();
+    const it = txPlanOpen.items.find(x=> x.DeviceID === deviceId);
+    if(it){ it.Status = status; it.SkipReason = skipReason || ''; }
+    txPlanRenderDetail();
+  }catch(e){ PEAUI.saving.fail('ไม่สำเร็จ', 'เชื่อมต่อไม่ได้'); }
+}
+
+/* เปิดฟอร์มวัดจากในแผน — จำไว้ว่ามาจากแผนไหน เพื่อเสนอเครื่องถัดไปหลังบันทึก */
+function txPlanGoMeasure(feederId, deviceId){
+  const found = findTransformer(feederId, deviceId);
+  if(!found){ showToast('ไม่พบ ' + deviceId + ' ในข้อมูลที่โหลดไว้', 'warn'); return; }
+  document.getElementById('txPlanOverlay').classList.remove('show');
+  txlOpen(found.f.id, found.d.id);
+  if(txl && txPlanOpen) txl.planId = txPlanOpen.plan.PlanID;
+}
+
+/* ---------- วัดต่อเนื่อง — เครื่องถัดไปที่ใกล้ที่สุด ---------- */
+/* ในแผนก่อน ถ้าไม่ได้มาจากแผนก็หาเครื่องที่ยังไม่เคยวัดที่ใกล้ที่สุดแทน */
+function txlNextTarget(justDone, planId){
+  const from = justDone && justDone.lat != null ? justDone : (myPos || null);
+  if(!from || from.lat == null) return null;
+  const fromLat = from.lat, fromLon = from.lon != null ? from.lon : from.lng;
+
+  if(planId && txPlanOpen && txPlanOpen.plan.PlanID === planId){
+    const wait = txPlanOpen.items.filter(i=> i.Status === TXPLAN_WAIT && i.DeviceID !== (justDone && justDone.id));
+    const sorted = txPlanSortItems(wait, fromLat, fromLon).filter(o=> o.d && o.dist != null);
+    if(sorted.length) return { d: sorted[0].d, f: findTransformer(sorted[0].it.Feeder, sorted[0].it.DeviceID).f,
+                               dist: sorted[0].dist, planId, planName: txPlanOpen.plan.PlanName,
+                               left: wait.length };
+  }
+  let best = null;
+  allTransformers().forEach(({ f, d })=>{
+    if(!d.lat || d.id === (justDone && justDone.id)) return;
+    if(txlLoadOf(d)) return;                       // วัดไปแล้ว ข้าม
+    const dist = metresBetween(fromLat, fromLon, d.lat, d.lon);
+    if(dist > 3000) return;                        // ไกลเกินกว่าจะเรียกว่า "เครื่องถัดไป"
+    if(!best || dist < best.dist) best = { f, d, dist };
+  });
+  return best;
+}
+
+/* การ์ดเสนอเครื่องถัดไป — ขึ้นหลังบันทึกสำเร็จ ปิดเองใน 20 วินาทีถ้าไม่กด */
+let txlNextTimer = null;
+function txlShowNext(target){
+  const el = document.getElementById('txlNextBar');
+  if(!el || !target) return;
+  clearTimeout(txlNextTimer);
+  el.style.display = 'flex';
+  el.innerHTML =
+    '<div class="txn-l">' +
+      '<b>เครื่องถัดไป — ' + escapeHtml(target.d.id) + '</b>' +
+      '<span>' + escapeHtml((target.d.rating || '') + (target.d.desc ? ' · ' + target.d.desc.slice(0, 20) : '')) +
+        ' · ห่าง ' + fmtDist(target.dist) +
+        (target.planName ? ' · ในแผน ' + escapeHtml(String(target.planName)) : '') + '</span>' +
+    '</div>' +
+    '<button type="button" class="txn-go" id="txnGo">⚡ วัดต่อ</button>' +
+    '<button type="button" class="txn-x" id="txnClose" aria-label="ปิด">✕</button>';
+  // รอให้ toast ที่ขึ้นพร้อมกันอ่านจบก่อน แล้วค่อยเลื่อนแถบขึ้นมา
+  setTimeout(()=>{ if(el.style.display === 'flex') el.classList.add('show'); }, 900);
+  document.getElementById('txnGo').addEventListener('click', ()=>{
+    txlHideNext();
+    txlOpen(target.f.id, target.d.id);
+    if(txl){
+      txl.planId = target.planId || '';
+      // ใช้การตั้งค่าเดิมต่อเนื่อง — เหลือแค่กรอกตัวเลขที่วัดได้
+      if(txlCarry){
+        if(TXL_CONFIGS[txlCarry.sysConfig]) txl.sysConfig = txlCarry.sysConfig;
+        if(TXL_POINTS.indexOf(txlCarry.measurePoint) >= 0) txl.measurePoint = txlCarry.measurePoint;
+        txl.meterModel = txlCarry.meterModel || txl.meterModel;
+        txl.period = txlCarry.period || txl.period;
+        txl.weather = txlCarry.weather || txl.weather;
+      }
+      txlRender();
+    }
+  });
+  document.getElementById('txnClose').addEventListener('click', ()=> txlHideNext());
+  txlNextTimer = setTimeout(txlHideNext, 22000);
+}
+function txlHideNext(){
+  const el = document.getElementById('txlNextBar');
+  if(!el) return;
+  clearTimeout(txlNextTimer);
+  el.classList.remove('show');
+  setTimeout(()=>{ if(!el.classList.contains('show')) el.style.display = 'none'; }, 220);
+}
+let txlCarry = null;    // การตั้งค่าของการวัดครั้งล่าสุด ใช้ต่อกับเครื่องถัดไป
 
 /* ---------- ติดตั้งหน้าจอและ CSS (สร้างจากสคริปต์ ไม่ต้องแก้ HTML เดิม) ---------- */
 (function txlInstall(){
@@ -3961,19 +4496,19 @@ function txlExportCsv(){
     '.txl-start{flex:1;min-height:44px;border:0;border-radius:9px;background:var(--pea-purple);color:#fff;font-size:.92rem;font-weight:700;font-family:inherit;cursor:pointer;}',
     '.txl-card.none .txl-start{margin:0 12px 12px;}',
     '.txl-hist{min-height:44px;padding:0 14px;border:1.5px solid var(--pea-purple);border-radius:9px;background:#fff;color:var(--pea-purple);font-size:.82rem;font-weight:700;font-family:inherit;cursor:pointer;}',
-    '#txlOverlay,#txlReportOverlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:8000;display:none;align-items:flex-end;justify-content:center;}',
-    '#txlOverlay.show,#txlReportOverlay.show{display:flex;}',
+    '#txlOverlay,#txlReportOverlay,#txPlanOverlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:8000;display:none;align-items:flex-end;justify-content:center;}',
+    '#txlOverlay.show,#txlReportOverlay.show,#txPlanOverlay.show{display:flex;}',
     '.txl-panel{background:var(--bg,#f6f5f2);width:100%;max-width:560px;max-height:92vh;max-height:92dvh;border-radius:14px 14px 0 0;display:flex;flex-direction:column;overflow:hidden;}',
     '.txl-top{background:var(--pea-purple);color:#fff;padding:10px 14px 11px;padding-top:calc(10px + env(safe-area-inset-top));flex:0 0 auto;}',
     '.txl-top-r{display:flex;align-items:center;gap:10px;}',
-    '#txlTitle,#txlReportTitle{flex:1;font-size:1rem;font-weight:700;display:flex;flex-direction:column;gap:1px;margin:0;}',
+    '#txlTitle,#txlReportTitle,#txPlanTitle{flex:1;font-size:1rem;font-weight:700;display:flex;flex-direction:column;gap:1px;margin:0;}',
     '#txlTitle small{font-size:.68rem;opacity:.86;font-weight:400;}',
     '.txl-x-btn{width:32px;height:32px;border:0;background:rgba(255,255,255,.17);border-radius:8px;color:#fff;font-size:1rem;cursor:pointer;flex:0 0 auto;}',
     '#txlStepText{font-size:.72rem;font-weight:600;opacity:.9;}',
     '#txlBars{display:flex;gap:4px;margin-top:8px;}',
     '#txlBars i{flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,.3);}',
     '#txlBars i.on{background:#fff;}',
-    '#txlBody,#txlReportBody{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:11px 12px;padding-bottom:calc(16px + env(safe-area-inset-bottom));}',
+    '#txlBody,#txlReportBody,#txPlanBody{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:11px 12px;padding-bottom:calc(16px + env(safe-area-inset-bottom));}',
     '.txl-sec{background:#fff;border:1px solid var(--line,#e3dfd6);border-radius:11px;padding:11px 12px;margin-bottom:10px;}',
     '.txl-sec-t{font-size:.86rem;font-weight:700;margin-bottom:8px;}',
     '.txl-sec-t small{font-weight:400;color:var(--muted);font-size:.72rem;}',
@@ -4050,6 +4585,40 @@ function txlExportCsv(){
     '.txl-strip i{flex:1;} .txl-strip em{font-size:.66rem;font-weight:700;font-style:normal;background:#eee;color:#46443e;padding:2px 7px;border-radius:7px;}',
     '.txl-strip em.w{background:#fff4e5;color:#8a5200;}',
     '.txl-strip.hi b{color:#b0201f;} .txl-strip.mid b{color:#8a5200;} .txl-strip.ok b{color:#175c3a;}',
+    '.tm-load{position:absolute;right:-5px;bottom:-4px;width:9px;height:9px;border-radius:50%;border:1.5px solid #fff;}',
+    '.txl-repfilter{display:flex;flex-direction:column;gap:5px;margin-bottom:10px;}',
+    '.txl-repfilter .txl-chips{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:0;padding-bottom:2px;}',
+    '.txl-repfilter .txl-chip{flex:0 0 auto;min-height:34px;font-size:.72rem;padding:0 11px;}',
+    '.txl-dbar{position:relative;height:8px;background:#efedE8;border-radius:4px;margin-top:4px;overflow:hidden;}',
+    '.txl-dbar .mid-line{position:absolute;left:50%;top:0;bottom:0;width:1px;background:#b3ada0;}',
+    '.txl-dbar i{position:absolute;top:0;bottom:0;display:block;}',
+    '.txl-dbar i.hi{background:#b0201f;} .txl-dbar i.mid{background:#8a5200;} .txl-dbar i.ok{background:#175c3a;}',
+    '.txp-card{background:#fff;border:1px solid var(--line,#e3dfd6);border-radius:11px;padding:10px 12px;margin-bottom:8px;cursor:pointer;}',
+    '.txp-h{display:flex;align-items:center;gap:7px;} .txp-h b{flex:1;font-size:.9rem;}',
+    '.txp-tag{font-size:.62rem;font-weight:700;background:#efedE8;color:#46443e;padding:2px 7px;border-radius:7px;}',
+    '.txp-meta{font-size:.7rem;color:var(--muted);line-height:1.5;margin-top:2px;}',
+    '.txp-bar{height:8px;background:#efedE8;border-radius:4px;overflow:hidden;margin:7px 0 5px;}',
+    '.txp-bar i{display:block;height:100%;background:var(--pea-purple);}',
+    '.txp-nums{display:flex;align-items:baseline;font-size:.74rem;color:#46443e;} .txp-nums b{font-size:.84rem;}',
+    '.txp-nums span{margin-left:auto;font-weight:700;color:var(--pea-purple);}',
+    '.txp-count{background:#f3effa;border-left:3px solid var(--pea-purple);border-radius:0 9px 9px 0;padding:10px 11px;margin-bottom:10px;font-size:.84rem;color:#3a2266;}',
+    '.txp-count b{font-size:1.15rem;} .txp-count small{display:block;font-size:.7rem;margin-top:2px;opacity:.85;}',
+    '.txp-count.none{background:#fff4e5;border-left-color:#b26a00;color:#6b4200;}',
+    '.txp-item{background:#fff;border:1px solid var(--line,#e3dfd6);border-radius:10px;padding:9px 11px;margin-bottom:6px;display:flex;align-items:center;gap:9px;cursor:pointer;}',
+    '.txp-item.done{opacity:.72;cursor:default;} .txp-item.skip{border-style:dashed;}',
+    '.txp-item-l{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}',
+    '.txp-item-l b{font-size:.86rem;} .txp-item-l span{font-size:.7rem;color:var(--muted);}',
+    '.txp-dist{font-size:.72rem;font-weight:700;color:#1a73e8;flex:0 0 auto;}',
+    '.txp-undo{border:1px solid #ccc7bc;background:#fff;border-radius:7px;padding:5px 9px;font-size:.68rem;font-weight:700;font-family:inherit;cursor:pointer;color:#46443e;}',
+    '.txp-back{border:0;background:none;color:var(--pea-purple);font-size:.8rem;font-weight:700;font-family:inherit;cursor:pointer;padding:2px 0 9px;}',
+    '#txlNextBar{position:fixed;left:10px;right:10px;bottom:calc(70px + env(safe-area-inset-bottom));z-index:9600;background:#1f1b2e;color:#fff;border-radius:12px;padding:10px 11px;display:none;align-items:center;gap:9px;box-shadow:0 8px 24px rgba(0,0,0,.28);opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s;}',
+    '#txlNextBar.show{opacity:1;transform:none;}',
+    '#txlNextBar.show{display:flex;}',
+    '#txlNextBar .txn-l{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}',
+    '#txlNextBar .txn-l b{font-size:.84rem;} #txlNextBar .txn-l span{font-size:.68rem;opacity:.8;}',
+    '.txn-go{flex:0 0 auto;min-height:40px;padding:0 14px;border:0;border-radius:9px;background:#fff;color:#2b1b4d;font-size:.82rem;font-weight:700;font-family:inherit;cursor:pointer;}',
+    '.txn-x{flex:0 0 auto;width:32px;height:32px;border:0;border-radius:8px;background:rgba(255,255,255,.16);color:#fff;font-size:.9rem;font-family:inherit;cursor:pointer;}',
+    '@media(min-width:600px){#txlNextBar{left:auto;right:20px;width:420px;}}',
     '.txl-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px;}',
     '.txl-tile{background:#fff;border:1px solid var(--line,#e3dfd6);border-radius:11px;padding:10px 11px;display:flex;flex-direction:column;}',
     '.txl-tile b{font-size:1.3rem;line-height:1.15;} .txl-tile span{font-size:.72rem;color:var(--muted);}',
@@ -4100,7 +4669,7 @@ function txlExportCsv(){
     '.txl-hphs{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap;}',
     '.txl-hph{width:52px;height:52px;border-radius:7px;overflow:hidden;border:1px solid #ccc7bc;display:flex;align-items:center;justify-content:center;font-size:.6rem;color:var(--muted);}',
     '.txl-hph img{width:100%;height:100%;object-fit:cover;}',
-    '@media(min-width:600px){.txl-panel{border-radius:14px;max-height:88vh;max-height:88dvh;}.txl-top{padding-top:10px;}#txlOverlay,#txlReportOverlay{align-items:center;padding:16px;}}'
+    '@media(min-width:600px){.txl-panel{border-radius:14px;max-height:88vh;max-height:88dvh;}.txl-top{padding-top:10px;}#txlOverlay,#txlReportOverlay,#txPlanOverlay{align-items:center;padding:16px;}}'
   ].join('\n');
   document.head.appendChild(css);
 
@@ -4118,7 +4687,13 @@ function txlExportCsv(){
         '<button type="button" class="txl-x-btn" id="txlReportExport" aria-label="ส่งออก CSV">⬇</button>' +
         '<button type="button" class="txl-x-btn" id="txlReportClose" aria-label="ปิด">✕</button></div></div>' +
       '<div id="txlReportBody"></div>' +
-    '</div></div>';
+    '</div></div>' +
+    '<div id="txPlanOverlay"><div class="txl-panel" role="dialog" aria-modal="true" aria-label="แผนงานวัดโหลด">' +
+      '<div class="txl-top"><div class="txl-top-r"><h2 id="txPlanTitle">📋 แผนงานวัดโหลด</h2>' +
+        '<button type="button" class="txl-x-btn" id="txPlanClose" aria-label="ปิด">✕</button></div></div>' +
+      '<div id="txPlanBody"></div>' +
+    '</div></div>' +
+    '<div id="txlNextBar"></div>';
   while(wrap.firstChild) document.body.appendChild(wrap.firstChild);
 
   document.getElementById('txlCloseBtn').addEventListener('click', txlClose);
@@ -4128,6 +4703,10 @@ function txlExportCsv(){
   document.getElementById('txlReportExport').addEventListener('click', txlExportCsv);
   document.getElementById('txlReportOverlay').addEventListener('click', e=>{
     if(e.target.id === 'txlReportOverlay') e.currentTarget.classList.remove('show'); });
+  document.getElementById('txPlanClose').addEventListener('click', ()=>
+    document.getElementById('txPlanOverlay').classList.remove('show'));
+  document.getElementById('txPlanOverlay').addEventListener('click', e=>{
+    if(e.target.id === 'txPlanOverlay') e.currentTarget.classList.remove('show'); });
 
   // ปุ่มในการ์ดรายละเอียด (การ์ดวาดใหม่ทุกครั้ง จึงดักที่ตัวครอบแทนการผูกรายปุ่ม)
   document.getElementById('detailBody').addEventListener('click', e=>{
