@@ -4675,6 +4675,7 @@ async function txlCapStartCamera(){
   }
 }
 function txlCapStopCamera(){
+  txlCapFrameStop();
   const video = document.getElementById('txcVideo');
   if(video) video.srcObject = null;
   if(txlCapStream){ txlCapStream.getTracks().forEach(t=> t.stop()); txlCapStream = null; }
@@ -4760,12 +4761,45 @@ function txlCapMediaBox(){
 function txlCapPlaceFrame(){
   const f = document.getElementById('txcFrameBox');
   const mb = txlCapMediaBox();
-  if(!f || !mb || !txl || !txl.cap) return;
+  if(!f || !mb || !txl || !txl.cap) return false;
   const r = txl.cap.rect;
   f.style.left   = (mb.ox + r.x * mb.w) + 'px';
   f.style.top    = (mb.oy + r.y * mb.h) + 'px';
   f.style.width  = (r.w * mb.w) + 'px';
   f.style.height = (r.h * mb.h) + 'px';
+  f.classList.add('on');
+  return true;
+}
+/* กล้องบนมือถือกว่าจะส่งภาพเฟรมแรกออกมาใช้เวลาไม่แน่นอน บางเครื่องเกินสองวินาที
+   ระหว่างนั้น videoWidth ยังเป็นศูนย์ คำนวณตำแหน่งกรอบไม่ได้
+   เดิมลองแค่สองครั้งแล้วเลิก ถ้ากล้องช้ากว่านั้นกรอบเขียวจะไม่ขึ้นเลยทั้งที่เห็นภาพสด
+   จึงต้องตามวางจนกว่าจะได้จริง แล้วค่อยหยุด */
+let txlFramePoll = null;
+function txlCapFrameWatch(){
+  if(txlFramePoll) clearInterval(txlFramePoll);
+  if(txlCapPlaceFrame()) return;
+  let n = 0;
+  txlFramePoll = setInterval(()=>{
+    n++;
+    if(txlCapPlaceFrame() || n > 80){ clearInterval(txlFramePoll); txlFramePoll = null; }
+  }, 100);
+}
+function txlCapFrameStop(){
+  if(txlFramePoll){ clearInterval(txlFramePoll); txlFramePoll = null; }
+}
+/* ผูกครั้งเดียว — พอกล้องพร้อมหรือหมุนจอ ให้วางกรอบใหม่ทันที ไม่ต้องรอรอบถัดไป */
+let txlFrameBound = false;
+function txlCapBindFrameEvents(){
+  if(txlFrameBound) return;
+  const v = document.getElementById('txcVideo');
+  const sh = document.getElementById('txcShot');
+  if(!v) return;
+  ['loadedmetadata','loadeddata','playing','resize'].forEach(ev=>
+    v.addEventListener(ev, ()=> txlCapPlaceFrame()));
+  if(sh) sh.addEventListener('load', ()=> txlCapPlaceFrame());
+  window.addEventListener('resize', ()=> txlCapPlaceFrame());
+  window.addEventListener('orientationchange', ()=> setTimeout(txlCapPlaceFrame, 250));
+  txlFrameBound = true;
 }
 /* ลากกรอบไปมา และลากมุมขวาล่างเพื่อย่อขยาย — ใช้ตอนดูรูปนิ่งเพื่ออ่านใหม่ */
 function txlCapBindFrameDrag(){
@@ -5192,12 +5226,14 @@ function txlCapRender(){
   frame.style.display = (m === 'aim' || fullView) ? '' : 'none';
   frame.className = 'txc-frame' + (fullView ? ' edit' : '');
   // ตอนเล็งกรอบเป็นเส้นเขียวนิ่งๆ · ตอนดูรูปนิ่งเปลี่ยนเป็นเส้นประลากปรับได้แล้วกดอ่านใหม่
+  txlCapBindFrameEvents();
   if(fullView && cap.shot){
     shot.onload = ()=> txlCapPlaceFrame();
-    if(shot.complete) setTimeout(txlCapPlaceFrame, 0);
+    txlCapFrameWatch();
   } else if(m === 'aim'){
-    setTimeout(txlCapPlaceFrame, 60);
-    setTimeout(txlCapPlaceFrame, 400);
+    txlCapFrameWatch();
+  } else {
+    txlCapFrameStop();
   }
   const ocr = cap.ocr;
   const note = document.getElementById('txcNote');
@@ -6663,7 +6699,8 @@ let txlCarry = null;    // การตั้งค่าของการว�
     '.txc-stage{flex:1 1 auto;position:relative;background:#2b2b2b;overflow:hidden;min-height:180px;}',
     '#txcVideo,#txcShot{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#2b2b2b;}',
     '.txc-frame{position:absolute;inset:0;pointer-events:none;}',
-    '.txc-fbox{position:absolute;border:2.5px solid #7fd88a;border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.42);}',
+    '.txc-fbox{position:absolute;border:2.5px solid #7fd88a;border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.42);visibility:hidden;}',
+    '.txc-fbox.on{visibility:visible;}',
     '.txc-frame.edit{pointer-events:auto;}',
     '.txc-frame.edit .txc-fbox{border-color:#ffce7a;border-style:dashed;cursor:move;touch-action:none;}',
     '.txc-grip{display:none;position:absolute;right:-13px;bottom:-13px;width:26px;height:26px;border-radius:50%;background:#ffce7a;border:2px solid #fff;touch-action:none;cursor:nwse-resize;}',
