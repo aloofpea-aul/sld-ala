@@ -2946,9 +2946,19 @@ async function txlFlushQueue(quiet){
   }
 }
 /* เขียนผลวัดลงข้อมูลในเครื่อง เพื่อให้สัญลักษณ์ขึ้นทันทีไม่ต้องรีโหลด */
+/* เวลาเครื่องในรูปแบบเดียวกับที่ชีตส่งกลับมา (yyyy-MM-dd HH:mm) */
+function txlLocalStamp(v){
+  const d = v instanceof Date ? v : new Date(v);
+  if(isNaN(d.getTime())) return String(v || '');
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) +
+         ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
 function txlApplyLocal(deviceId, measuredAt, calc){
   if(!calc) return;
-  txlLatest[deviceId] = { at: String(measuredAt || '').replace('T', ' ').slice(0, 16),
+  // measuredAt ส่งมาเป็น ISO (เวลา UTC) — ต้องแปลงเป็นเวลาเครื่องก่อนแสดง
+  // ไม่งั้นการ์ดจะโชว์เวลาต่างจากที่บันทึกในชีต 7 ชั่วโมง
+  txlLatest[deviceId] = { at: txlLocalStamp(measuredAt),
                           pct: calc.loadPercent, kva: calc.kva, verdict: calc.verdict };
   (DATA && DATA.feeders || []).forEach(f=> f.devices.forEach(dv=>{
     if(dv.id === deviceId) dv.lastLoad = txlLatest[deviceId];
@@ -3542,42 +3552,325 @@ async function txlSave(){
   showToast(warn ? '⚠ บันทึกผลวัด ' + id + ' แล้ว ' + warn : '✓ บันทึกผลวัดโหลด ' + id + ' แล้ว', warn ? 'warn' : 'ok');
 }
 
-/* ---------- ประวัติการวัด ---------- */
+/* ---------- ประวัติการวัด — ดูค่าที่วัดย้อนหลังได้ครบทุกตัว ---------- */
+const TXL_PHOTO_LABEL = { pole:'ต้นหม้อแปลง', tank:'ตัวถัง', meter:'เครื่องวัด', extra:'เพิ่มเติม' };
+let txlHist = { deviceId:'', records:[], open:'', confirmCancel:'' };
+
+function txlHistNum(v){ const n = parseFloat(v); return isNaN(n) ? null : n; }
+function txlHistAlive(r){ return String(r.Status || '') !== 'ยกเลิก'; }
+
+/* กราฟแนวโน้ม % โหลดของหม้อแปลงเครื่องนี้ — วาดเมื่อมีผลวัดที่ใช้ได้ตั้งแต่ 2 ครั้งขึ้นไป */
+function txlTrendSvg(records){
+  const pts = records.filter(r=> txlHistAlive(r) && txlHistNum(r.LoadPercent) != null)
+    .map(r=> ({ pct: txlHistNum(r.LoadPercent), at: String(r.MeasuredAt || '') }))
+    .reverse();                                  // เรียงจากเก่าไปใหม่
+  if(pts.length < 2) return '';
+  const W = 330, H = 74, padL = 20, padR = 12, top = 10, bot = 20;
+  const maxPct = Math.max(110, Math.ceil(Math.max.apply(null, pts.map(p=> p.pct)) / 10) * 10 + 10);
+  const x = i => padL + (W - padL - padR) * (pts.length === 1 ? 0.5 : i / (pts.length - 1));
+  const y = v => top + (H - top - bot) * (1 - v / maxPct);
+  const col = v => v > TXL_RULES.overload ? '#b0201f' : v >= TXL_RULES.nearFull ? '#8a5200' : '#175c3a';
+  const line = pts.map((p, i)=> x(i).toFixed(1) + ',' + y(p.pct).toFixed(1)).join(' ');
+  const dots = pts.map((p, i)=> '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p.pct).toFixed(1) +
+      '" r="' + (i === pts.length - 1 ? 4.2 : 3) + '" fill="' + col(p.pct) + '"' +
+      (i === pts.length - 1 ? ' stroke="#ffffff" stroke-width="1.8"' : '') + '></circle>').join('');
+  const labels = pts.map((p, i)=>{
+    if(pts.length > 6 && i % 2 === 1 && i !== pts.length - 1) return '';
+    const d = String(p.at).slice(5, 10).replace('-', '/');
+    return '<text x="' + x(i).toFixed(1) + '" y="' + (H - 5) + '" font-size="8" fill="#5c5a54" text-anchor="middle">' +
+           escapeHtml(d) + '</text>';
+  }).join('');
+  const rule = (v, c)=> v > maxPct ? '' :
+    '<line x1="' + padL + '" y1="' + y(v).toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y(v).toFixed(1) +
+    '" stroke="' + c + '" stroke-width="1" stroke-dasharray="3 3"></line>' +
+    '<text x="2" y="' + (y(v) + 3).toFixed(1) + '" font-size="7.5" fill="' + c + '">' + v + '</text>';
+  const first = pts[0].pct, last = pts[pts.length - 1].pct, diff = Math.round(last - first);
+  const trend = diff > 2 ? 'สูงขึ้น ' + diff + ' จุดจากครั้งแรก'
+              : diff < -2 ? 'ลดลง ' + Math.abs(diff) + ' จุดจากครั้งแรก' : 'ทรงตัวจากครั้งแรก';
+  return '<div class="txl-trend">' +
+    '<div class="txl-trend-t">แนวโน้ม % โหลด · ' + pts.length + ' ครั้ง</div>' +
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="กราฟแนวโน้มโหลด ' +
+      pts.length + ' ครั้ง จาก ' + Math.round(first) + '% เป็น ' + Math.round(last) + '%">' +
+      rule(TXL_RULES.overload, '#f0b9b4') + rule(TXL_RULES.nearFull, '#e8c48e') +
+      '<polyline points="' + line + '" fill="none" stroke="#4b2e83" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></polyline>' +
+      dots + labels + '</svg>' +
+    '<div class="txl-note" style="margin:2px 0 0;">' + escapeHtml(trend) + '</div></div>';
+}
+
+/* แถวค่าที่วัด — ขึ้นเฉพาะช่องที่รูปแบบระบบนั้นมีจริง */
+function txlHistValueGrid(rec, keys){
+  const cells = keys.filter(([k])=> txlHistNum(rec[k]) != null)
+    .map(([k, l])=> '<div class="txl-hv"><span>' + l + '</span><b>' + txlHistNum(rec[k]) + '</b></div>').join('');
+  return cells ? '<div class="txl-hgrid">' + cells + '</div>' : '<div class="txl-note">ไม่ได้บันทึกค่าไว้</div>';
+}
+
+function txlHistDetailHtml(rec){
+  const cfg = TXL_CONFIGS[rec.SysConfig] || TXL_CONFIGS['3P4W'];
+  const vKeys = [];
+  if(cfg.neutral){
+    cfg.phases.forEach(p=> vKeys.push(['V' + p.toLowerCase(), 'V' + p]));
+    vKeys.push(['Vng', 'VN–G']);
+  }
+  if(cfg.ll){
+    (cfg.phases.length === 2 ? [['Vab','VAB']] : [['Vab','VAB'],['Vbc','VBC'],['Vca','VCA']])
+      .forEach(x=> vKeys.push(x));
+  }
+  const iKeys = cfg.phases.map(p=> ['I' + p.toLowerCase(), 'I' + p]);
+  if(cfg.neutral) iKeys.push(['In', 'IN']);
+
+  const missing = [];
+  if(!cfg.neutral) missing.push('ไม่มีนิวทรัล จึงไม่มี VA VB VC และ IN');
+  if(cfg.phases.length === 1) missing.push('ระบบ 1 เฟส จึงไม่มี IB IC และแรงดันเฟส–เฟส');
+
+  // ตารางวงจรแรงต่ำ (เฉพาะที่วัดรายวงจร)
+  let feederTable = '';
+  const fds = (rec.feeders || []).slice().sort((a, b)=> (a.FeederNo || 0) - (b.FeederNo || 0));
+  if(fds.length){
+    const cols = cfg.phases.map(p=> ['I' + p.toLowerCase(), 'I' + p])
+      .concat(cfg.neutral ? [['In', 'IN']] : []);
+    const head = '<span class="h">วงจร</span>' + cols.map(c=>
+      '<span class="h r">' + c[1] + '</span>').join('');
+    const rows = fds.map(f=> '<span>' + (f.FeederNo || '-') + (f.FeederName ? ' ' + escapeHtml(String(f.FeederName)) : '') + '</span>' +
+      cols.map(c=> '<span class="r">' + (txlHistNum(f[c[0]]) == null ? '-' : txlHistNum(f[c[0]])) + '</span>').join('')).join('');
+    const sum = cols.map(c=> fds.reduce((s, f)=> s + (txlHistNum(f[c[0]]) || 0), 0));
+    const sumRow = '<span class="s">รวม</span>' + sum.map(v=> '<span class="s r">' + Math.round(v) + '</span>').join('');
+    const wires = fds.filter(f=> f.CableSize || f.BreakerSize)
+      .map(f=> 'วงจร ' + f.FeederNo + ': ' + [f.CableSize, f.BreakerSize].filter(x=> x).join(' · ')).join(' • ');
+    feederTable = '<div class="txl-hsec"><div class="txl-hsec-t">กระแสรายวงจรแรงต่ำ (A)</div>' +
+      '<div class="txl-ftable" style="grid-template-columns:minmax(0,1.4fr) repeat(' + cols.length + ',minmax(0,1fr));">' +
+      head + rows + sumRow + '</div>' +
+      (wires ? '<div class="txl-note" style="margin:5px 0 0;">' + escapeHtml(wires) + '</div>' : '') + '</div>';
+  }
+
+  const calcRow = (k, v, cls)=> '<div class="txl-kv"><span>' + escapeHtml(k) + '</span><b class="' + (cls || '') + '">' +
+    escapeHtml(v) + '</b></div>';
+  const pct = txlHistNum(rec.LoadPercent), unb = txlHistNum(rec.UnbalancePercent), inp = txlHistNum(rec.InPercent);
+  const vLo = TXL_RULES.vNominal * (1 - TXL_RULES.vTolerance / 100);
+  const vPhase = cfg.neutral ? cfg.phases.map(p=> txlHistNum(rec['V' + p.toLowerCase()])).filter(x=> x != null) : [];
+  const vMin = vPhase.length ? Math.min.apply(null, vPhase) : null;
+
+  const photos = (rec.photos || []).map(p=>{
+    const th = driveThumb(p.DriveUrl);
+    const lab = TXL_PHOTO_LABEL[String(p.PhotoKind || '').trim()] || 'รูป';
+    return '<a href="' + escapeHtml(String(p.DriveUrl || '')) + '" target="_blank" rel="noopener" class="txl-hph2">' +
+      (th ? '<img src="' + escapeHtml(th) + '" alt="' + escapeHtml(lab) + '" loading="lazy" referrerpolicy="no-referrer">' : '') +
+      '<span>' + escapeHtml(lab) + '</span></a>';
+  }).join('');
+
+  const canCancel = txlHistAlive(rec) &&
+    (CURRENT_USER.role === 'admin' ||
+     String(rec.MeasuredBy || '').trim().toLowerCase() === String(CURRENT_USER.name || '').trim().toLowerCase());
+  const confirming = txlHist.confirmCancel === rec.LoadID;
+
+  return '<div class="txl-hdetail">' +
+    '<div class="txl-hsec"><div class="txl-hsec-t">แรงดันที่วัดได้ (V)</div>' + txlHistValueGrid(rec, vKeys) +
+      (missing.length ? '<div class="txl-note" style="margin:4px 0 0;">' + escapeHtml(missing.join(' · ')) + '</div>' : '') + '</div>' +
+    '<div class="txl-hsec"><div class="txl-hsec-t">กระแสรวมทั้งเครื่อง (A)</div>' + txlHistValueGrid(rec, iKeys) + '</div>' +
+    feederTable +
+    '<div class="txl-hsec"><div class="txl-hsec-t">ผลคำนวณ</div>' +
+      calcRow('โหลดที่วัดได้', (rec.KvaMeasured || '-') + ' kVA') +
+      calcRow('พิกัดหม้อแปลง', (rec.RatedKva || '-') + ' kVA') +
+      calcRow('% โหลด', pct == null ? '-' : Math.round(pct) + '%',
+              pct == null ? '' : pct > TXL_RULES.overload ? 'hi' : pct >= TXL_RULES.nearFull ? 'mid' : 'ok') +
+      calcRow('ความไม่สมดุล', unb == null ? (cfg.phases.length === 1 ? 'ไม่คิด (1 เฟส)' : '-') : unb + '%',
+              unb != null && unb > TXL_RULES.unbalance ? 'mid' : '') +
+      calcRow('กระแสนิวทรัล', inp == null
+                ? (!cfg.neutral ? 'ไม่มีนิวทรัล' : cfg.phases.length === 1 ? 'ไม่คิด (1 เฟส 2 สาย)' : '-')
+                : (txlHistNum(rec.In) == null ? '' : Math.round(txlHistNum(rec.In)) + ' A = ') + inp + '% ของค่าเฉลี่ย',
+              inp != null && inp > TXL_RULES.inPercent ? 'mid' : '') +
+      calcRow('แรงดันต่ำสุด', vMin == null ? '-' : vMin + ' V', vMin != null && vMin < vLo ? 'hi' : '') +
+    '</div>' +
+    '<div class="txl-hsec"><div class="txl-hsec-t">บริบทการวัด</div>' +
+      calcRow('จุดที่วัด', String(rec.MeasurePoint || '-')) +
+      calcRow('รูปแบบระบบ', (TXL_CONFIGS[rec.SysConfig] || {}).label || String(rec.SysConfig || '-')) +
+      (rec.MeterModel ? calcRow('เครื่องวัด', String(rec.MeterModel)) : '') +
+      ((rec.Period || rec.Weather) ? calcRow('ช่วงเวลา · อากาศ',
+        [rec.Period, rec.Weather].filter(x=> x).join(' · ')) : '') +
+      (rec.Address ? calcRow('ที่ตั้ง', String(rec.Address)) : '') +
+      ((rec.Lat !== '' && rec.Lat != null) ? calcRow('พิกัด' + (rec.PoleTag ? ' · เสา' : ''),
+        rec.Lat + ', ' + rec.Lon + (rec.PoleTag ? ' · ' + rec.PoleTag : '')) : '') +
+      calcRow('รหัสผลวัด', String(rec.LoadID || '-')) +
+    '</div>' +
+    (rec.Recommend ? '<div class="txl-hrec-t"><b>ข้อเสนอแนะ</b><br>' + escapeHtml(String(rec.Recommend)) + '</div>' : '') +
+    (rec.Note ? '<div class="txl-note" style="margin:0;"><b style="color:#5c5a54;">หมายเหตุ</b> · ' + escapeHtml(String(rec.Note)) + '</div>' : '') +
+    (photos ? '<div class="txl-hsec"><div class="txl-hsec-t">รูปถ่าย ' + (rec.photos || []).length +
+      ' ภาพ — แตะเพื่อเปิดเต็มจอ</div><div class="txl-hphs2">' + photos + '</div></div>' : '') +
+    '<div class="txl-hbtns">' +
+      '<button type="button" class="txl-hbtn" data-txl-copy="' + escapeHtml(rec.LoadID) + '">คัดลอกค่าไปวัดครั้งใหม่</button>' +
+      (canCancel ? '<button type="button" class="txl-hbtn del' + (confirming ? ' on' : '') +
+        '" data-txl-cancel="' + escapeHtml(rec.LoadID) + '">' +
+        (confirming ? 'ยืนยันยกเลิก?' : 'ยกเลิกผลวัด') + '</button>' : '') +
+    '</div>' +
+    (confirming ? '<div class="txl-alert" style="margin:6px 0 0;">กดอีกครั้งเพื่อยืนยัน — ผลวัดจะยังอยู่ในประวัติแต่ไม่ถูกนับในรายงาน</div>' : '') +
+    '<button type="button" class="txl-hmore" data-txl-open="">ย่อกลับ ▴</button>' +
+  '</div>';
+}
+
+function txlRenderHistory(){
+  const box = document.getElementById('txlHistBox');
+  if(!box) return;
+  const recs = txlHist.records;
+  if(!recs.length){
+    box.innerHTML = '<div class="txl-note">ยังไม่มีประวัติในระบบ</div>';
+    return;
+  }
+  const alive = recs.filter(txlHistAlive);
+  const head = '<div class="txl-hhead">' +
+    '<span>ประวัติการวัด ' + recs.length + ' ครั้ง' +
+      (recs.length !== alive.length ? ' <small>(ยกเลิก ' + (recs.length - alive.length) + ')</small>' : '') + '</span>' +
+    '<button type="button" class="txl-hexport" data-txl-hexport="1">⬇ ส่งออก</button></div>';
+
+  const list = recs.map((r, idx)=>{
+    const pct = txlHistNum(r.LoadPercent);
+    const cls = pct == null ? '' : pct > TXL_RULES.overload ? 'hi' : pct >= TXL_RULES.nearFull ? 'mid' : 'ok';
+    const dead = !txlHistAlive(r);
+    const open = txlHist.open === r.LoadID;
+    const cfgLabel = (TXL_CONFIGS[r.SysConfig] || {}).label || String(r.SysConfig || '');
+    return '<div class="txl-hrec' + (dead ? ' cancelled' : '') + (open ? ' open' : '') + '">' +
+      '<button type="button" class="txl-hline" data-txl-open="' + (open ? '' : escapeHtml(r.LoadID)) + '">' +
+        '<b class="' + cls + '">' + (pct == null ? '-' : Math.round(pct) + '%') + '</b>' +
+        '<span class="kva">' + escapeHtml(String(r.KvaMeasured || '-')) + ' kVA</span>' +
+        '<span class="v">' + escapeHtml(dead ? 'ยกเลิกแล้ว' : String(r.Verdict || '')) + '</span>' +
+        (idx === 0 && !dead ? '<span class="last">ล่าสุด</span>' : '') +
+        '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#8a867c" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" class="cv"><path d="M5 9l7 7 7-7"/></svg>' +
+      '</button>' +
+      '<div class="txl-hmeta">' + escapeHtml(String(r.MeasuredAt || '')) + ' · ' + escapeHtml(String(r.MeasuredBy || '')) +
+        (cfgLabel ? ' · ' + escapeHtml(cfgLabel) : '') + ' · ' + escapeHtml(String(r.MeasurePoint || '')) +
+        (dead && r.UpdatedBy ? ' · ยกเลิกโดย ' + escapeHtml(String(r.UpdatedBy)) : '') + '</div>' +
+      (open ? txlHistDetailHtml(r)
+            : '<button type="button" class="txl-hmore" data-txl-open="' + escapeHtml(r.LoadID) + '">ดูค่าที่วัดทั้งหมด ▾</button>') +
+    '</div>';
+  }).join('');
+
+  box.innerHTML = head + txlTrendSvg(recs) + list;
+
+  box.querySelectorAll('[data-txl-open]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      txlHist.open = b.dataset.txlOpen || '';
+      txlHist.confirmCancel = '';
+      txlRenderHistory();
+    });
+  });
+  const ex = box.querySelector('[data-txl-hexport]');
+  if(ex) ex.addEventListener('click', txlHistExportCsv);
+  box.querySelectorAll('[data-txl-copy]').forEach(b=>{
+    b.addEventListener('click', ()=> txlCopyToNew(b.dataset.txlCopy));
+  });
+  box.querySelectorAll('[data-txl-cancel]').forEach(b=>{
+    b.addEventListener('click', ()=> txlCancelRecord(b.dataset.txlCancel));
+  });
+}
+
 async function txlShowHistory(deviceId){
   const box = document.getElementById('txlHistBox');
   if(!box) return;
   if(box.dataset.open === '1'){ box.dataset.open = '0'; box.innerHTML = ''; return; }
   box.dataset.open = '1';
   box.innerHTML = '<div class="txl-note">⏳ กำลังโหลดประวัติการวัด ...</div>';
+  txlHist = { deviceId, records: [], open:'', confirmCancel:'' };
   try{
     const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'txLoadHistory', deviceId, limit:10,
+      body: JSON.stringify({ action:'txLoadHistory', deviceId, limit:30,
         changedBy: CURRENT_USER.name, changedByPassword: CURRENT_USER.password }) });
     const json = await res.json();
-    if(!json || !json.ok){ box.innerHTML = '<div class="txl-note">โหลดประวัติไม่สำเร็จ</div>'; return; }
-    if(!json.records.length){ box.innerHTML = '<div class="txl-note">ยังไม่มีประวัติในระบบ</div>'; return; }
-    box.innerHTML = json.records.map(r=>{
-      const pct = txlNum(r.LoadPercent);
-      const cls = pct == null ? '' : pct > TXL_RULES.overload ? 'hi' : pct >= TXL_RULES.nearFull ? 'mid' : 'ok';
-      const photos = (r.photos || []).map(p=>{
-        const th = driveThumb(p.DriveUrl);
-        return '<a href="' + escapeHtml(p.DriveUrl) + '" target="_blank" rel="noopener" class="txl-hph">' +
-          (th ? '<img src="' + escapeHtml(th) + '" alt="' + escapeHtml(p.PhotoKind) + '" loading="lazy" referrerpolicy="no-referrer">' : 'เปิดรูป') + '</a>';
-      }).join('');
-      return '<div class="txl-hrec' + (r.Status === 'ยกเลิก' ? ' cancelled' : '') + '">' +
-        '<div class="txl-hline"><b class="' + cls + '">' + (pct == null ? '-' : Math.round(pct) + '%') + '</b>' +
-          '<span>' + escapeHtml(String(r.KvaMeasured || '-')) + ' kVA</span>' +
-          '<span>' + escapeHtml(String(r.Verdict || '')) + '</span></div>' +
-        '<div class="txl-hmeta">' + escapeHtml(String(r.MeasuredAt || '')) + ' · ' + escapeHtml(String(r.MeasuredBy || '')) +
-          ' · ' + escapeHtml(String(r.SysConfig || '')) + ' · ' + escapeHtml(String(r.MeasurePoint || '')) +
-          (r.Status === 'ยกเลิก' ? ' · <b>ยกเลิกแล้ว</b>' : '') + '</div>' +
-        (r.Recommend ? '<div class="txl-hrec-t">' + escapeHtml(String(r.Recommend)) + '</div>' : '') +
-        (r.Note ? '<div class="txl-hmeta">' + escapeHtml(String(r.Note)) + '</div>' : '') +
-        (photos ? '<div class="txl-hphs">' + photos + '</div>' : '') +
-        '</div>';
-    }).join('');
+    if(!json || !json.ok){ box.innerHTML = '<div class="txl-note">โหลดประวัติไม่สำเร็จ — ' +
+      escapeHtml((json && json.error) || 'ชีตตอบกลับว่าไม่สำเร็จ') + '</div>'; return; }
+    txlHist.records = json.records || [];
+    if(txlHist.records.length === 1) txlHist.open = txlHist.records[0].LoadID;   // มีครั้งเดียว กางให้เลย
+    txlRenderHistory();
   }catch(e){
     box.innerHTML = '<div class="txl-note">โหลดประวัติไม่ได้ — ตรวจสอบสัญญาณ</div>';
+  }
+}
+
+/* ส่งออกประวัติของหม้อแปลงเครื่องนี้เป็น CSV — ไว้แนบเอกสารขอเพิ่มขนาด */
+function txlHistExportCsv(){
+  const recs = txlHist.records;
+  if(!recs.length){ showToast('ยังไม่มีประวัติให้ส่งออก', 'warn'); return; }
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const head = ['รหัสผลวัด','วันเวลาที่วัด','ผู้วัด','รูปแบบระบบ','จุดที่วัด','จำนวนวงจร','พิกัด kVA',
+    'VA','VB','VC','VN-G','VAB','VBC','VCA','IA','IB','IC','IN',
+    'kVA ที่วัดได้','% โหลด','ไม่สมดุล %','IN %','ข้อสังเกต','ข้อเสนอแนะ','หมายเหตุ',
+    'เครื่องวัด','ช่วงเวลา','อากาศ','ที่ตั้ง','พิกัด','เลขเสา','สถานะ'];
+  const body = recs.map(r=> [r.LoadID, r.MeasuredAt, r.MeasuredBy, r.SysConfig, r.MeasurePoint, r.NumFeeders, r.RatedKva,
+    r.Va, r.Vb, r.Vc, r.Vng, r.Vab, r.Vbc, r.Vca, r.Ia, r.Ib, r.Ic, r.In,
+    r.KvaMeasured, r.LoadPercent, r.UnbalancePercent, r.InPercent, r.Verdict, r.Recommend, r.Note,
+    r.MeterModel, r.Period, r.Weather, r.Address,
+    (r.Lat === '' || r.Lat == null) ? '' : r.Lat + ', ' + r.Lon, r.PoleTag, r.Status]);
+  const csv = '﻿' + [head, ...body].map(r=> r.map(q).join(',')).join('\r\n');
+  const t = new Date(), p2 = n=> String(n).padStart(2, '0');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8;' }));
+  a.download = 'ประวัติวัดโหลด_' + txlHist.deviceId + '_' + t.getFullYear() + p2(t.getMonth()+1) + p2(t.getDate()) +
+               '_' + body.length + 'ครั้ง.csv';
+  a.click();
+  setTimeout(()=> URL.revokeObjectURL(a.href), 4000);
+  showToast('ส่งออก ' + body.length + ' รายการแล้ว', 'ok');
+}
+
+/* เปิดฟอร์มวัดใหม่โดยใช้การตั้งค่าเดิม — เหลือแค่กรอกตัวเลขที่วัดได้ */
+function txlCopyToNew(loadId){
+  const rec = txlHist.records.find(r=> r.LoadID === loadId);
+  if(!rec || !form) return;
+  txlOpen(form.f.id, form.d.id);
+  if(!txl) return;
+  if(TXL_CONFIGS[rec.SysConfig]) txl.sysConfig = rec.SysConfig;
+  if(TXL_POINTS.indexOf(String(rec.MeasurePoint)) >= 0) txl.measurePoint = String(rec.MeasurePoint);
+  if(rec.MeterModel) txl.meterModel = String(rec.MeterModel);
+  if(rec.Period) txl.period = String(rec.Period);
+  if(rec.Weather) txl.weather = String(rec.Weather);
+  const fds = (rec.feeders || []).slice().sort((a, b)=> (a.FeederNo || 0) - (b.FeederNo || 0));
+  if(fds.length){
+    // คงเลขวงจร ชื่อ ขนาดสาย และเบรกเกอร์ไว้ — ล้างเฉพาะค่ากระแสที่ต้องวัดใหม่
+    txl.feeders = fds.slice(0, 6).map((f, i)=> ({ no: i + 1, name: String(f.FeederName || ''),
+      ia:'', ib:'', ic:'', in:'',
+      cableSize: String(f.CableSize || ''), breakerSize: String(f.BreakerSize || ''), note:'' }));
+    txl.activeFeeder = 1;
+  }
+  txlRender();
+  showToast('คัดลอกการตั้งค่าจากครั้งก่อนแล้ว — กรอกเฉพาะค่าที่วัดได้', 'ok');
+  beep('ok');
+}
+
+/* ยกเลิกผลวัด — กดสองครั้งเพื่อยืนยัน ไม่ใช้กล่องโต้ตอบของเบราว์เซอร์ */
+async function txlCancelRecord(loadId){
+  if(txlHist.confirmCancel !== loadId){
+    txlHist.confirmCancel = loadId;
+    txlRenderHistory();
+    return;
+  }
+  txlHist.confirmCancel = '';
+  if(!(await requireAuth())){ showToast('ต้องเข้าสู่ระบบก่อน', 'warn'); return; }
+  PEAUI.saving.show('กำลังยกเลิกผลวัด');
+  try{
+    const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'txLoadCancel', loadId,
+        changedBy: CURRENT_USER.name, changedByPassword: CURRENT_USER.password }) });
+    const json = await res.json();
+    if(!json || !json.ok){
+      PEAUI.saving.fail('ยกเลิกไม่สำเร็จ', (json && json.error) || 'ชีตตอบกลับว่าไม่สำเร็จ');
+      txlRenderHistory();
+      return;
+    }
+    const rec = txlHist.records.find(r=> r.LoadID === loadId);
+    if(rec){ rec.Status = 'ยกเลิก'; rec.UpdatedBy = CURRENT_USER.name; }
+    PEAUI.saving.done('ยกเลิกผลวัดแล้ว', loadId);
+    // ผลวัดล่าสุดอาจเปลี่ยน — เอาค่าจากครั้งที่ยังใช้ได้ล่าสุดมาแทน
+    const alive = txlHist.records.filter(txlHistAlive);
+    const dev = form && form.d;
+    if(dev){
+      if(alive.length){
+        const a = alive[0];
+        dev.lastLoad = { at: String(a.MeasuredAt || ''), pct: txlHistNum(a.LoadPercent),
+                         kva: txlHistNum(a.KvaMeasured), verdict: String(a.Verdict || '') };
+      } else { delete dev.lastLoad; }
+      txlLatest[dev.id] = dev.lastLoad;
+    }
+    txlRenderHistory();
+    refreshView();
+  }catch(e){
+    PEAUI.saving.fail('ยกเลิกไม่สำเร็จ', 'เชื่อมต่อไม่ได้ — ตรวจสอบสัญญาณ');
+    txlRenderHistory();
   }
 }
 
@@ -3768,6 +4061,36 @@ function txlExportCsv(){
     '.txl-rline b.hi{color:#b0201f;} .txl-rline b.mid{color:#8a5200;} .txl-rline b.ok{color:#175c3a;}',
     '.txl-rbar{height:6px;background:#efedE8;border-radius:3px;overflow:hidden;margin-top:4px;}',
     '.txl-rbar i{display:block;height:100%;} .txl-rbar i.hi{background:#b0201f;} .txl-rbar i.mid{background:#8a5200;} .txl-rbar i.ok{background:#175c3a;}',
+    '.txl-hhead{display:flex;align-items:center;gap:8px;margin:10px 0 4px;}',
+    '.txl-hhead span{flex:1;font-size:.82rem;font-weight:700;} .txl-hhead small{font-weight:400;color:var(--muted);}',
+    '.txl-hexport{height:32px;padding:0 10px;border-radius:8px;border:1px solid #1e6b45;background:#fff;color:#175c3a;font-size:.68rem;font-weight:700;font-family:inherit;cursor:pointer;}',
+    '.txl-trend{background:#fff;border:1px solid var(--line,#e3dfd6);border-radius:10px;padding:9px 10px;margin-bottom:8px;}',
+    '.txl-trend-t{font-size:.66rem;font-weight:700;color:var(--muted);margin-bottom:2px;}',
+    '.txl-trend svg{display:block;}',
+    '.txl-hline{width:100%;display:flex;align-items:baseline;gap:8px;background:none;border:0;padding:0;font-family:inherit;text-align:left;cursor:pointer;color:inherit;}',
+    '.txl-hline b{font-size:1.05rem;} .txl-hline .kva{font-size:.78rem;font-weight:600;}',
+    '.txl-hline .v{flex:1;font-size:.72rem;color:#46443e;}',
+    '.txl-hline .last{font-size:.6rem;font-weight:700;background:#f3effa;color:#3a2266;padding:2px 7px;border-radius:7px;}',
+    '.txl-hline .cv{flex:0 0 auto;transition:transform .15s;}',
+    '.txl-hrec.open .txl-hline .cv{transform:rotate(180deg);}',
+    '.txl-hrec.open{border-color:var(--pea-purple);border-width:1.5px;background:#fff;}',
+    '.txl-hmore{width:100%;min-height:38px;margin-top:7px;border-radius:8px;border:1px solid var(--pea-purple);background:#f3effa;color:#3a2266;font-size:.76rem;font-weight:700;font-family:inherit;cursor:pointer;}',
+    '.txl-hdetail{margin-top:9px;border-top:1px solid #ece9e2;padding-top:9px;display:flex;flex-direction:column;gap:9px;}',
+    '.txl-hsec-t{font-size:.66rem;font-weight:700;color:var(--muted);margin-bottom:5px;}',
+    '.txl-hgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;}',
+    '.txl-hv{border:1px solid var(--line,#e3dfd6);border-radius:8px;padding:6px 9px;display:flex;justify-content:space-between;align-items:baseline;background:#fff;}',
+    '.txl-hv span{font-size:.66rem;font-weight:700;color:var(--muted);} .txl-hv b{font-size:.86rem;}',
+    '.txl-ftable{display:grid;gap:3px 4px;font-size:.68rem;align-items:baseline;}',
+    '.txl-ftable .h{font-weight:700;color:var(--muted);} .txl-ftable .r{text-align:right;}',
+    '.txl-ftable .s{font-weight:700;border-top:1px dashed #ccc7bc;padding-top:3px;}',
+    '.txl-hbtns{display:flex;gap:7px;border-top:1px solid #ece9e2;padding-top:9px;}',
+    '.txl-hbtn{flex:1;min-height:40px;border-radius:8px;border:1px solid #ccc7bc;background:#fff;color:#46443e;font-size:.74rem;font-weight:700;font-family:inherit;cursor:pointer;}',
+    '.txl-hbtn.del{flex:0 0 auto;padding:0 14px;border-color:#c62828;color:#b0201f;}',
+    '.txl-hbtn.del.on{background:#c62828;color:#fff;border-color:#c62828;}',
+    '.txl-hphs2{display:flex;gap:6px;flex-wrap:wrap;}',
+    '.txl-hph2{width:78px;border-radius:7px;overflow:hidden;border:1px solid #ccc7bc;display:flex;flex-direction:column;text-decoration:none;background:#e6e3dc;}',
+    '.txl-hph2 img{width:78px;height:58px;object-fit:cover;display:block;}',
+    '.txl-hph2 span{font-size:.6rem;font-weight:600;color:#46443e;text-align:center;padding:3px 2px;}',
     '.txl-hrec{background:#faf9f7;border:1px solid var(--line,#e3dfd6);border-radius:9px;padding:9px 10px;margin:8px 0;}',
     '.txl-hrec.cancelled{opacity:.6;}',
     '.txl-hline{display:flex;align-items:baseline;gap:9px;font-size:.8rem;}',
