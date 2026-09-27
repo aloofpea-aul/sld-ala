@@ -112,6 +112,26 @@
     <div id="svcList"></div>
   </div>
 
+  <div class="card" id="cmdCard" style="display:none;">
+    <h2>3.5 ส่งคำสั่งไปที่เครื่อง</h2>
+    <p class="muted" style="margin:0 0 9px;">เครื่องวัดหลายรุ่นเงียบจนกว่าจะถูกสั่งให้เริ่มส่งค่า
+      ถ้าสมัครรับข้อมูลแล้วแต่ไม่มีอะไรวิ่งเข้ามา ให้ลองกดปุ่มล่างสุดก่อน</p>
+    <label class="f">ส่งไปที่ characteristic</label>
+    <select id="cmdTarget" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid #ccc7bc;border-radius:8px;font-family:inherit;font-size:.9rem;background:#fdfdfc;"></select>
+    <label class="f">ข้อความที่จะส่ง</label>
+    <input type="text" id="cmdPayload" value="*IDN?" autocomplete="off" spellcheck="false">
+    <div class="row" style="margin-top:8px;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;">
+        <input type="radio" name="cmdMode" value="text" checked> ข้อความ (เติม CR LF ให้)</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;">
+        <input type="radio" name="cmdMode" value="hex"> เลขฐานสิบหก</label>
+    </div>
+    <div class="row" style="margin-top:9px;">
+      <button class="btn blue" id="cmdSend">▶ ส่ง</button>
+      <button class="btn ghost" id="cmdProbe">🧪 ลองชุดคำสั่งที่พบบ่อยทั้งหมด</button>
+    </div>
+  </div>
+
   <div class="card">
     <h2>4. ข้อมูลดิบ — ส่งส่วนนี้กลับมาให้ผม</h2>
     <div id="log">ยังไม่มีข้อมูล — กดปุ่มค้นหาและเชื่อมด้านบนก่อน</div>
@@ -144,6 +164,9 @@
 /* Web Bluetooth ให้เข้าถึงเฉพาะ service ที่ประกาศไว้ล่วงหน้าเท่านั้น
    จึงต้องใส่ชุดที่พบบ่อยในเครื่องมือวัดไว้ก่อน แล้วค่อยเพิ่มของจริงทีหลัง */
 const CANDIDATES = [
+  // ของ HIOKI CM3286-01 เอง — ได้จากการไล่ด้วย nRF Connect เมื่อ 27 ก.ย. 2569
+  '275ce3d8-b906-4475-8dd7-76af0db742bf',
+  '4f3edfe7-6f17-4f87-b2ee-ea2cdac0dd02',
   // มาตรฐาน
   '00001800-0000-1000-8000-00805f9b34fb', // Generic Access
   '0000180a-0000-1000-8000-00805f9b34fb', // Device Information
@@ -292,6 +315,8 @@ $('scanBtn').addEventListener('click', async ()=>{
     }
     // 1800/1801/180a/180f เป็น service มาตรฐานของบลูทูธทุกเครื่อง ไม่ใช่ช่องข้อมูลของ HIOKI
     let customFound = 0;
+    writables = [];
+    notifyCount = 0;
 
     $('svcCard').style.display = '';
     const list = $('svcList');
@@ -335,10 +360,14 @@ $('scanBtn').addEventListener('click', async ()=>{
           }catch(e){ log('      อ่านไม่ได้: ' + e.message); }
         }
 
+        // เก็บช่องที่เขียนได้ไว้ เผื่อเครื่องต้องถูกสั่งก่อนจึงจะเริ่มส่งค่า
+        if(p.write || p.writeWithoutResponse) writables.push({ ch, uuid: ch.uuid, svc: svc.uuid });
+
         // สมัครรับค่าที่ส่งมาเรื่อยๆ — นี่คือส่วนที่เราต้องการจริง
         if(p.notify || p.indicate){
           try{
             await ch.startNotifications();
+            notifyCount++;
             log('      >> สมัครรับข้อมูลแล้ว รอค่าจากเครื่อง ...');
             ch.addEventListener('characteristicvaluechanged', ev=> onPacket(ch.uuid, ev.target.value));
           }catch(e){ log('      สมัครรับข้อมูลไม่ได้: ' + e.message); }
@@ -352,8 +381,23 @@ $('scanBtn').addEventListener('click', async ()=>{
       setState('เชื่อมได้ แต่ยังไม่เจอช่องข้อมูล', 'err');
       return;
     }
-    log('=== ไล่ครบแล้ว ถ้ามี notify ให้หมุนสวิตช์ที่เครื่องวัดดู ค่าควรวิ่งเข้ามา ===');
+    log('=== ไล่ครบแล้ว — สมัครรับข้อมูล ' + notifyCount + ' ช่อง · เขียนได้ ' + writables.length + ' ช่อง ===');
+    log('   หมุนสวิตช์ที่เครื่องวัดดู ถ้าค่าวิ่งเข้ามาแปลว่าเสร็จ');
     $('liveCard').style.display = '';
+    if(writables.length){
+      const sel = $('cmdTarget');
+      sel.innerHTML = writables.map((w, i)=>
+        '<option value="' + i + '">' + w.uuid.slice(0, 8) + ' … (service ' + w.svc.slice(0, 8) + ')</option>').join('');
+      $('cmdCard').style.display = '';
+    }
+    // เงียบเกิน 10 วินาที แปลว่าเครื่องรอคำสั่งอยู่ ไม่ได้ส่งเอง
+    setTimeout(()=>{
+      if(packetCount === 0 && notifyCount){
+        log('!! ผ่านไป 10 วินาทีแล้วยังไม่มีข้อมูลเข้ามาเลย');
+        log('   แปลว่าเครื่องรอให้สั่งก่อน — เลื่อนขึ้นไปกด "ลองชุดคำสั่งที่พบบ่อยทั้งหมด" ในข้อ 3.5');
+        if(writables.length) $('cmdCard').scrollIntoView({ behavior:'smooth', block:'center' });
+      }
+    }, 10000);
   }catch(e){
     setState('ไม่สำเร็จ', 'err');
     log('!! ' + (e && e.message ? e.message : String(e)));
@@ -404,6 +448,67 @@ $('advBtn').addEventListener('click', async ()=>{
     log('   ใช้ nRF Connect ตามขั้นตอนในกล่องสีส้มแทนได้');
     $('needUuid').style.display = '';
   }
+});
+
+/* ---------- ส่งคำสั่งไปที่เครื่อง ----------
+   เครื่องมือวัดหลายยี่ห้อใช้ชุดคำสั่งแบบ SCPI (*IDN? :MEAS? ...) ส่งเป็นข้อความธรรมดา
+   บางรุ่นใช้ไบต์สั้นๆ เป็นสวิตช์เปิดการส่งค่าแทน จึงลองทั้งสองแบบ */
+let writables = [], notifyCount = 0;
+function toBytes(text, mode){
+  if(mode === 'hex'){
+    const h = text.replace(/[^0-9a-fA-F]/g, '');
+    const out = new Uint8Array(Math.floor(h.length / 2));
+    for(let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(i * 2, 2), 16);
+    return out;
+  }
+  return new TextEncoder().encode(text + '\r\n');
+}
+async function sendTo(w, bytes, label){
+  try{
+    if(w.ch.properties.write) await w.ch.writeValueWithResponse(bytes);
+    else await w.ch.writeValueWithoutResponse(bytes);
+    log('>> ส่ง ' + label + ' ไปที่ ' + w.uuid.slice(0, 8) + ' สำเร็จ');
+    return true;
+  }catch(e){
+    log('!! ส่ง ' + label + ' ไปที่ ' + w.uuid.slice(0, 8) + ' ไม่ได้: ' + e.message);
+    return false;
+  }
+}
+$('cmdSend').addEventListener('click', async ()=>{
+  const w = writables[parseInt($('cmdTarget').value, 10)];
+  if(!w) return;
+  const mode = document.querySelector('input[name="cmdMode"]:checked').value;
+  const txt = $('cmdPayload').value;
+  await sendTo(w, toBytes(txt, mode), '"' + txt + '"');
+});
+$('cmdProbe').addEventListener('click', async ()=>{
+  if(!writables.length){ log('!! ไม่มีช่องที่เขียนได้'); return; }
+  const before = packetCount;
+  log('=== ลองชุดคำสั่งที่พบบ่อย — ไล่ทุกช่องที่เขียนได้ ===');
+  const probes = [
+    ['text', '*IDN?'],          // ถามชื่อรุ่น — มาตรฐาน SCPI ที่เครื่องมือวัดเกือบทุกยี่ห้อรองรับ
+    ['text', ':MEAS?'],         // ขอค่าที่วัดได้ตอนนี้
+    ['text', ':READ?'],
+    ['text', 'MEAS?'],
+    ['hex',  '01'],             // ไบต์สั้นๆ ที่มักใช้เป็นสวิตช์เปิดการส่งค่า
+    ['hex',  '0101'],
+    ['hex',  '02'],
+    ['hex',  'aa55'],
+    ['hex',  '55aa']
+  ];
+  for(const w of writables){
+    for(const [mode, txt] of probes){
+      await sendTo(w, toBytes(txt, mode), (mode === 'hex' ? '0x' : '') + txt);
+      await new Promise(r=> setTimeout(r, 700));   // เว้นจังหวะให้เครื่องตอบก่อนยิงคำสั่งถัดไป
+      if(packetCount > before){
+        log('=== มีข้อมูลตอบกลับแล้ว! คำสั่งที่ได้ผลคือ ' + (mode === 'hex' ? '0x' : '') + txt +
+            ' ที่ช่อง ' + w.uuid + ' ===');
+        log('   กดคัดลอกทั้งหมดแล้วส่งมาให้ผมได้เลย');
+        return;
+      }
+    }
+  }
+  log('=== ลองครบแล้วยังเงียบ — คัดลอกทั้งหมดส่งมาให้ผม จะหาทางอื่นต่อ ===');
 });
 
 let packetCount = 0;
