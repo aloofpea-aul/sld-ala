@@ -2702,7 +2702,10 @@ async function saveParentStep(pcPlan){
  *  สัญลักษณ์ในรายการ/แผนที่ ขึ้นเฉพาะเครื่องที่วัดแล้ว
  * ========================================================================== */
 const TXL_RULES = { overload:100, nearFull:80, unbalance:10, inPercent:20,
-                    vNominal:230, vTolerance:10, reMeasureMonths:12 };
+                    vNominal:230, vTolerance:10, reMeasureMonths:12,
+                    // แรงดันปลายสายต่ำกว่านี้ถือว่าตกเกินมาตรฐาน — เกณฑ์ของ กฟภ.
+                    vEndMin:200 };
+const TXL_END_MAX = 6;          // จำนวนจุดปลายสายสูงสุดต่อการวัดหนึ่งครั้ง
 const TXL_CONFIGS = {
   '1P2W': { label:'1 เฟส 2 สาย · 230 V',      phases:['A'],          neutral:true,  ll:false,
             hint:'วัด IA · IN — แรงดัน VA (เฟส–นิวทรัล)' },
@@ -2725,6 +2728,7 @@ const TXL_RECOMMEND = [
   'สลับเฟสผู้ใช้ไฟให้สมดุล',
   'ตรวจสอบจุดต่อสายแรงต่ำ (แรงดันตก)',
   'แยกวงจรแรงต่ำเพิ่ม',
+  'แก้ไขแรงดันตกปลายสาย (ขยายสาย/แยกวงจร/ย้ายจุดจ่าย)',
   'ไม่ต้องดำเนินการ — เก็บเป็นข้อมูลอ้างอิง'
 ];
 const TXL_KVA_LADDER = [10, 20, 30, 50, 100, 160, 250, 315, 400, 500, 630, 800, 1000, 1250];
@@ -2743,25 +2747,79 @@ const TXL_FIELD_INFO = {
   in:  { unit:'A', label:'IN',   desc:'กระแสสายนิวทรัล — คีบแคลมป์รอบสายนิวทรัล' }
 };
 /* คีย์ของช่องอาจเป็นของรายวงจร เช่น f2.ia = กระแสเฟส A ของวงจรที่ 2 */
+/* คีย์ช่องมีสามแบบ — ค่ารวม (va) · รายวงจร (f2.ia) · ปลายสาย (e1.va) */
+function txlKeyParts(key){
+  const m = String(key).match(/^([fe])(\d+)\.(.+)$/);
+  return m ? { kind:m[1], no: parseInt(m[2], 10), base: m[3] }
+           : { kind:'', no:0, base: String(key) };
+}
 function txlFieldInfoOf(key){
-  const m = String(key).match(/^f(\d+)\.(.+)$/);
-  const base = TXL_FIELD_INFO[m ? m[2] : key] || { unit:'', label:String(key).toUpperCase(), desc:'' };
-  if(!m) return base;
-  return { unit: base.unit, label: base.label + ' · วงจร ' + m[1],
-           desc: base.desc + ' (วงจรแรงต่ำที่ ' + m[1] + ')' };
+  const k = txlKeyParts(key);
+  const base = TXL_FIELD_INFO[k.base] || { unit:'', label:String(key).toUpperCase(), desc:'' };
+  if(!k.kind) return base;
+  if(k.kind === 'e') return { unit: base.unit, label: base.label + ' · ปลายสาย ' + k.no,
+                              desc: base.desc.replace('ที่ขั้วแรงต่ำ', 'ที่ปลายสาย') + ' (จุดปลายสายที่ ' + k.no + ')' };
+  return { unit: base.unit, label: base.label + ' · วงจร ' + k.no,
+           desc: base.desc + ' (วงจรแรงต่ำที่ ' + k.no + ')' };
 }
 /* อ่าน/เขียนค่าของช่อง ไม่ว่าจะเป็นค่ารวมหรือรายวงจร — ใช้คีย์เดียวกันทั้งระบบ */
 function txlGetVal(key){
-  const m = String(key).match(/^f(\d+)\.(.+)$/);
-  if(!m) return txl.v[key];
-  const fd = txl.feeders.find(x=> x.no === parseInt(m[1], 10));
-  return fd ? fd[m[2]] : '';
+  const k = txlKeyParts(key);
+  if(!k.kind) return txl.v[k.base];
+  const row = k.kind === 'e' ? (txl.ends || []).find(x=> x.no === k.no)
+                             : txl.feeders.find(x=> x.no === k.no);
+  return row ? row[k.base] : '';
 }
 function txlSetVal(key, val){
-  const m = String(key).match(/^f(\d+)\.(.+)$/);
-  if(!m){ txl.v[key] = val; return; }
-  const fd = txl.feeders.find(x=> x.no === parseInt(m[1], 10));
-  if(fd) fd[m[2]] = val;
+  const k = txlKeyParts(key);
+  if(!k.kind){ txl.v[k.base] = val; return; }
+  const row = k.kind === 'e' ? (txl.ends || []).find(x=> x.no === k.no)
+                             : txl.feeders.find(x=> x.no === k.no);
+  if(row) row[k.base] = val;
+}
+/* ช่องแรงดันของจุดปลายสายหนึ่งจุด — ตามรูปแบบระบบเดียวกับที่ขั้วหม้อแปลง
+   มี VN–G ด้วย เพราะที่ปลายสายค่านี้บอกได้ว่านิวทรัลมีปัญหาหรือเปล่า */
+function txlEndBaseKeys(){
+  const cfg = TXL_CONFIGS[txl.sysConfig];
+  if(cfg.neutral) return cfg.phases.map(p=> 'v' + p.toLowerCase());
+  return cfg.phases.length === 2 ? ['vab'] : ['vab','vbc','vca'];
+}
+function txlEndKeys(no){
+  const cfg = TXL_CONFIGS[txl.sysConfig];
+  const ks = txlEndBaseKeys().map(k=> 'e' + no + '.' + k);
+  if(cfg.neutral) ks.push('e' + no + '.vng');
+  return ks;
+}
+/* แรงดันตกของจุดหนึ่ง เทียบกับที่ขั้วหม้อแปลงในการวัดครั้งเดียวกัน */
+function txlEndCalc(e){
+  const rows = txlEndBaseKeys().map(k=>{
+    const src = txlNum(txl.v[k]), end = txlNum(e[k]);
+    const drop = (src != null && end != null && src > 0)
+      ? Math.round((src - end) / src * 1000) / 10 : null;
+    return { k, label: (TXL_FIELD_INFO[k] || {}).label || k.toUpperCase(),
+             src, end, drop, low: end != null && end < TXL_RULES.vEndMin };
+  });
+  const vals = rows.map(r=> r.end).filter(v=> v != null);
+  const drops = rows.map(r=> r.drop).filter(v=> v != null);
+  const dist = (txl.lat != null && e.lat != null)
+    ? gpsDistanceMeters(txl.lat, txl.lon, e.lat, e.lon) : null;
+  return { rows, dist,
+           vMin: vals.length ? Math.min.apply(null, vals) : null,
+           dropMax: drops.length ? Math.max.apply(null, drops) : null,
+           low: rows.some(r=> r.low),
+           vng: txlNum(e.vng) };
+}
+/* สรุปปลายสายทั้งหมดของการวัดครั้งนี้ */
+function txlEndSummary(){
+  const list = (txl.ends || []).map(e=> ({ e, c: txlEndCalc(e) }));
+  const withV = list.filter(x=> x.c.vMin != null);
+  if(!withV.length) return { n: list.length, list, vMin:null, dropMax:null, low:false, worst:null };
+  let worst = withV[0];
+  withV.forEach(x=>{ if(x.c.vMin < worst.c.vMin) worst = x; });
+  const drops = withV.map(x=> x.c.dropMax).filter(v=> v != null);
+  return { n: list.length, list, vMin: worst.c.vMin,
+           dropMax: drops.length ? Math.max.apply(null, drops) : null,
+           low: withV.some(x=> x.c.low), worst };
 }
 /* รายการช่องทั้งหมดที่ต้องวัดในรอบนี้ ตามรูปแบบระบบและจุดที่วัด */
 function txlFieldList(){
@@ -2774,7 +2832,9 @@ function txlFieldList(){
   const amp = txl.measurePoint === 'รายวงจร'
     ? [].concat.apply([], txl.feeders.map(fd=> iBase.map(k=> 'f' + fd.no + '.' + k)))
     : iBase;
-  return { volt, amp, all: volt.concat(amp) };
+  // ช่องปลายสายนับรวมในความคืบหน้าและลำดับการวัดต่อเนื่องด้วย เมื่อมีจุดแล้วเท่านั้น
+  const end = [].concat.apply([], (txl.ends || []).map(e=> txlEndKeys(e.no)));
+  return { volt, amp, end, all: volt.concat(amp, end) };
 }
 /* สถานะของช่อง: done = มีค่า+มีรูป · noph = มีค่าแต่ไม่มีรูป · empty = ยังไม่วัด */
 function txlFieldState(key){
@@ -2951,10 +3011,12 @@ function txlCardHtml(f, d){
 let txlDb = null;
 function txlOpenDb(){
   return new Promise((res, rej)=>{
-    const rq = indexedDB.open('txSurveyDB', 1);
+    const rq = indexedDB.open('txSurveyDB', 2);
     rq.onupgradeneeded = e=>{
       const d = e.target.result;
       if(!d.objectStoreNames.contains('txloadQueue')) d.createObjectStore('txloadQueue', { keyPath:'id' });
+      // คลังภาพตัวเลขที่เรียนจากการวัดจริง — ดูหัวข้อ "คลังภาพตัวเลข" ด้านล่าง
+      if(!d.objectStoreNames.contains('ocrMem')) d.createObjectStore('ocrMem', { keyPath:'id', autoIncrement:true });
     };
     rq.onsuccess = e=>{ txlDb = e.target.result; res(txlDb); };
     rq.onerror = ()=> rej(rq.error);
@@ -3084,6 +3146,7 @@ function txlOpen(feederId, deviceId){
     feeders: [{ no:1, name:'', ia:'', ib:'', ic:'', in:'', cableSize:'', breakerSize:'', note:'' }],
     ratedKva: txlRatedKva(d),
     v: { va:'', vb:'', vc:'', vng:'', vab:'', vbc:'', vca:'' },
+    ends: [],          // จุดปลายสาย — วัดเฉพาะแรงดัน ไม่บังคับ
     photos: {}, extras: [],
     vPhoto: {},        // คีย์ช่อง → รูปหน้าปัดเครื่องวัดของค่านั้น
     vCrop: {},         // คีย์ช่อง → ภาพช่วงตัวเลขไว้ย้อนดูเทียบ
@@ -3119,6 +3182,8 @@ async function txlFillAddress(){
 
 /* ---------- วาดหน้าจอตามขั้นตอน ---------- */
 function txlRender(){
+  // คลังภาพโหลดจากในเครื่องแบบไม่รอ พอโหลดเสร็จค่อยวาดแผงใหม่ให้ตัวเลขตรง
+  if(!TXMEM.loaded) txlMemLoad().then(()=>{ if(txl && txl.step === 1) txlRender(); });
   if(!txl) return;
   const { d } = txl;
   document.getElementById('txlTitle').innerHTML =
@@ -3182,7 +3247,37 @@ function txlStep1(){
   '<div class="txl-preview">จากที่เลือก ขั้นวัดค่าจะมี <b>แรงดัน ' + nV + ' ช่อง</b> และ <b>กระแส ' +
     nI + ' ช่อง' + (perFeeder ? ' × ' + txl.feeders.length + ' วงจร' : '') + '</b>' +
     ' — ถ่ายรูปหม้อแปลงให้เสร็จก่อน แล้วค่อยลงมือวัด</div>' +
+  txlMemPanel() +
   '<button type="button" class="txl-main" data-txl-next="2">ถัดไป — ถ่ายรูปหม้อแปลง ›</button>';
+}
+
+/* แผงคลังภาพตัวเลข — โชว์ว่าเครื่องนี้เรียนรู้ไปได้แค่ไหน และเอาไปแบ่งให้เครื่องอื่นได้ */
+function txlMemPanel(){
+  const by = txlMemCount();
+  const total = TXMEM.items.length;
+  const max = Math.max(1, ...'0123456789'.split('').map(d=> by[d] || 0));
+  const bars = '0123456789'.split('').map(d=>{
+    const n = by[d] || 0;
+    return '<i class="' + (n ? '' : 'none') + '" style="height:' + Math.max(2, Math.round(n / max * 34)) +
+           'px" title="เลข ' + d + ' · ' + n + ' ภาพ"></i>';
+  }).join('');
+  const nums = '0123456789'.split('').map(d=> '<b>' + d + '</b>').join('');
+  const kb = Math.round(total * (txlSegOcr.PATCH_W * txlSegOcr.PATCH_H) / 1024);
+  const thin = '0123456789'.split('').filter(d=> (by[d] || 0) < TXMEM.minSame);
+  return '<div class="txl-mem"><h5>🧠 คลังภาพตัวเลข — ' + total + ' ภาพ' +
+    (total ? ' (ราว ' + kb + ' KB)' : '') + '</h5>' +
+    '<p>ทุกครั้งที่กดยืนยันค่าจากรูป ระบบเก็บภาพแต่ละหลักคู่กับเลขที่คุณยืนยันไว้ในเครื่องนี้ ' +
+    'ครั้งต่อไปเจอหลักที่ขีดไม่ชัด จะเอามาเทียบช่วยอ่าน — ยอมตอบเฉพาะตอนมั่นใจเท่านั้น' +
+    (thin.length ? '<br><b>ยังขาดเลข ' + thin.join(' ') + '</b> — วัดค่าที่มีเลขพวกนี้ไปเรื่อยๆ คลังจะเต็มเอง' : '') +
+    '</p>' +
+    '<div class="bars">' + bars + '</div>' +
+    '<div class="bars" style="height:auto;">' + nums + '</div>' +
+    '<div class="btns">' +
+      '<button type="button" id="txlMemOut"' + (total ? '' : ' disabled') + '>⬇ ส่งออกไฟล์</button>' +
+      '<label for="txlMemIn">⬆ นำเข้าไฟล์</label>' +
+      '<input type="file" id="txlMemIn" accept="application/json,.json" style="display:none">' +
+      '<button type="button" class="danger" id="txlMemDel"' + (total ? '' : ' disabled') + '>ล้างคลัง</button>' +
+    '</div></div>';
 }
 
 /* ---------- ขั้นที่ 3 · วัดค่า — การ์ดแตะได้ 3 สถานะ ---------- */
@@ -3196,11 +3291,16 @@ function txlValueCard(key, shortLabel){
   let cls = 'txl-vc ' + st;
   // เตือนแรงดันเฉพาะช่องเฟส–นิวทรัล ที่เทียบเกณฑ์ 230 V ±10% ได้
   const cfg = TXL_CONFIGS[txl.sysConfig];
-  const isPhaseV = cfg.neutral && ['va','vb','vc'].indexOf(key) >= 0;
+  const kp = txlKeyParts(key);
+  const isPhaseV = cfg.neutral && ['va','vb','vc'].indexOf(kp.base) >= 0;
   const n = txlNum(val);
   const vLo = TXL_RULES.vNominal * (1 - TXL_RULES.vTolerance / 100);
   const vHi = TXL_RULES.vNominal * (1 + TXL_RULES.vTolerance / 100);
-  if(isPhaseV && n != null && (n < vLo || n > vHi)) cls += ' bad';
+  if(kp.kind === 'e'){
+    // ที่ปลายสายใช้เกณฑ์เดียว คือต่ำกว่า 200 V ถือว่าแรงดันตกเกินมาตรฐาน
+    const isV = ['vng'].indexOf(kp.base) < 0;
+    if(isV && n != null && n < TXL_RULES.vEndMin) cls += ' bad';
+  } else if(isPhaseV && n != null && (n < vLo || n > vHi)) cls += ' bad';
   const crop = txl.vCrop[key];
   const head = '<span class="txl-vc-h"><em>' + escapeHtml(label) + '</em>' +
     (ph ? '<img src="' + (crop ? crop.url : ph.dataUrl) + '" alt="รูปหน้าปัด"' +
@@ -3218,6 +3318,96 @@ function txlValueCard(key, shortLabel){
                    : '<span class="txl-vc-ok">' + (src === 'bt' ? 'จากเครื่องวัด' : 'มีรูปหน้าปัด') + '</span>') +
     '</div>';
 }
+/* ---------- แรงดันปลายสาย ----------
+   ส่วนเสริมท้ายขั้นวัดค่า ไม่บังคับ — วัดเมื่อสงสัยว่าปลายสายแรงดันตก
+   ใช้การ์ดแตะได้และหน้าถ่าย-อ่านเลขชุดเดียวกับที่วัดหม้อแปลง ช่างจึงไม่ต้องเรียนรู้อะไรใหม่
+   เกณฑ์ตัดสินคือแรงดันสัมบูรณ์ต่ำกว่า 200 V ส่วน % ที่ตกเป็นข้อมูลประกอบ */
+function txlEndSection(){
+  const ends = txl.ends || [];
+  const perFeeder = txl.measurePoint === 'รายวงจร';
+  const head = '<div class="txl-sec-t">แรงดันปลายสาย (V) <small>— ' +
+    (ends.length ? ends.length + ' จุด' : 'ไม่บังคับ วัดเมื่อสงสัยว่าแรงดันตก') + '</small></div>';
+  const addBtn = ends.length < TXL_END_MAX
+    ? '<button type="button" class="txl-addend" data-txl-addend="1">+ เพิ่มจุดปลายสาย</button>'
+    : '<div class="txl-note">เพิ่มได้สูงสุด ' + TXL_END_MAX + ' จุดต่อการวัดหนึ่งครั้ง</div>';
+  if(!ends.length){
+    return '<div class="txl-sec">' + head +
+      '<div class="txl-note">วัดแรงดันที่ปลายสายแรงต่ำ แล้วระบบคิด % แรงดันตกเทียบกับที่ขั้วหม้อแปลงให้เอง · ' +
+      'เกณฑ์ตัดสินคือต่ำกว่า ' + TXL_RULES.vEndMin + ' V ถือว่าแรงดันตกเกินมาตรฐาน</div>' +
+      addBtn + '</div>';
+  }
+  const cards = ends.map(e=>{
+    const c = txlEndCalc(e);
+    const feederTag = perFeeder
+      ? '<select class="txl-end-sel" data-txl-endfd="' + e.no + '">' +
+        '<option value="">ไม่ระบุวงจร</option>' +
+        txl.feeders.map(fd=> '<option value="' + fd.no + '"' +
+          (e.feederNo === fd.no ? ' selected' : '') + '>วงจร ' + fd.no + '</option>').join('') +
+        '</select>'
+      : '';
+    const geo = e.lat != null
+      ? escapeHtml(Number(e.lat).toFixed(6) + ', ' + Number(e.lon).toFixed(6)) +
+        (c.dist != null ? ' · ห่างหม้อแปลง ' + fmtDist(c.dist) : '')
+      : 'ยังไม่ได้บันทึกพิกัด';
+    const dr = c.rows.map(r=>
+      '<i class="' + (r.low ? 'bad' : r.drop == null ? '' : '') + '">' +
+        '<b>' + (r.drop == null ? '–' : r.drop + '%') + '</b>' +
+        '<em>' + escapeHtml(r.label) + (r.end == null ? '' : ' · ' + r.end + ' V') + '</em></i>').join('');
+    const srcTxt = c.rows.filter(r=> r.src != null)
+      .map(r=> r.label + ' ' + r.src).join(' · ');
+    return '<div class="txl-end' + (c.low ? ' bad' : '') + '">' +
+      '<div class="txl-end-h"><b>ปลายสาย ' + e.no + '</b>' + feederTag +
+        '<button type="button" class="txl-end-x" data-txl-rmend="' + e.no + '">✕ ลบจุดนี้</button></div>' +
+      '<label class="txl-num wide"><span>จุดที่วัด / เสา</span>' +
+        '<input data-txl-endname="' + e.no + '" value="' + escapeHtml(e.name || '') +
+        '" placeholder="เช่น ALA05-12-14 หน้าร้านค้าชุมชน"></label>' +
+      '<div class="txl-end-geo">' +
+        '<button type="button" data-txl-endgeo="' + e.no + '">📍 บันทึกพิกัด</button>' +
+        '<span>' + geo + '</span></div>' +
+      '<div class="txl-vgrid">' + txlEndKeys(e.no).map(k=> txlValueCard(k, true)).join('') + '</div>' +
+      '<div class="txl-drop"><div class="txl-drop-t">แรงดันตกจากขั้วหม้อแปลง</div>' +
+        '<div class="txl-drop-r">' + dr + '</div>' +
+        '<div class="txl-drop-n">' +
+          (srcTxt ? 'เทียบกับที่ขั้วแรงต่ำ ' + escapeHtml(srcTxt) + ' V — ' : '') +
+          'เกณฑ์ ต่ำกว่า ' + TXL_RULES.vEndMin + ' V ถือว่าตกเกินมาตรฐาน</div>' +
+        (c.vng != null && c.vng > 5
+          ? '<div class="txl-drop-n" style="color:#a86b00;font-weight:700;">VN–G ที่ปลายสาย ' + c.vng +
+            ' V — สูงผิดปกติ ตรวจจุดต่อนิวทรัลและหลักดิน</div>' : '') +
+      '</div></div>';
+  }).join('');
+  const sum = txlEndSummary();
+  const alert = sum.low && sum.worst
+    ? '<div class="txl-alert">⚠ ปลายสาย ' + sum.worst.e.no + ' แรงดันต่ำสุด ' + sum.worst.c.vMin +
+      ' V ต่ำกว่าเกณฑ์ ' + TXL_RULES.vEndMin + ' V — ตรวจขนาดสาย จุดต่อ และการกระจายโหลด</div>'
+    : '';
+  return '<div class="txl-sec">' + head + cards + alert + addBtn + '</div>';
+}
+function txlEndAdd(){
+  const ends = txl.ends || (txl.ends = []);
+  if(ends.length >= TXL_END_MAX) return;
+  const no = ends.length ? Math.max.apply(null, ends.map(e=> e.no)) + 1 : 1;
+  ends.push({ no, name:'', feederNo:null, lat:null, lon:null,
+              va:'', vb:'', vc:'', vng:'', vab:'', vbc:'', vca:'', note:'' });
+  txlRender();
+}
+function txlEndRemove(no){
+  txlEndKeys(no).forEach(k=>{ delete txl.vPhoto[k]; delete txl.vCrop[k]; delete txl.vSrc[k]; });
+  txl.ends = (txl.ends || []).filter(e=> e.no !== no);
+  if(txl.openCrop && txlKeyParts(txl.openCrop).kind === 'e' && txlKeyParts(txl.openCrop).no === no) txl.openCrop = '';
+  txlRender();
+}
+async function txlEndGeo(no){
+  const e = (txl.ends || []).find(x=> x.no === no);
+  if(!e) return;
+  showToast('กำลังหาตำแหน่ง...', 'info');
+  try{
+    const pos = await getQuickPosition();
+    e.lat = pos.lat; e.lon = pos.lon;
+    txlRender();
+    showToast('บันทึกพิกัดปลายสาย ' + no + ' แล้ว', 'ok');
+  }catch(err){ showToast(err.message || 'ระบุตำแหน่งไม่ได้', 'err'); }
+}
+
 function txlLegend(){
   return '<div class="txl-vleg">' +
     '<span><i class="ok">✓</i> มีค่า + มีรูป</span>' +
@@ -3291,6 +3481,7 @@ function txlStepValues(){
   (oc && F.volt.indexOf(oc) < 0 ? cropPanel : '') +
   (!cfg.neutral ? '<div class="txl-note">ระบบ 3 เฟส 3 สาย ไม่มีนิวทรัล จึงคิด kVA จาก √3 × แรงดันเฟส–เฟสเฉลี่ย × กระแสเฉลี่ย</div>' : '') +
   (cfg.phases.length === 1 ? '<div class="txl-note">ระบบ 1 เฟส 2 สาย นิวทรัลรับกระแสเท่าสายเฟสตามธรรมชาติ ระบบจึงไม่ตัดสินเรื่องกระแสนิวทรัลและความไม่สมดุล</div>' : '') +
+  txlEndSection() +
   '<div class="txl-prog"><span>วัดแล้ว <b>' + filled + ' / ' + F.all.length + '</b> ช่อง · มีรูป <b class="g">' + withPh +
     '</b></span><i><em style="width:' + pct + '%"></em></i></div>' +
   '<div class="txl-row2">' +
@@ -3340,6 +3531,27 @@ function txlStampLines(){
   return lines;
 }
 
+/* แถบสรุปปลายสายในขั้นสุดท้าย — ไม่มีจุดก็ไม่ขึ้นอะไรเลย */
+function txlEndSummaryBlock(sum){
+  if(!sum || !sum.n) return '';
+  const tiles =
+    '<div><b>' + (sum.vMin == null ? '–' : sum.vMin + ' V') + '</b><span>ต่ำสุด' +
+      (sum.worst ? ' · ปลายสาย ' + sum.worst.e.no : '') + '</span></div>' +
+    '<div><b>' + (sum.dropMax == null ? '–' : sum.dropMax + '%') + '</b><span>ตกมากสุด</span></div>' +
+    '<div><b>' + sum.n + ' จุด</b><span>ที่วัดปลายสาย</span></div>';
+  const rows = sum.list.map(x=>{
+    const vals = x.c.rows.map(r=> r.end == null ? '—' : r.end).join(' / ');
+    const nm = (x.e.name ? x.e.name : 'ปลายสาย ' + x.e.no) +
+               (x.c.dist != null ? ' (' + fmtDist(x.c.dist) + ')' : '');
+    return '<div class="txl-kv"><span>' + escapeHtml(nm) + '</span><b class="' + (x.c.low ? 'hi' : '') + '">' +
+      escapeHtml(vals) + ' V' + (x.c.dropMax == null ? '' : ' · ตก ' + x.c.dropMax + '%') + '</b></div>';
+  }).join('');
+  return '<div class="txl-sec"><div class="txl-sec-t">แรงดันปลายสาย</div>' +
+    '<div class="txl-endsum">' + tiles + '</div>' + rows +
+    '<div class="txl-note">คิดจากแรงดันที่ขั้วหม้อแปลงในการวัดครั้งเดียวกัน · เกณฑ์ ต่ำกว่า ' +
+      TXL_RULES.vEndMin + ' V ถือว่าแรงดันตกเกินมาตรฐาน</div></div>';
+}
+
 function txlStep4(){
   const c = txlCompute(txlMerged());
   const cls = c.verdict === 'ปกติ' ? 'ok' : (c.verdict === 'โหลดเกินพิกัด' || c.verdict.indexOf('แรงดัน') === 0) ? 'hi' : 'mid';
@@ -3349,6 +3561,9 @@ function txlStep4(){
     txl.recommend['สลับเฟสผู้ใช้ไฟให้สมดุล'] = true;
   if(c.vMin != null && c.vMin < c.vLo && txl.recommend['ตรวจสอบจุดต่อสายแรงต่ำ (แรงดันตก)'] === undefined)
     txl.recommend['ตรวจสอบจุดต่อสายแรงต่ำ (แรงดันตก)'] = true;
+  const endSum = txlEndSummary();
+  if(endSum.low && txl.recommend['แก้ไขแรงดันตกปลายสาย (ขยายสาย/แยกวงจร/ย้ายจุดจ่าย)'] === undefined)
+    txl.recommend['แก้ไขแรงดันตกปลายสาย (ขยายสาย/แยกวงจร/ย้ายจุดจ่าย)'] = true;
 
   const rowsHtml = [
     ['โหลดที่วัดได้', (c.kva == null ? '-' : c.kva) + ' kVA', ''],
@@ -3385,6 +3600,7 @@ function txlStep4(){
         (c.loadPercent == null ? '-' : (c.loadPercent > txl.d.opsa.loadPercent ? 'สูงกว่า ' : 'ต่ำกว่า ') +
           Math.abs(Math.round(c.loadPercent - txl.d.opsa.loadPercent)) + ' จุด') + '</b></div>' : '') +
   '</div>' +
+  txlEndSummaryBlock(endSum) +
   '<div class="txl-sec"><div class="txl-sec-t">ข้อเสนอแนะ <small>— ระบบติ๊กให้ตามผลวัด แก้ได้</small></div>' + recs +
     '<label class="txl-f">หมายเหตุเพิ่มเติม</label>' +
     '<textarea class="txl-in" id="txlNote" rows="2" placeholder="เช่น วัดช่วงบ่าย อากาศร้อนจัด มีโรงงานในวงจร 1">' +
@@ -3511,6 +3727,50 @@ function txlBind(){
   });
   body.querySelectorAll('[data-txl-next]').forEach(b=>{
     b.addEventListener('click', ()=> txlGoStep(parseInt(b.dataset.txlNext, 10)));
+  });
+  body.querySelectorAll('[data-txl-addend]').forEach(b=>{
+    b.addEventListener('click', ()=> txlEndAdd());
+  });
+  body.querySelectorAll('[data-txl-rmend]').forEach(b=>{
+    b.addEventListener('click', ()=> txlEndRemove(parseInt(b.dataset.txlRmend, 10)));
+  });
+  body.querySelectorAll('[data-txl-endgeo]').forEach(b=>{
+    b.addEventListener('click', ()=> txlEndGeo(parseInt(b.dataset.txlEndgeo, 10)));
+  });
+  body.querySelectorAll('[data-txl-endname]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const e = (txl.ends || []).find(x=> x.no === parseInt(inp.dataset.txlEndname, 10));
+      if(e) e.name = inp.value;
+    });
+  });
+  body.querySelectorAll('[data-txl-endfd]').forEach(sel=>{
+    sel.addEventListener('change', ()=>{
+      const e = (txl.ends || []).find(x=> x.no === parseInt(sel.dataset.txlEndfd, 10));
+      if(e) e.feederNo = sel.value ? parseInt(sel.value, 10) : null;
+    });
+  });
+  const memOut = document.getElementById('txlMemOut');
+  if(memOut) memOut.addEventListener('click', ()=>{
+    txlMemExport();
+    showToast('ส่งออกคลังภาพ ' + TXMEM.items.length + ' ภาพแล้ว', 'ok');
+  });
+  const memIn = document.getElementById('txlMemIn');
+  if(memIn) memIn.addEventListener('change', async ()=>{
+    const f = memIn.files && memIn.files[0];
+    memIn.value = '';
+    if(!f) return;
+    try{
+      const n = await txlMemImport(f);
+      showToast('นำเข้าคลังภาพเพิ่ม ' + n + ' ภาพแล้ว', 'ok');
+    }catch(e){ showToast('นำเข้าไม่ได้ — ' + e.message, 'err'); }
+    txlRender();
+  });
+  const memDel = document.getElementById('txlMemDel');
+  if(memDel) memDel.addEventListener('click', async ()=>{
+    if(!confirm('ล้างคลังภาพตัวเลขทั้งหมดในเครื่องนี้? กู้คืนไม่ได้ ถ้ายังไม่ได้ส่งออกไฟล์ไว้')) return;
+    await txlMemClear();
+    showToast('ล้างคลังภาพแล้ว', 'warn');
+    txlRender();
   });
   const save = document.getElementById('txlSaveBtn');
   if(save) save.addEventListener('click', txlSave);
@@ -3651,21 +3911,46 @@ function txlValidate(step){
     // หน้าต่างกว้างเกินไปจะทำให้ขอบจอที่ตัดกับตัวเครื่องกลายเป็นหมึกเป็นแถบหนา
     var r = Math.max(8, Math.min(40, Math.round(Math.min(W, H) / 10)));
     var k = 0.18, R = 128;
-    var bin = new Uint8Array(n), on = 0;
-    for (var y = 0; y < H; y++) {
-      var y0 = Math.max(0, y - r), y1 = Math.min(H, y + r + 1);
-      for (var x = 0; x < W; x++) {
-        var x0 = Math.max(0, x - r), x1 = Math.min(W, x + r + 1);
-        var cnt = (x1 - x0) * (y1 - y0);
-        var mean = boxSum(s1, W, x0, y0, x1, y1) / cnt;
-        var varr = boxSum(s2, W, x0, y0, x1, y1) / cnt - mean * mean;
-        var sd = varr > 0 ? Math.sqrt(varr) : 0;
-        var T = mean * (1 + k * (sd / R - 1));
-        var idx = y * W + x;
-        if (v[idx] < T) { bin[idx] = 1; on++; }
+
+    // ค่าที่จุดนั้นเข้มกว่าบริเวณรอบๆ อยู่เท่าไร — เป็นภาพที่หักพื้นหลังออกแล้ว
+    // แสงไม่เท่ากันทั้งจอหรือมีเงาพาดก็ไม่มีผล เพราะเทียบกับรอบๆ ตัวเองเสมอ
+    var diff = new Float32Array(n), sv = new Uint8Array(n);
+    var y, x, x0, x1, y0, y1, cnt, mean, varr, sd, idx;
+    for (y = 0; y < H; y++) {
+      y0 = Math.max(0, y - r); y1 = Math.min(H, y + r + 1);
+      for (x = 0; x < W; x++) {
+        x0 = Math.max(0, x - r); x1 = Math.min(W, x + r + 1);
+        cnt = (x1 - x0) * (y1 - y0);
+        mean = boxSum(s1, W, x0, y0, x1, y1) / cnt;
+        varr = boxSum(s2, W, x0, y0, x1, y1) / cnt - mean * mean;
+        sd = varr > 0 ? Math.sqrt(varr) : 0;
+        idx = y * W + x;
+        diff[idx] = mean - v[idx];
+        // เกณฑ์เซาโวลาเดิม ใช้ได้ดีกับภาพที่คมชัดอยู่แล้ว
+        if (v[idx] < mean * (1 + k * (sd / R - 1))) sv[idx] = 1;
       }
     }
-    return { bin: bin, ink: on, inkDark: inkDark };
+
+    // เกณฑ์ว่าต้องเข้มกว่ารอบๆ เท่าไรถึงนับเป็นหมึก เลือกเองจากการกระจายของค่าส่วนต่าง
+    // ในบริเวณกลางกรอบด้วยวิธีของโอสึ จอที่ถ่ายมาจางมากจนตัวเลขเข้มกว่าพื้นแค่นิดเดียว
+    // ก็ยังแยกออก โดยไม่ต้องตั้งค่าความคมชัดตายตัวไว้ล่วงหน้า
+    var ds = [];
+    for (y = cy0; y < cy1; y++) for (x = cx0; x < cx1; x++) { var dv = diff[y * W + x]; if (dv > 0) ds.push(dv); }
+    var thrD = 0;
+    if (ds.length > 50) {
+      ds.sort(function (a, b) { return a - b; });
+      var hi = ds[Math.floor(ds.length * 0.995)] || 1;
+      var scaled = new Float32Array(ds.length);
+      for (i = 0; i < ds.length; i++) scaled[i] = Math.min(255, ds[i] * 255 / hi);
+      thrD = otsu(scaled) * hi / 255;
+    }
+    // พื้นขั้นต่ำกันภาพที่ไม่มีตัวเลขเลยกลายเป็นจุดรบกวนเต็มไปหมด
+    thrD = Math.max(4, thrD);
+
+    // นับเป็นหมึกถ้าผ่านเกณฑ์ใดเกณฑ์หนึ่ง — เกณฑ์ใหม่ช่วยภาพจาง เกณฑ์เดิมช่วยภาพคม
+    var bin = new Uint8Array(n), on = 0;
+    for (i = 0; i < n; i++) if (sv[i] || diff[i] >= thrD) { bin[i] = 1; on++; }
+    return { bin: bin, ink: on, inkDark: inkDark, thrD: thrD };
   }
 
   /* เส้นแบ่งสว่าง-มืดของภาพ ตามวิธีของโอสึ */
@@ -3783,7 +4068,7 @@ function txlValidate(step){
   }
 
   /* อ่านทีละหลัก: ส่องทั้ง 7 ตำแหน่งว่าขีดไหนติด แล้วเปิดตาราง */
-  function readDigit(bin, W, box, thick) {
+  function readDigit(bin, W, box, thick, slope) {
     var bw = box.x1 - box.x0 + 1, bh = box.y1 - box.y0 + 1;
     var tk = thick > 0 ? thick : Math.max(2, bh * 0.12);
     // ตัวเลข 1 มีแค่ขีดตั้งสองเส้นซ้อนกัน กล่องจึงผอมกว่าหลักอื่นมาก
@@ -3793,6 +4078,10 @@ function txlValidate(step){
       if (bw <= tk * 2.8) return { ch: '1', ok: true, conf: 1, narrow: true };
       return { ch: '?', ok: false, conf: 0, tooWide: true };
     }
+    // ตัวเลขบนจอ 7 ขีดสูงกว่ากว้างเสมอ กว้างราว 0.5–0.65 เท่าของความสูง
+    // ถ้ากล่องกว้างเกือบเท่าความสูง สิ่งนั้นไม่ใช่ตัวเลข แต่เป็นกรอบสี่เหลี่ยมอย่างอื่น
+    // เช่นกรอบป้าย Bluetooth บนตัวเครื่อง ซึ่งกลวงตรงกลางเหมือนเลข 0 เป๊ะ
+    if (bw / bh > 0.82) return { ch: '?', ok: false, conf: 0, wideBox: true };
 
     // ถ้าขีดบาง ช่องที่ไปส่องจะมีหมึกไม่เต็มแม้ขีดนั้นติดอยู่ จึงต้องเทียบกับ
     // สัดส่วนที่ "ควรจะเป็น" ของขีดที่ติดจริง ไม่ใช่เทียบกับเลขคงที่
@@ -3803,14 +4092,27 @@ function txlValidate(step){
     // ตัวเลข 7 ขีดทุกตัวมีช่องว่างกลางตัวเสมอ ทั้งช่วงบนและช่วงล่าง
     // ถ้าตรงนั้นทึบ แปลว่าไม่ใช่ตัวเลขแต่เป็นก้อนสีเดียว เช่นเงาหรือขอบตัวเครื่อง
     // เช็กตรงนี้สำคัญมาก ไม่งั้นพื้นที่ทึบจะถูกอ่านเป็นเลข 8 ซึ่งดูน่าเชื่อแต่ผิดสนิท
-    var holeFilled = function (hx0, hy0, hx1, hy1) {
+    // ภาพถ่ายด้วยมือมักเอียง ตัวเลขจึงเอียงตามไปทั้งแถว
+    // เวลาไปส่องแต่ละขีดต้องเลื่อนตำแหน่งตามความเอียงด้วย ไม่งั้นจะส่องไปโดนช่องว่าง
+    var sl = slope || 0, ycMid = (box.y0 + box.y1) / 2;
+    var H2 = bin.length / W;
+    var fillOf = function (hx0, hy0, hx1, hy1) {
       var ax0 = box.x0 + Math.round(hx0 * bw), ax1 = box.x0 + Math.round(hx1 * bw);
       var ay0 = box.y0 + Math.round(hy0 * bh), ay1 = box.y0 + Math.round(hy1 * bh);
-      if (ax1 <= ax0 || ay1 <= ay0) return 0;
+      if (ax1 <= ax0) ax1 = ax0 + 1;
+      if (ay1 <= ay0) ay1 = ay0 + 1;
       var on = 0, tot = 0;
-      for (var y = ay0; y < ay1; y++) for (var x = ax0; x < ax1; x++) { on += bin[y * W + x]; tot++; }
+      for (var y = ay0; y < ay1; y++) {
+        if (y < 0 || y >= H2) continue;
+        var sh = Math.round((ycMid - y) * sl);
+        for (var x = ax0 + sh; x < ax1 + sh; x++) {
+          if (x < 0 || x >= W) { tot++; continue; }
+          on += bin[y * W + x]; tot++;
+        }
+      }
       return tot ? on / tot : 0;
     };
+    var holeFilled = fillOf;
     if (holeFilled(0.36, 0.20, 0.64, 0.38) > 0.55 && holeFilled(0.36, 0.62, 0.64, 0.80) > 0.55) {
       return { ch: '?', ok: false, conf: 0, solid: true };
     }
@@ -3821,15 +4123,7 @@ function txlValidate(step){
       var exp = (nm === 'a' || nm === 'd' || nm === 'g') ? expH : expV;
       var hiT = ON_HI * exp, loT = ON_LO * exp;
       var r = SEG_BOX[nm];
-      var x0 = box.x0 + Math.round(r[0] * bw), x1 = box.x0 + Math.round(r[2] * bw);
-      var y0 = box.y0 + Math.round(r[1] * bh), y1 = box.y0 + Math.round(r[3] * bh);
-      if (x1 <= x0) x1 = x0 + 1;
-      if (y1 <= y0) y1 = y0 + 1;
-      var on = 0, tot = 0;
-      for (var y = y0; y < y1; y++) {
-        for (var x = x0; x < x1; x++) { on += bin[y * W + x]; tot++; }
-      }
-      var frac = tot ? on / tot : 0;
+      var frac = fillOf(r[0], r[1], r[2], r[3]);
       if (frac >= hiT) { bits += '1'; worst = Math.min(worst, Math.min(1, (frac - hiT) / (0.2 * exp) + 0.5)); }
       else if (frac <= loT) { bits += '0'; worst = Math.min(worst, Math.min(1, (loT - frac) / (0.12 * exp) + 0.5)); }
       else { bits += '?'; worst = 0; }
@@ -3838,6 +4132,43 @@ function txlValidate(step){
     var ch = SEG_MAP[bits];
     if (ch === undefined || ch === ' ') return { ch: '?', ok: false, conf: 0, bits: bits };
     return { ch: ch, ok: true, conf: worst, bits: bits };
+  }
+
+
+  /* ตัดภาพของหลักหนึ่งตัวออกมาเป็นขนาดมาตรฐาน แล้วปรับความสว่าง-คอนทราสต์ให้เทียบกันได้
+     จอสว่างกับจอมืดจะได้เทียบกันตรงๆ ใช้ทั้งตอนเก็บเข้าคลังและตอนเอาไปเทียบ
+     ต้องใช้ฟังก์ชันเดียวกันทั้งสองทาง ไม่งั้นภาพที่เก็บกับภาพที่ถามจะคนละมาตรฐาน */
+  var PATCH_W = 24, PATCH_H = 40;
+  function patchOf(g, W, H, box) {
+    var bw = box.x1 - box.x0 + 1, bh = box.y1 - box.y0 + 1;
+    var mx = bw * 0.12, my = bh * 0.08;
+    var x0 = box.x0 - mx, y0 = box.y0 - my, ww = bw + mx * 2, hh = bh + my * 2;
+    var out = new Float32Array(PATCH_W * PATCH_H), px, py, xx, yy;
+    for (py = 0; py < PATCH_H; py++) {
+      var b0 = Math.floor(y0 + hh * py / PATCH_H), b1 = Math.ceil(y0 + hh * (py + 1) / PATCH_H) - 1;
+      if (b1 < b0) b1 = b0;
+      for (px = 0; px < PATCH_W; px++) {
+        var a0 = Math.floor(x0 + ww * px / PATCH_W), a1 = Math.ceil(x0 + ww * (px + 1) / PATCH_W) - 1;
+        if (a1 < a0) a1 = a0;
+        var s = 0, n = 0;
+        for (yy = b0; yy <= b1; yy++) {
+          if (yy < 0 || yy >= H) continue;
+          for (xx = a0; xx <= a1; xx++) {
+            if (xx < 0 || xx >= W) continue;
+            s += g[yy * W + xx]; n++;
+          }
+        }
+        out[py * PATCH_W + px] = n ? s / n : 128;
+      }
+    }
+    var i, m = 0;
+    for (i = 0; i < out.length; i++) m += out[i];
+    m /= out.length;
+    var v = 0;
+    for (i = 0; i < out.length; i++) v += (out[i] - m) * (out[i] - m);
+    v = Math.sqrt(v / out.length) || 1;
+    for (i = 0; i < out.length; i++) out[i] = (out[i] - m) / v;
+    return out;
   }
 
   /* ---------- ตัวหลัก ---------- */
@@ -3905,27 +4236,33 @@ function txlValidate(step){
   }
 
   /* อ่านตัวเลขจากแถวที่กำหนด — คืนผลพร้อมคะแนนว่าน่าเชื่อแค่ไหน */
-  function readBand(binSrc, lab, keep, W, H, band, opt) {
+  function readBand(binSrc, lab, keep, W, H, band, opt, pan, depth) {
+    depth = depth || 0;
     var bandH = band.y1 - band.y0 + 1;
     if (bandH < 12) return null;
     var bin = binSrc.slice();
     var expectW = bandH * 0.58;
 
-    // จุดทศนิยมกับเศษรบกวน เอาออกก่อนแบ่งหลัก
-    var dots = [], bi, c, cw, ch2, aspect;
+    // เอาก้อนเล็กออกก่อนแบ่งหลัก แต่ยังไม่ตัดสินว่าอันไหนเป็นจุดทศนิยม
+    // ต้องรู้ความสูงตัวเลขจริงกับตำแหน่งของแต่ละหลักเสียก่อน ถึงจะบอกได้ว่า
+    // ก้อนนี้เป็นจุดทศนิยมที่นั่งอยู่ในช่องว่างระหว่างหลัก หรือเป็นแค่เศษรบกวน
+    // เดิมใช้ความสูงของแถบเป็นเกณฑ์ ซึ่งพลาดบ่อยเมื่อแถบกินแถวอื่นเข้ามาด้วย
+    // จุดทศนิยมจริงบนจอ HIOKI สูงราว 0.10 เท่าของตัวเลข ถ้าตั้งพื้นไว้สูงกว่านั้นจะโดนลบทิ้ง
+    var dotCand = [], dots = [], bi, c, cw, ch2, aspect;
     for (bi = 0; bi < keep.length; bi++) {
       c = keep[bi];
       if (c.y1 < band.y0 || c.y0 > band.y1) continue;
       cw = c.x1 - c.x0 + 1; ch2 = c.y1 - c.y0 + 1;
-      if (Math.max(cw, ch2) < bandH * 0.09) { erase(bin, lab, c.id); continue; }
+      var mx = Math.max(cw, ch2);
       aspect = cw / ch2;
-      // จุดทศนิยมจริงเล็กราว 0.10–0.15 เท่าของความสูงตัวเลข ตั้งเพดานไว้ 0.22 พอ
-      // ถ้าปล่อยถึง 0.30 ตัวอักษรหน่วยอย่าง V จะถูกนับเป็นจุดทศนิยมไปด้วย
-      if (aspect >= 0.5 && aspect <= 2.0 && cw <= bandH * 0.22 && ch2 <= bandH * 0.22 &&
-          c.y1 >= band.y0 + bandH * 0.60) {
-        dots.push({ x: (c.x0 + c.x1) / 2 });
+      var dotish = aspect >= 0.45 && aspect <= 2.2 && mx <= bandH * 0.26 &&
+                   c.y1 >= band.y0 + bandH * 0.40;
+      if (dotish && mx >= bandH * 0.035) {
+        dotCand.push({ x: (c.x0 + c.x1) / 2, y1: c.y1, sz: mx });
         erase(bin, lab, c.id);
+        continue;
       }
+      if (mx < bandH * 0.09) { erase(bin, lab, c.id); }
     }
 
     var runs = columnRuns(bin, W, band.y0, band.y1);
@@ -3966,6 +4303,45 @@ function txlValidate(step){
     }
     items = split;
 
+    var digitBoxes = items.slice();
+    if (!digitBoxes.length || digitBoxes.length > 8) return null;
+
+    var hs = digitBoxes.map(function (d) { return d.y1 - d.y0 + 1; }).sort(function (a2, c2) { return a2 - c2; });
+    var medH = hs[Math.floor(hs.length / 2)];
+    // ความสูงของช่องตัวเลขเต็ม — เอาหลักที่สูงสุดในแถว แต่ไม่ให้เกินค่ากลางมากนัก
+    // กันกรณีที่มีหลักหนึ่งถูกลากยาวลงไปชนเลขแถวล่างจนสูงผิดปกติ
+    var cellH = Math.min(hs[hs.length - 1], Math.round(medH * 1.25));
+    var bs = digitBoxes.map(function (d) { return d.y1; }).sort(function (a2, c2) { return a2 - c2; });
+    var base = bs[Math.floor(bs.length / 2)];
+    var ts = digitBoxes.map(function (d) { return d.y0; }).sort(function (a2, c2) { return a2 - c2; });
+    var top = ts[Math.floor(ts.length / 2)];
+
+    // รัดแถบให้พอดีกับแถวตัวเลขจริง แล้วอ่านซ้ำอีกรอบ
+    // จอเครื่องวัดมีหลายแถว ถ้าแถบกินแถวล่างเข้ามา หลักท้ายจะถูกลากยาวลงไปชนเลขแถวล่าง
+    // กลายเป็นกล่องสูงผิดปกติจนอ่านไม่ออก และจุดทศนิยมก็ติดไปอยู่ในกล่องเดียวกัน
+    var tighter = null;
+    if (depth === 0) {
+      var ny0 = Math.max(band.y0, top - Math.round(medH * 0.10));
+      var ny1 = Math.min(band.y1, base + Math.round(medH * 0.10));
+      if (ny1 - ny0 + 1 >= 12 && ny1 - ny0 + 1 < bandH * 0.92) {
+        tighter = readBand(binSrc, lab, keep, W, H, { y0: ny0, y1: ny1, ink: band.ink }, opt, pan, 1);
+      }
+    }
+
+    // ตัดสินจุดทศนิยมตอนนี้ เมื่อรู้ความสูงตัวเลขกับเส้นฐานแล้ว
+    // เงื่อนไข: ขนาดพอๆ กับจุดจริง · นั่งอยู่ระดับเส้นฐาน · และอยู่ในช่องว่าง "ระหว่าง" หลัก
+    // ข้อสุดท้ายสำคัญที่สุด เพราะตัดเศษรบกวนที่ลอยอยู่นอกแถวตัวเลขออกได้หมด
+    // และกันจุดนำหน้าหรือปิดท้ายซึ่งบนหน้าปัดจริงไม่มีทางเกิด
+    for (var dc = 0; dc < dotCand.length; dc++) {
+      var cd = dotCand[dc];
+      if (cd.sz < medH * 0.05 || cd.sz > medH * 0.30) continue;
+      if (cd.y1 < base - medH * 0.32 || cd.y1 > base + medH * 0.22) continue;
+      var inGap = false;
+      for (var gi = 0; gi + 1 < digitBoxes.length; gi++) {
+        if (cd.x > digitBoxes[gi].x1 && cd.x < digitBoxes[gi + 1].x0) { inGap = true; break; }
+      }
+      if (inGap) dots.push({ x: cd.x });
+    }
     for (var di = 0; di < dots.length; di++) {
       var dx2 = dots[di].x, at = items.length;
       for (var ii = 0; ii < items.length; ii++) {
@@ -3974,18 +4350,27 @@ function txlValidate(step){
       items.splice(at, 0, { kind: 'dot', x0: dx2, x1: dx2 });
     }
 
-    // จุดทศนิยมต้องอยู่ระหว่างตัวเลขเสมอ — บนหน้าปัดไม่มีทางมีจุดนำหน้าหรือปิดท้าย
-    // ตัวที่โผล่หัวหรือท้ายมักเป็นสัญลักษณ์อื่นที่ติดกรอบเข้ามา เช่นหน่วย V
-    var fi = -1, li = -1, w2;
-    for (w2 = 0; w2 < items.length; w2++) if (items[w2].kind === 'digit') { if (fi < 0) fi = w2; li = w2; }
-    if (fi < 0) return null;
-    items = items.filter(function (x, idx) { return x.kind === 'digit' || (idx > fi && idx < li); });
-
-    var digitBoxes = items.filter(function (x) { return x.kind === 'digit'; });
-    if (!digitBoxes.length || digitBoxes.length > 8) return null;
-
-    var hs = digitBoxes.map(function (d) { return d.y1 - d.y0 + 1; }).sort(function (a2, c2) { return a2 - c2; });
-    var medH = hs[Math.floor(hs.length / 2)];
+    // เส้นฐานของแถว — ลากเส้นตรงผ่านขอบล่างของหลักที่สูงเต็มเท่านั้น
+    // ถ่ายด้วยมือย่อมเอียงเล็กน้อยเสมอ ความชันของเส้นนี้คือความเอียงของทั้งแถว
+    // ใช้ทั้งเลื่อนตำแหน่งตอนส่องขีด และกำหนดกรอบมาตรฐานให้ทุกหลัก
+    var full = digitBoxes.filter(function (d) {
+      var hh2 = d.y1 - d.y0 + 1;
+      return hh2 >= medH * 0.92 && hh2 <= medH * 1.12;
+    });
+    if (full.length < 2) full = digitBoxes;
+    var slope = 0, inter = base;
+    if (full.length >= 2) {
+      var sx = 0, sy = 0, sxx = 0, sxy = 0, nn = full.length, gq;
+      for (gq = 0; gq < nn; gq++) {
+        var mx2 = (full[gq].x0 + full[gq].x1) / 2;
+        sx += mx2; sy += full[gq].y1; sxx += mx2 * mx2; sxy += mx2 * full[gq].y1;
+      }
+      var den = nn * sxx - sx * sx;
+      if (den !== 0) slope = (nn * sxy - sx * sy) / den;
+      if (!isFinite(slope) || Math.abs(slope) > 0.45) slope = 0;
+      inter = (sy - slope * sx) / nn;
+    }
+    var baseAt = function (xc) { return inter + slope * xc; };
 
     var thick = strokeThickness(bin, W, band.y0, band.y1);
     // ตัวเลขบนจอ 7 ขีด สูงราว 4–12 เท่าของความหนาขีดเสมอ ไม่ว่าจอไหนยี่ห้อไหน
@@ -3996,13 +4381,36 @@ function txlValidate(step){
     for (k = 0; k < items.length; k++) {
       var it = items[k];
       if (it.kind === 'dot') { text += '.'; continue; }
+      // ทุกหลักบนแถวเดียวกันนั่งบนเส้นฐานเดียวกันและสูงเท่ากัน จึงใช้กรอบมาตรฐาน
+      // ไม่ใช้ขอบหมึกของหลักนั้นเอง เพราะเลข 4 กับ 7 ไม่มีขีดล่าง ขอบหมึกจึงสั้นกว่าตัวอื่น
+      // ถ้าใช้ขอบหมึกของมันเอง ช่องที่ไปส่องขีดล่างจะเลื่อนขึ้นไปโดนปลายขีดข้าง แล้วอ่านเป็น ? ทุกที
       var box = { x0: it.x0, x1: it.x1, y0: it.y0, y1: it.y1 };
-      if ((box.y1 - box.y0 + 1) < medH * 0.8) {
+      // หลักที่เตี้ยกว่าเพื่อนต้องขยายกรอบให้เท่าช่องตัวเลขเต็มก่อน
+      // เลข 4 กับ 7 ไม่มีขีดล่าง ขอบหมึกจึงสั้นกว่าตัวอื่น ถ้าใช้ขอบหมึกของมันเอง
+      // ช่องที่ไปส่องขีดล่างจะเลื่อนขึ้นไปโดนปลายขีดข้าง แล้วอ่านเป็น ? ทุกครั้งที่เจอเลข 4
+      // เทียบกับความสูงของช่องเต็ม ไม่ใช่ค่ากลาง เพราะถ้าในแถวมีเลข 4 หรือ 7 หลายตัว
+      // ค่ากลางจะเป็นความสูงของตัวที่เตี้ย แล้วจะไม่มีหลักไหนถูกขยายเลย
+      var hgt = box.y1 - box.y0 + 1;
+      if (hgt < cellH * 0.92) {
         var cy = (box.y0 + box.y1) / 2;
-        box.y0 = Math.max(band.y0, Math.round(cy - medH / 2));
-        box.y1 = Math.min(band.y1, Math.round(cy + medH / 2));
+        box.y0 = Math.max(band.y0, Math.round(cy - cellH / 2));
+        box.y1 = Math.min(band.y1, Math.round(cy + cellH / 2));
       }
-      var d = readDigit(bin, W, box, thick);
+      var d = readDigit(bin, W, box, thick, slope);
+      // ตัดภาพหลักนี้เก็บไว้เฉพาะเท่าที่จำเป็น เพราะทำทุกหลักทุกแถบจะช้าบนมือถือ
+      //  · ตอนอ่านปกติ ทำเฉพาะหลักที่อ่านไม่ออก เพื่อเอาไปเทียบกับคลัง
+      //  · ตอนช่างกดยืนยัน แอปสั่งอ่านซ้ำด้วย wantPatch เพื่อเก็บภาพทุกหลักเข้าคลัง
+      if (opt._gray && (opt.wantPatch || (!d.ok && typeof opt.mem === 'function')))
+        d.patch = patchOf(opt._gray, W, H, box);
+      // หลักที่ขีดไม่ชัดจนตัดสินไม่ได้ ลองเทียบกับภาพที่เคยยืนยันไว้ในคลัง
+      // ยอมรับเฉพาะตอนที่ชนะเลขอื่นขาดลอยเท่านั้น ก้ำกึ่งเมื่อไรให้คนอ่านเอง
+      if (!d.ok && d.patch && typeof opt.mem === 'function') {
+        var mg = opt.mem(d.patch);
+        if (mg && mg.ch != null) {
+          d = { ch: mg.ch, ok: true, conf: 0.6, fromMem: true,
+                margin: mg.margin, patch: d.patch };
+        }
+      }
       d.x0 = box.x0; d.x1 = box.x1;
       digits.push(d);
       text += d.ch;
@@ -4014,11 +4422,81 @@ function txlValidate(step){
     var ok = okAll && value != null;
     var reason = okAll ? (value == null ? 'อ่านได้แต่ประกอบเป็นตัวเลขไม่ได้' : '') : 'บางหลักไม่ชัด';
 
+    // หน้าปัดเครื่องวัดไม่เคยโชว์เลขศูนย์นำหน้า มีแต่ 0.42 หรือ 0.07 เท่านั้น
+    // ถ้าได้อย่าง 00.0 แปลว่าหลักหน้าหายไปหนึ่งตัว (จริงๆ คือ 100.0) ซึ่งดูน่าเชื่อแต่ผิด
+    if (ok && /^0[0-9]/.test(text)) {
+      ok = false;
+      reason = 'อ่านได้ ' + text + ' ซึ่งขึ้นต้นด้วยศูนย์ — หน้าปัดไม่แสดงแบบนี้ แปลว่าหลักหน้าน่าจะหายไป';
+    }
+
     var dotCount = (text.match(/\./g) || []).length;
     if (ok && (dotCount > 1 || /^\.|\.$/.test(text))) {
       ok = false;
       reason = 'อ่านได้ ' + text + ' ซึ่งไม่ใช่รูปแบบตัวเลข — กรอบน่าจะกินสัญลักษณ์อื่นเข้ามา ลากกรอบให้เหลือเฉพาะตัวเลข';
     }
+    // หมึกชนขอบซ้ายหรือขวาของภาพที่วิเคราะห์ ในระดับความสูงเดียวกับตัวเลข
+    // แปลว่ากรอบน่าจะตัดหลักหน้าหรือหลักท้ายออกไป ค่าที่อ่านได้จะดูสมเหตุสมผลแต่ขาดไปหนึ่งหลัก
+    // เช่นอ่าน 235 ทั้งที่จริงเป็น 235.2 ซึ่งอันตรายกว่าการอ่านไม่ออกมาก จึงต้องปฏิเสธ
+    if (ok) {
+      var edgeH = function (colFrom, colTo) {
+        var tall = 0;
+        for (var ex2 = colFrom; ex2 <= colTo; ex2++) {
+          if (ex2 < 0 || ex2 >= W) continue;
+          var run = 0, bestRun = 0;
+          for (var ey = band.y0; ey <= band.y1; ey++) {
+            if (bin[ey * W + ex2]) { run++; if (run > bestRun) bestRun = run; } else run = 0;
+          }
+          if (bestRun > tall) tall = bestRun;
+        }
+        return tall;
+      };
+      // ขอบที่ใช้ได้จริง — ถ้าตัดเฉพาะในหน้าจอไว้ ขอบคือขอบหน้าจอ ไม่ใช่ขอบภาพ
+      var ux0 = pan ? pan.x0 + 2 : 0, ux1 = pan ? pan.x1 - 2 : W - 1;
+      var span = Math.max(4, Math.round(medH * 0.06));
+      // หน่วยอย่างตัว V ที่ติดกรอบมาด้วยจะสูงราว 0.15–0.2 เท่าของตัวเลข
+      // ส่วนหลักที่โดนตัดจะเหลือขีดสูงกว่านั้นเสมอ ใช้เส้นแบ่งตรงนี้คัดออก
+      var need = medH * 0.25;
+      if (edgeH(ux0, ux0 + span) >= need || edgeH(ux1 - span, ux1) >= need) {
+        ok = false;
+        reason = 'กรอบตัดตัวเลขขาดที่ริมซ้ายหรือขวา — ขยับกรอบให้ครอบตัวเลขทั้งแถว แล้วอ่านใหม่';
+      }
+    }
+    // ด้านซ้ายของหลักแรกต้องว่าง — บนหน้าปัดไม่มีสัญลักษณ์ใดนำหน้าตัวเลข
+    // ถ้ายังมีขีดสูงๆ ค้างอยู่ แปลว่ามีหลักหนึ่งหลุดไปจากการแบ่ง เช่นเลข 1 ที่ผอมมาก
+    // ปล่อยไว้จะได้ค่าอย่าง 00.0 ทั้งที่จริงเป็น 100.0 ซึ่งดูสมเหตุสมผลแต่ผิด
+    if (ok) {
+      var lead = 0, lx = Math.round(digitBoxes[0].x0 - medH * 0.08);
+      for (var ex3 = Math.max(0, pan ? pan.x0 + 2 : 0); ex3 < lx; ex3++) {
+        var run3 = 0, best3 = 0;
+        for (var ey3 = band.y0; ey3 <= band.y1; ey3++) {
+          if (bin[ey3 * W + ex3]) { run3++; if (run3 > best3) best3 = run3; } else run3 = 0;
+        }
+        if (best3 > lead) lead = best3;
+      }
+      if (lead >= medH * 0.30) {
+        ok = false;
+        reason = 'ยังมีขีดค้างอยู่ทางซ้ายของหลักแรก — อาจมีตัวเลขหลุดไปหนึ่งหลัก ลากกรอบใหม่แล้วอ่านอีกครั้ง';
+      }
+    }
+    // ทางขวาก็เช่นกัน แต่ผ่อนกว่า เพราะหน่วยอย่างตัว V มักติดกรอบมาด้วยเสมอ
+    // ตัว V สูงราว 0.2 เท่าของตัวเลข ส่วนหลักที่หลุดไปจะเหลือขีดสูงกว่านั้นมาก
+    if (ok) {
+      var trail = 0, rx = Math.round(digitBoxes[digitBoxes.length - 1].x1 + medH * 0.08);
+      var rlim = pan ? pan.x1 - 2 : W - 1;
+      for (var ex4 = rx; ex4 <= rlim; ex4++) {
+        if (ex4 < 0 || ex4 >= W) continue;
+        var run4 = 0, best4 = 0;
+        for (var ey4 = band.y0; ey4 <= band.y1; ey4++) {
+          if (bin[ey4 * W + ex4]) { run4++; if (run4 > best4) best4 = run4; } else run4 = 0;
+        }
+        if (best4 > trail) trail = best4;
+      }
+      if (trail >= medH * 0.55) {
+        ok = false;
+        reason = 'ยังมีขีดค้างอยู่ทางขวาของหลักสุดท้าย — อาจมีตัวเลขหลุดไปหนึ่งหลัก ลากกรอบใหม่แล้วอ่านอีกครั้ง';
+      }
+    }
+
     var realH = medH / (opt.scale > 0 ? opt.scale : 1);
     if (ok && realH < 24) {
       ok = false;
@@ -4039,9 +4517,11 @@ function txlValidate(step){
 
     var xs0 = Math.min.apply(null, digitBoxes.map(function (d4) { return d4.x0; }));
     var xs1 = Math.max.apply(null, digitBoxes.map(function (d5) { return d5.x1; }));
-    return { text: text, value: value, digits: digits, ok: ok, reason: reason,
-             band: band, score: score, medH: medH,
-             box: { x0: xs0, x1: xs1, y0: band.y0, y1: band.y1 } };
+    var out = { text: text, value: value, digits: digits, ok: ok, reason: reason,
+                band: band, score: score, medH: medH,
+                box: { x0: xs0, x1: xs1, y0: band.y0, y1: band.y1 } };
+    // เลือกผลที่ดีกว่าระหว่างแถบเดิมกับแถบที่รัดให้พอดีแล้ว
+    return (tighter && tighter.score > out.score) ? tighter : out;
   }
 
   function read(img, opt) {
@@ -4092,6 +4572,7 @@ function txlValidate(step){
 
     // หาแถวที่เป็นไปได้ทั้งหมด แล้วลองอ่านทีละแถว เลือกแถวที่ให้ผลดีที่สุด
     // จำเป็นเพราะในกรอบมักติดแถวอื่นของจอมาด้วย เช่น ค่าพีคหรือความถี่ที่อยู่คนละบรรทัด
+    opt._gray = g;
     var bands = rowBands(b.bin, W, H);
     if (!bands.length) return fail('หาแถวตัวเลขไม่เจอ');
 
@@ -4112,12 +4593,12 @@ function txlValidate(step){
 
     var best = null;
     for (i = 0; i < cands.length; i++) {
-      var r = readBand(b.bin, bl.lab, keep, W, H, cands[i], opt);
+      var r = readBand(b.bin, bl.lab, keep, W, H, cands[i], opt, pan);
       if (r && (!best || r.score > best.score)) best = r;
       // ไล่ให้ครบทุกแถบ อย่าเพิ่งหยุดที่แถบแรกที่อ่านออก
       // เพราะแถบที่กินแถวอื่นเข้ามามักอ่านออกเหมือนกัน แค่ได้ตัวเลขไม่ครบ (จุดทศนิยมหาย)
     }
-    if (!best) return fail('อ่านตัวเลขไม่ออก — ลองถ่ายใกล้ขึ้นให้หน้าปัดเต็มกรอบ หรือลากกรอบให้เหลือเฉพาะตัวเลขแล้วกดอ่านใหม่');
+    if (!best) return fail('ในกรอบไม่มีตัวเลขที่อ่านได้');
     best.inkDark = b.inkDark;
     best.panel = pan || null;
     best.width = W; best.height = H;
@@ -4128,7 +4609,7 @@ function txlValidate(step){
     return { text: '', value: null, digits: [], ok: false, reason: reason };
   }
 
-  root.txlSegOcr = { read: read, SEG_MAP: SEG_MAP };
+  root.txlSegOcr = { read: read, SEG_MAP: SEG_MAP, PATCH_W: PATCH_W, PATCH_H: PATCH_H };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 
@@ -4141,8 +4622,7 @@ const TXL_OCR_RANGE = {
   ia:{min:0,max:4000}, ib:{min:0,max:4000}, ic:{min:0,max:4000}, in:{min:0,max:4000}
 };
 function txlOcrRange(key){
-  const base = String(key).replace(/^f\d+\./, '');
-  return TXL_OCR_RANGE[base] || {};
+  return TXL_OCR_RANGE[txlKeyParts(key).base] || {};
 }
 
 /* ==========================================================================
@@ -4330,6 +4810,178 @@ function txlCapBindFrameDrag(){
   document.addEventListener('mouseup', end);
 }
 
+/* ==========================================================================
+ *  คลังภาพตัวเลข — ให้ระบบเรียนรู้จากการวัดจริง โดยช่างไม่ต้องทำอะไรเพิ่ม
+ *
+ *  แนวคิด: ทุกครั้งที่ช่างกดยืนยันค่า เรารู้แน่นอนแล้วว่าภาพแต่ละหลักคือเลขอะไร
+ *  เพราะคนเป็นคนยืนยัน จึงเก็บภาพหลักนั้นคู่กับเลขไว้ ครั้งต่อไปเจอหลักที่ขีดไม่ชัด
+ *  จนตัดสินไม่ได้ ก็เอาไปเทียบว่าหน้าตาเหมือนภาพไหนในคลังมากที่สุด
+ *
+ *  กติกากันเรียนผิด — สำคัญกว่าความแม่น เพราะค่าที่ผิดแล้วดูน่าเชื่อคืออันตรายที่สุด
+ *   · เก็บเฉพาะตอนจำนวนหลักที่ตัดได้ตรงกับค่าที่ช่างพิมพ์เป๊ะ ไม่งั้นป้ายกำกับจะเลื่อน
+ *   · ต้องมีรูปหน้าปัดจริง ค่าที่พิมพ์เองล้วนไม่เก็บ
+ *   · ตอนเอาไปใช้ ต้องชนะเลขอันดับสองอย่างขาดลอย ก้ำกึ่งเมื่อไรให้คนอ่านเอง
+ *   · ใช้ได้เฉพาะกับหลักที่อ่านไม่ออก ไม่เอาไปทับผลที่ขีดชัดเจนอยู่แล้ว
+ *
+ *  เก็บในเครื่องนี้เท่านั้น (IndexedDB) ไม่ได้ส่งขึ้นระบบ — ส่งออกเป็นไฟล์เพื่อแบ่งให้
+ *  เครื่องอื่นหรือส่งมาฝึกตัวอ่านรุ่นใหม่ได้
+ * ========================================================================== */
+const TXMEM = {
+  items: [],            // { label:'0'..'9', d:Int8Array(960), model, at }
+  loaded: false,
+  perLabel: 150,        // เก็บต่อเลขไม่เกินเท่านี้ ตัวเก่าสุดหลุดออกก่อน
+  margin: 1.35,         // ต้องชนะเลขอันดับสองกี่เท่าจึงยอมรับ
+  minSame: 3            // เลขนั้นต้องมีตัวอย่างในคลังอย่างน้อยกี่ภาพ
+};
+function txlMemQ(mode, fn){
+  return new Promise(async (res, rej)=>{
+    try{
+      if(!txlDb) await txlOpenDb();
+      const tx = txlDb.transaction('ocrMem', mode);
+      const rq = fn(tx.objectStore('ocrMem'));
+      rq.onsuccess = ()=> res(rq.result);
+      rq.onerror = ()=> rej(rq.error);
+    }catch(e){ rej(e); }
+  });
+}
+async function txlMemLoad(){
+  if(TXMEM.loaded) return TXMEM.items;
+  try{
+    const rows = await txlMemQ('readonly', s=> s.getAll()) || [];
+    TXMEM.items = rows.map(r=> ({ id:r.id, label:r.label, model:r.model, at:r.at,
+                                  d: r.d instanceof Int8Array ? r.d : Int8Array.from(r.d || []) }))
+                      .filter(r=> r.d.length);
+  }catch(e){ TXMEM.items = []; }
+  TXMEM.loaded = true;
+  return TXMEM.items;
+}
+function txlMemCount(){
+  const by = {};
+  TXMEM.items.forEach(r=> by[r.label] = (by[r.label] || 0) + 1);
+  return by;
+}
+/* ย่อภาพหลักให้เป็นจำนวนเต็มเล็กๆ จะได้เก็บและเทียบได้เร็ว */
+function txlMemPack(patch){
+  const q = new Int8Array(patch.length);
+  for(let i = 0; i < patch.length; i++){
+    const v = Math.round(patch[i] * 40);
+    q[i] = v > 127 ? 127 : v < -127 ? -127 : v;
+  }
+  return q;
+}
+/* ตัวเทียบที่ส่งให้ตัวอ่านใช้ — คืนค่าเฉพาะตอนมั่นใจพอเท่านั้น */
+function txlMemMatcher(){
+  if(!TXMEM.items.length) return null;
+  const by = txlMemCount();
+  const items = TXMEM.items;
+  return function(patch){
+    const q = txlMemPack(patch);
+    let best = Infinity, bestL = null, second = Infinity;
+    for(let k = 0; k < items.length; k++){
+      const d = items[k].d;
+      if(d.length !== q.length) continue;
+      let s = 0;
+      for(let i = 0; i < q.length; i++){ const t = q[i] - d[i]; s += t * t; }
+      if(s < best){
+        if(items[k].label !== bestL) second = best;
+        best = s; bestL = items[k].label;
+      } else if(items[k].label !== bestL && s < second) second = s;
+    }
+    if(bestL == null || !isFinite(second) || !(by[bestL] >= TXMEM.minSame)) return null;
+    const margin = best > 0 ? second / best : 99;
+    if(margin < TXMEM.margin) return null;
+    return { ch: bestL, margin: Math.round(margin * 100) / 100 };
+  };
+}
+/* เก็บภาพหลักที่ช่างยืนยันแล้วเข้าคลัง — เรียกตอนกดยืนยันค่าเท่านั้น */
+async function txlMemLearn(ocr, typed, model){
+  try{
+    if(!ocr || !ocr.digits || !ocr.digits.length) return 0;
+    const want = String(typed).replace(/[^0-9]/g, '');
+    // จำนวนหลักต้องตรงกันเป๊ะ ไม่งั้นจับคู่ป้ายกำกับไม่ได้ ปล่อยผ่านจะกลายเป็นเรียนผิด
+    if(want.length !== ocr.digits.length) return 0;
+    await txlMemLoad();
+    const by = txlMemCount();
+    const add = [];
+    ocr.digits.forEach((d, i)=>{
+      if(!d.patch || !d.patch.length) return;
+      const label = want[i];
+      if((by[label] || 0) + add.filter(a=> a.label === label).length >= TXMEM.perLabel) return;
+      add.push({ label: label, d: txlMemPack(d.patch), model: model || '', at: Date.now() });
+    });
+    if(!add.length) return 0;
+    for(const a of add){
+      const id = await txlMemQ('readwrite', s=> s.add(a));
+      TXMEM.items.push(Object.assign({ id: id }, a));
+    }
+    return add.length;
+  }catch(e){ return 0; }
+}
+/* อ่านรูปเดิมซ้ำโดยสั่งให้ตัดภาพทุกหลัก แล้วเก็บเข้าคลังพร้อมป้ายกำกับ
+   แยกจากการอ่านปกติ เพราะการตัดภาพทุกหลักทุกแถบทำให้ช้าโดยไม่จำเป็น */
+function txlMemLearnLater(shot, rect, key, typed, model){
+  setTimeout(async ()=>{
+    try{
+      const img = new Image();
+      await new Promise((ok, no)=>{ img.onload = ok; img.onerror = no; img.src = shot; });
+      const IW = img.naturalWidth, IH = img.naturalHeight, r = rect;
+      const padY = Math.max(0.10, Math.min(r.h * 0.8, 0.20));
+      const padX = Math.min(r.w * 0.10, 0.05);
+      const ex = { x: Math.max(0, r.x - padX), y: Math.max(0, r.y - padY),
+                   x1: Math.min(1, r.x + r.w + padX), y1: Math.min(1, r.y + r.h + padY) };
+      const sx = Math.round(ex.x * IW), sy = Math.round(ex.y * IH);
+      const sw = Math.max(1, Math.round((ex.x1 - ex.x) * IW));
+      const sh = Math.max(1, Math.round((ex.y1 - ex.y) * IH));
+      const k = Math.min(3, Math.max(1, 560 / sw));
+      const c = document.createElement('canvas');
+      c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+      const ctx = c.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+      const core = { x0: Math.round((r.x - ex.x) * IW * k), y0: Math.round((r.y - ex.y) * IH * k),
+                     x1: Math.round((r.x + r.w - ex.x) * IW * k), y1: Math.round((r.y + r.h - ex.y) * IH * k) };
+      const opt = Object.assign({ scale: k, core: core, wantPatch: true }, txlOcrRange(key));
+      const res = txlSegOcr.read(ctx.getImageData(0, 0, c.width, c.height), opt);
+      await txlMemLearn(res, typed, model);
+    }catch(e){}
+  }, 60);
+}
+async function txlMemClear(){
+  try{ await txlMemQ('readwrite', s=> s.clear()); }catch(e){}
+  TXMEM.items = [];
+}
+function txlMemExport(){
+  const out = { v:1, w: txlSegOcr.PATCH_W, h: txlSegOcr.PATCH_H, at: new Date().toISOString(),
+                items: TXMEM.items.map(r=> ({ l:r.label, m:r.model || '',
+                                              d: btoa(String.fromCharCode.apply(null, new Uint8Array(r.d.buffer || r.d))) })) };
+  const blob = new Blob([JSON.stringify(out)], { type:'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'คลังภาพตัวเลข_' + new Date().toISOString().slice(0,10) + '.json';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+async function txlMemImport(file){
+  try{
+    const txt = await file.text();
+    const j = JSON.parse(txt);
+    if(!j || !Array.isArray(j.items)) throw new Error('รูปแบบไฟล์ไม่ถูก');
+    if(j.w !== txlSegOcr.PATCH_W || j.h !== txlSegOcr.PATCH_H) throw new Error('ขนาดภาพในไฟล์ไม่ตรงกับรุ่นนี้');
+    await txlMemLoad();
+    let n = 0;
+    for(const it of j.items){
+      const raw = atob(it.d);
+      const u = new Uint8Array(raw.length);
+      for(let i = 0; i < raw.length; i++) u[i] = raw.charCodeAt(i);
+      const rec = { label: String(it.l), d: new Int8Array(u.buffer), model: it.m || '', at: Date.now() };
+      const id = await txlMemQ('readwrite', s=> s.add(rec));
+      TXMEM.items.push(Object.assign({ id: id }, rec));
+      n++;
+    }
+    return n;
+  }catch(e){ throw e; }
+}
+
 /* ---------- อ่านเลขจากรูปที่เพิ่งถ่าย ----------
    ตัดเฉพาะในกรอบมาอ่าน ส่วนรูปที่เก็บยังเป็นภาพเต็มใบเหมือนเดิม */
 function txlCapRunOcr(){
@@ -4365,7 +5017,7 @@ function txlCapRunOcr(){
           x0: Math.round((r.x - ex.x) * IW * k), y0: Math.round((r.y - ex.y) * IH * k),
           x1: Math.round((r.x + r.w - ex.x) * IW * k), y1: Math.round((r.y + r.h - ex.y) * IH * k)
         };
-        const opt = Object.assign({ scale: k, core: core }, txlOcrRange(cap.key));
+        const opt = Object.assign({ scale: k, core: core, mem: txlMemMatcher() }, txlOcrRange(cap.key));
         const res = txlSegOcr.read(ctx.getImageData(0, 0, c.width, c.height), opt);
 
         if(res && res.box){
@@ -4379,9 +5031,11 @@ function txlCapRunOcr(){
           const g2 = c2.getContext('2d');
           g2.drawImage(c, bx, by, bw, bh, 0, 0, bw, bh);
           (res.digits || []).forEach(d=>{
-            if(d.ok || d.x0 == null) return;
+            if(d.x0 == null) return;
+            // ขีดส้ม = อ่านไม่ออก · ขีดฟ้า = ขีดไม่ชัด แต่เทียบจากคลังภาพได้
+            if(d.ok && !d.fromMem) return;
             const th = Math.max(4, Math.round(bh * 0.055));
-            g2.fillStyle = '#b26a00';
+            g2.fillStyle = d.fromMem ? '#1565c0' : '#b26a00';
             g2.fillRect(d.x0 - bx, bh - th - 2, Math.max(6, d.x1 - d.x0 + 1), th);
           });
           res.cropUrl = c2.toDataURL('image/jpeg', 0.88);
@@ -4431,10 +5085,14 @@ async function txlCapUse(){
     lines.splice(1, 0, cap.info.label + ' = ' + n + ' ' + cap.info.unit);
     const stamped = await txlStampPhoto(cap.shot, lines);
     txl.vPhoto[cap.key] = { dataUrl: stamped, base64: stamped.split(',')[1], mime:'image/jpeg',
-                            bytes: Math.round(stamped.length * 0.75), value: n };
+                            bytes: Math.round(stamped.length * 0.75), value: n,
+                            ocr: txlOcrTrace(cap) };
   } else {
     delete txl.vPhoto[cap.key];
   }
+  // เรียนจากค่าที่เพิ่งยืนยัน — อ่านซ้ำเพื่อเก็บภาพครบทุกหลัก แล้วค่อยเข้าคลัง
+  // ทำแบบไม่รอผล ช่างกดต่อไปได้เลย ถ้าพลาดก็แค่ไม่ได้เรียนรอบนี้ ไม่กระทบค่าที่บันทึก
+  if(cap.shot && cap.ocr && cap.ocr.ok) txlMemLearnLater(cap.shot, cap.rect, cap.key, keep, txl.meterModel);
   const next = txlCapNextKey(cap.key);
   beep('save');
   txlCapClose();
@@ -4442,6 +5100,31 @@ async function txlCapUse(){
   if(next) txlCapOpen(next, false);
   else showToast('วัดครบทุกช่องแล้ว — กด "ถัดไป" เพื่อดูสรุปผล', 'ok');
 }
+/* บันทึกว่าตัวอ่านเลขทำอะไรกับรูปนี้ — ส่งไปกับคำบรรยายรูป ไม่เปลืองพื้นที่เพิ่ม
+   ใช้ย้อนดูภายหลังว่ารูปแบบไหนที่อ่านพลาด และพลาดเพราะเล็งกรอบหรือเพราะอ่านหลักผิด
+   เป็นวัตถุดิบสำหรับปรับจูนและฝึกตัวอ่านรุ่นถัดไป โดยไม่ต้องให้ช่างทำอะไรเพิ่มเลย */
+function txlOcrTrace(cap){
+  if(!cap || !cap.shot) return null;
+  const r = cap.rect || {};
+  const f = v=> (typeof v === 'number' && isFinite(v)) ? Math.round(v * 1000) / 1000 : null;
+  const o = cap.ocr || null;
+  return {
+    read: o ? (o.text || '') : '',
+    ok: !!(o && o.ok),
+    why: o && !o.ok ? String(o.reason || '').slice(0, 80) : '',
+    rect: [f(r.x), f(r.y), f(r.w), f(r.h)],
+    h: o && o.medH != null ? Math.round(o.medH) : null
+  };
+}
+function txlOcrCaption(p){
+  const o = p && p.ocr;
+  if(!o) return 'พิมพ์เอง ไม่ได้ใช้ตัวอ่านเลข';
+  const rect = (o.rect || []).map(v=> v == null ? '-' : v).join(',');
+  return 'อ่านอัตโนมัติ: ' + (o.ok ? o.read : (o.read ? o.read + ' (ไม่ผ่าน)' : 'อ่านไม่ออก')) +
+         (o.why ? ' — ' + o.why : '') +
+         ' | กรอบ ' + rect + (o.h ? ' | สูง ' + o.h + 'px' : '');
+}
+
 /* เก็บรูปไว้แต่ยังไม่ใส่ค่า — ใช้ตอนหน้าปัดอ่านไม่ออกแต่อยากเก็บหลักฐานไว้ก่อน */
 async function txlCapKeepOnly(){
   if(!txl || !txl.cap || !txl.cap.shot) return;
@@ -4450,7 +5133,8 @@ async function txlCapKeepOnly(){
   lines.splice(1, 0, 'ช่องที่วัด ' + cap.info.label);
   const stamped = await txlStampPhoto(cap.shot, lines);
   txl.vPhoto[cap.key] = { dataUrl: stamped, base64: stamped.split(',')[1], mime:'image/jpeg',
-                          bytes: Math.round(stamped.length * 0.75), value: null };
+                          bytes: Math.round(stamped.length * 0.75), value: null,
+                          ocr: txlOcrTrace(cap) };
   txlCapClose();
   txlLiveUpdate();
   showToast('เก็บรูปหน้าปัดไว้แล้ว — ยังไม่มีตัวเลขในช่อง ' + cap.info.label, 'warn');
@@ -4571,13 +5255,19 @@ function txlCapRender(){
     ? '<div class="txc-vs"><i></i><span>เทียบกับที่จะบันทึก</span><i></i></div>' : '';
 
   // ตำแหน่งหลักที่อ่านไม่ออก ใช้บอกช่างว่าต้องเติมตัวที่เท่าไร
-  let badPos = [];
-  if(ocr && ocr.digits) ocr.digits.forEach((d, i)=>{ if(!d.ok) badPos.push(i + 1); });
+  let badPos = [], memPos = [];
+  if(ocr && ocr.digits) ocr.digits.forEach((d, i)=>{
+    if(!d.ok) badPos.push(i + 1);
+    else if(d.fromMem) memPos.push(i + 1);
+  });
 
   const statusLine = manual
     ? '<div class="txc-hint">⚠ พิมพ์เอง ไม่มีรูปหน้าปัด — ช่องนี้จะติดเครื่องหมายว่าไม่มีหลักฐาน</div>'
     : good
-      ? '<div class="txc-okline">✓ ระบบอ่านได้ทุกหลัก — กวาดตาดูว่าสองแถวตรงกันแล้วกดยืนยัน</div>'
+      ? (memPos.length
+          ? '<div class="txc-okline mem">✓ อ่านได้ทุกหลัก — แต่หลักที่ ' + memPos.join(' และ ') +
+            ' ขีดไม่ชัด ระบบเทียบจากคลังภาพที่เคยยืนยันไว้ (ขีดฟ้าใต้รูป) ช่วยดูให้แน่อีกที</div>'
+          : '<div class="txc-okline">✓ ระบบอ่านได้ทุกหลัก — กวาดตาดูว่าสองแถวตรงกันแล้วกดยืนยัน</div>')
       : '<div class="txc-hint">' + escapeHtml(
           badPos.length
             ? 'หลักที่ ' + badPos.join(' และ ') + ' อ่านไม่ออก — ขีดส้มใต้รูปชี้ไว้แล้วว่าหลักไหน ดูในรูปแล้วพิมพ์ทั้งชุด'
@@ -4682,7 +5372,9 @@ async function txlSave(){
     const info = txlFieldInfoOf(k);
     photos.push({ kind: 'meter_' + k, base64: p.base64, mimeType: p.mime,
                   takenAt: txl.measuredAt.toISOString(), lat: txl.lat, lon: txl.lon,
-                  caption: info.label + (p.value == null ? ' (ยังไม่ใส่ค่า)' : ' = ' + p.value + ' ' + info.unit) });
+                  caption: info.label + (p.value == null ? ' (ยังไม่ใส่ค่า)' : ' = ' + p.value + ' ' + info.unit) +
+                           ' | ' + txlOcrCaption(p) +
+                           (txl.meterModel ? ' | เครื่องวัด ' + txl.meterModel : '') });
   });
   txl.extras.forEach(p=> photos.push({ kind:'extra', base64: p.base64, mimeType: p.mime,
                         takenAt: txl.measuredAt.toISOString(), lat: txl.lat, lon: txl.lon }));
@@ -4700,6 +5392,17 @@ async function txlSave(){
       weather: txl.weather, period: txl.period,
       lat: txl.lat, lon: txl.lon, address: txl.address, poleTag: txl.poleTag
     },
+    ends: (txl.ends || []).filter(e=> txlEndBaseKeys().some(k=> txlNum(e[k]) != null) || e.name)
+      .map(e=>{
+        const cc = txlEndCalc(e);
+        return { no: e.no, name: e.name || '', feederNo: e.feederNo || '',
+                 va: e.va, vb: e.vb, vc: e.vc, vng: e.vng,
+                 vab: e.vab, vbc: e.vbc, vca: e.vca,
+                 lat: e.lat, lon: e.lon,
+                 distanceM: cc.dist == null ? '' : Math.round(cc.dist),
+                 dropPercent: cc.dropMax == null ? '' : cc.dropMax,
+                 note: e.note || '' };
+      }),
     feeders: txl.measurePoint === 'รายวงจร' ? txl.feeders.map(fd=> ({
       no: fd.no, name: fd.name, ia: fd.ia, ib: fd.ib, ic: fd.ic, in: fd.in,
       cableSize: fd.cableSize, breakerSize: fd.breakerSize, note: fd.note })) : [],
@@ -4885,6 +5588,29 @@ function txlHistDetailHtml(rec){
       (wires ? '<div class="txl-note" style="margin:5px 0 0;">' + escapeHtml(wires) + '</div>' : '') + '</div>';
   }
 
+  // ตารางแรงดันปลายสายของผลวัดนี้
+  let endTable = '';
+  const eds = (rec.ends || []).slice().sort((a, b)=> (a.EndNo || 0) - (b.EndNo || 0));
+  if(eds.length){
+    const vcols = cfg.neutral
+      ? cfg.phases.map(ph=> ['V' + ph.toLowerCase(), 'V' + ph]).concat([['Vng', 'VN–G']])
+      : (cfg.phases.length === 2 ? [['Vab','VAB']] : [['Vab','VAB'],['Vbc','VBC'],['Vca','VCA']]);
+    const h = '<span class="h">จุด</span>' + vcols.map(c=> '<span class="h r">' + c[1] + '</span>').join('') +
+      '<span class="h r">ตก</span>';
+    const rws = eds.map(e=>{
+      const low = vcols.some(c=> c[0] !== 'Vng' && txlHistNum(e[c[0]]) != null && txlHistNum(e[c[0]]) < TXL_RULES.vEndMin);
+      const nm = String(e.EndName || ('ปลายสาย ' + (e.EndNo || '-')));
+      return '<span' + (low ? ' class="bad"' : '') + '>' + escapeHtml(nm) +
+        (e.DistanceM ? ' (' + fmtDist(Number(e.DistanceM)) + ')' : '') + '</span>' +
+        vcols.map(c=> '<span class="r">' + (txlHistNum(e[c[0]]) == null ? '-' : txlHistNum(e[c[0]])) + '</span>').join('') +
+        '<span class="r">' + (e.DropPercent === '' || e.DropPercent == null ? '-' : e.DropPercent + '%') + '</span>';
+    }).join('');
+    endTable = '<div class="txl-hsec"><div class="txl-hsec-t">แรงดันปลายสาย (V)</div>' +
+      '<div class="txl-ftable" style="grid-template-columns:minmax(0,1.6fr) repeat(' + (vcols.length + 1) + ',minmax(0,1fr));">' +
+      h + rws + '</div>' +
+      '<div class="txl-note" style="margin:5px 0 0;">เกณฑ์ ต่ำกว่า ' + TXL_RULES.vEndMin + ' V ถือว่าแรงดันตกเกินมาตรฐาน</div></div>';
+  }
+
   const calcRow = (k, v, cls)=> '<div class="txl-kv"><span>' + escapeHtml(k) + '</span><b class="' + (cls || '') + '">' +
     escapeHtml(v) + '</b></div>';
   const pct = txlHistNum(rec.LoadPercent), unb = txlHistNum(rec.UnbalancePercent), inp = txlHistNum(rec.InPercent);
@@ -4910,6 +5636,7 @@ function txlHistDetailHtml(rec){
       (missing.length ? '<div class="txl-note" style="margin:4px 0 0;">' + escapeHtml(missing.join(' · ')) + '</div>' : '') + '</div>' +
     '<div class="txl-hsec"><div class="txl-hsec-t">กระแสรวมทั้งเครื่อง (A)</div>' + txlHistValueGrid(rec, iKeys) + '</div>' +
     feederTable +
+    endTable +
     '<div class="txl-hsec"><div class="txl-hsec-t">ผลคำนวณ</div>' +
       calcRow('โหลดที่วัดได้', (rec.KvaMeasured || '-') + ' kVA') +
       calcRow('พิกัดหม้อแปลง', (rec.RatedKva || '-') + ' kVA') +
@@ -5971,6 +6698,40 @@ let txlCarry = null;    // การตั้งค่าของการว�
     '.txc-vs i{flex:1;height:1px;background:#ddd9d0;}',
     '.txc-vs span{font-size:.62rem;font-weight:700;color:var(--muted);}',
     '.txc-okline{background:#e8f5e9;color:#175c3a;border-radius:8px;padding:7px 9px;font-size:.7rem;font-weight:700;line-height:1.45;}',
+    '.txc-okline.mem{background:#e3f0fb;color:#0d3e6b;}',
+    '.txl-end{border:1px solid #d7dee6;border-radius:12px;padding:10px 11px 11px;margin:9px 0 0;background:#fff;}',
+    '.txl-end.bad{border-color:#e9c0bc;background:#fffbfa;}',
+    '.txl-end-h{display:flex;align-items:center;gap:7px;margin:0 0 8px;}',
+    '.txl-end-h b{font-size:.78rem;color:#22313f;}',
+    '.txl-end-sel{border:1px solid #d3dbe3;background:#eef3f8;color:#41586e;border-radius:99px;padding:3px 8px;font-size:.6rem;font-weight:700;}',
+    '.txl-end-x{margin-left:auto;border:0;background:none;color:#b0424a;font-size:.68rem;font-weight:700;cursor:pointer;padding:2px 5px;}',
+    '.txl-end-geo{display:flex;align-items:center;gap:8px;margin:7px 0 9px;font-size:.63rem;color:#5c6b7a;}',
+    '.txl-end-geo button{border:1px solid #c8d2dc;background:#fff;border-radius:8px;padding:5px 10px;font-size:.63rem;font-weight:700;color:#2b3a4a;cursor:pointer;white-space:nowrap;}',
+    '.txl-end-geo span{line-height:1.4;}',
+    '.txl-drop{margin:9px 0 0;border-radius:9px;background:#f5f8fb;padding:8px 10px;}',
+    '.txl-drop-t{font-size:.63rem;color:#5c6b7a;font-weight:700;margin:0 0 6px;}',
+    '.txl-drop-r{display:flex;gap:6px;}',
+    '.txl-drop-r i{flex:1;border-radius:8px;background:#fff;border:1px solid #dde4ea;padding:5px 4px;text-align:center;font-style:normal;}',
+    '.txl-drop-r i b{display:block;font-size:.86rem;font-weight:800;color:#1b7a4b;line-height:1.2;}',
+    '.txl-drop-r i.bad{border-color:#e9c0bc;background:#fdf4f3;}',
+    '.txl-drop-r i.bad b{color:#b3261e;}',
+    '.txl-drop-r i em{font-style:normal;display:block;font-size:.55rem;color:#7b8794;font-weight:600;line-height:1.3;}',
+    '.txl-drop-n{margin:7px 0 0;font-size:.58rem;color:#7b8794;line-height:1.45;}',
+    '.txl-addend{width:100%;border:1px dashed #b9c6d3;background:#fbfdff;border-radius:11px;padding:11px;font-size:.7rem;font-weight:700;color:#2a5d8f;cursor:pointer;margin-top:9px;}',
+    '.txl-endsum{display:flex;gap:6px;margin:0 0 8px;}',
+    '.txl-endsum div{flex:1;background:#fff;border:1px solid #dde4ea;border-radius:9px;padding:6px 7px;text-align:center;}',
+    '.txl-endsum div b{display:block;font-size:.8rem;font-weight:800;color:#22313f;}',
+    '.txl-endsum div span{font-size:.55rem;color:#7b8794;line-height:1.3;display:block;}',
+    '.txl-mem{margin-top:10px;border:1px solid var(--line,#dfe4ea);border-radius:10px;padding:10px 11px;background:#fbfcfd;}',
+    '.txl-mem h5{margin:0 0 5px;font-size:.72rem;font-weight:800;color:#2b3a4a;}',
+    '.txl-mem p{margin:0 0 7px;font-size:.66rem;color:var(--muted,#6b7785);line-height:1.5;}',
+    '.txl-mem .bars{display:flex;gap:3px;align-items:flex-end;height:34px;margin:0 0 7px;}',
+    '.txl-mem .bars i{flex:1;background:#cfe0f2;border-radius:2px 2px 0 0;position:relative;min-height:2px;}',
+    '.txl-mem .bars i.none{background:#f0d3d3;}',
+    '.txl-mem .bars b{flex:1;text-align:center;font-size:.55rem;color:#7b8794;font-weight:600;}',
+    '.txl-mem .btns{display:flex;gap:6px;flex-wrap:wrap;}',
+    '.txl-mem button,.txl-mem label{flex:1;min-width:88px;border:1px solid #c8d2dc;background:#fff;border-radius:8px;padding:6px 8px;font-size:.64rem;font-weight:700;color:#2b3a4a;text-align:center;cursor:pointer;}',
+    '.txl-mem button.danger{color:#a02525;border-color:#e3bcbc;}',
     '.txc-partial{font-size:.68rem;color:#46443e;text-align:center;}',
     '.txc-partial b{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86rem;letter-spacing:1px;}',
     '.txc-use.wait{background:#b26a00;font-size:.92rem;}',
