@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>ตรวจขอบจอ</title>
+<meta name="theme-color" content="#4b2e83">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ตรวจขอบจอ">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#00b34a;
+    font-family:"Noto Sans Thai",system-ui,sans-serif;color:#fff;overflow-x:hidden;}
+  /* แบบเดียวกับงานหม้อแปลง: เปลือกสูง 100dvh แล้วให้ main ยืด */
+  #app{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;}
+  header{background:#4b2e83;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top));
+    font-weight:700;font-size:15px;}
+  main{flex:1;overflow:auto;min-height:0;background:#ffffff;color:#222;}
+  .rows div{padding:14px;border-bottom:1px solid #eee;background:#fff;}
+  /* แถบแดงนี้ถูกตรึงไว้ที่ขอบล่างสุดของหน้าเว็บ */
+  #edge{position:fixed;left:0;right:0;bottom:0;height:10px;background:#e01b1b;z-index:99;}
+  #info{padding:14px;font-size:14px;line-height:2;background:#fffbe6;color:#222;}
+  #info b{color:#4b2e83;font-family:Consolas,monospace;}
+  .big{font-size:17px;font-weight:800;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>ตรวจขอบจอ — เปิดจากไอคอนบนหน้าจอโฮม</header>
+  <main>
+    <div id="info">กำลังวัด...</div>
+    <div class="rows" id="rows"></div>
+  </main>
+</div>
+<div id="edge"></div>
+<script>
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom);width:1px;';
+  document.body.appendChild(probe);
+  function px(v){ return Math.round(v) + ' px'; }
+  function show(){
+    const sab = probe.getBoundingClientRect().height;
+    const app = document.getElementById('app').getBoundingClientRect().height;
+    const standalone = window.matchMedia('(display-mode: standalone)').matches
+                    || window.navigator.standalone === true;
+    document.getElementById('info').innerHTML =
+      '<div class="big">' + (standalone ? '✅ เปิดแบบแอป (standalone)' : '⚠️ เปิดในเบราว์เซอร์ ไม่ใช่แบบแอป') + '</div>' +
+      'ความสูงหน้าต่าง innerHeight = <b>' + px(window.innerHeight) + '</b><br>' +
+      'ความสูงจอ screen.height = <b>' + px(window.screen.height) + '</b><br>' +
+      'ความสูงกล่อง #app (100dvh) = <b>' + px(app) + '</b><br>' +
+      'ขอบปลอดภัยล่าง safe-area-inset-bottom = <b>' + px(sab) + '</b><br>' +
+      'visualViewport = <b>' + (window.visualViewport ? px(window.visualViewport.height) : 'ไม่มี') + '</b>' +
+      '<hr style="border:0;border-top:1px solid #e6e0c8;margin:10px 0;">' +
+      '<b style="color:#e01b1b;">แถบแดงล่างสุด</b> — ถ้าเห็นแถบแดงติดขอบจอจริง แปลว่าหน้าเว็บวาดถึงขอบล่างได้<br>' +
+      'ถ้ามีแถบ<b style="color:#00b34a;">เขียว</b>คั่นใต้แถบแดง แปลว่าหน้าเว็บวาดไม่ถึงขอบ';
+  }
+  show();
+  window.addEventListener('resize', show);
+  const rows = document.getElementById('rows');
+  for(let i=1;i<=40;i++){
+    const d = document.createElement('div');
+    d.textContent = 'แถวที่ ' + i + ' — เลื่อนลงไปดูว่าแถวสุดท้ายชนขอบล่างไหม';
+    rows.appendChild(d);
+  }
+</script>
+</body>
+</html>
