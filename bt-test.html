@@ -113,24 +113,27 @@
   </div>
 
   <div class="card" id="cmdCard" style="display:none;">
-    <h2>3.5 ส่งคำสั่งไปที่เครื่อง</h2>
-    <p class="muted" style="margin:0 0 9px;">เครื่องวัดหลายรุ่นเงียบจนกว่าจะถูกสั่งให้เริ่มส่งค่า
-      ถ้าสมัครรับข้อมูลแล้วแต่ไม่มีอะไรวิ่งเข้ามา ให้ลองกดปุ่มล่างสุดก่อน</p>
-    <label class="f">ส่งไปที่ characteristic</label>
-    <select id="cmdTarget" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid #ccc7bc;border-radius:8px;font-family:inherit;font-size:.9rem;background:#fdfdfc;"></select>
-    <label class="f">ข้อความที่จะส่ง</label>
-    <input type="text" id="cmdPayload" value="*IDN?" autocomplete="off" spellcheck="false">
-    <div class="row" style="margin-top:8px;">
-      <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;">
-        <input type="radio" name="cmdMode" value="text" checked> ข้อความ (เติม CR LF ให้)</label>
-      <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;">
-        <input type="radio" name="cmdMode" value="hex"> เลขฐานสิบหก</label>
-    </div>
-    <div class="row" style="margin-top:9px;">
-      <button class="btn blue" id="cmdSend">▶ ส่ง</button>
-      <button class="btn ghost" id="cmdProbe">🧪 ลองชุดคำสั่งที่พบบ่อย</button>
+    <h2>3.5 คุยกับเครื่องด้วยคำสั่ง SCPI</h2>
+    <p class="muted" style="margin:0 0 9px;">CM3286 รับคำสั่งเป็นข้อความ ปิดท้ายด้วย CR LF แล้วตอบกลับมาทางอีกช่องหนึ่ง
+      หน้านี้ต่อท่อนที่ถูกหั่นให้เป็นบรรทัดเต็มแล้ว</p>
+
+    <div class="row" style="margin-bottom:9px;">
+      <button class="btn blue" id="cmdHunt">🎯 ไล่หาคำสั่งอ่านค่า</button>
+      <button class="btn ghost" id="cmdLoop">▶ อ่านค่าต่อเนื่อง</button>
       <button class="btn ghost" id="reconnBtn">🔌 เชื่อมกลับ</button>
     </div>
+    <p class="muted" style="margin:0 0 11px;">ยิงคำสั่งที่เครื่องมือวัดมักรองรับทีละตัว แล้วเก็บว่าตัวไหนตอบอะไรกลับมา
+      ใช้เวลาราว 1 นาที · ระหว่างนี้ให้คีบสายที่มีไฟค้างไว้ หน้าปัดจะได้มีเลขให้เครื่องส่ง</p>
+
+    <div id="huntResult" style="display:none;margin-bottom:11px;"></div>
+
+    <label class="f">หรือพิมพ์คำสั่งเอง</label>
+    <div class="row">
+      <input type="text" id="cmdPayload" value="*IDN?" autocomplete="off" spellcheck="false" style="flex:1;min-width:0;">
+      <button class="btn blue" id="cmdSend">▶ ส่ง</button>
+    </div>
+    <label class="f">ช่องที่ใช้ส่งคำสั่ง</label>
+    <select id="cmdTarget" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid #ccc7bc;border-radius:8px;font-family:inherit;font-size:.9rem;background:#fdfdfc;"></select>
   </div>
 
   <div class="card">
@@ -385,7 +388,13 @@ async function enumerate(quiet){
             await ch.startNotifications();
             notifyCount++;
             log('      >> สมัครรับข้อมูลแล้ว รอค่าจากเครื่อง ...');
-            ch.addEventListener('characteristicvaluechanged', ev=> onPacket(ch.uuid, ev.target.value));
+            // กดค้นหาซ้ำจะได้ไม่ผูกตัวรับซ้อนกันจนข้อมูลมาซ้ำสองรอบ
+            if(!subscribed[ch.uuid]){
+              subscribed[ch.uuid] = ev=> onPacket(ch.uuid, ev.target.value);
+            } else {
+              ch.removeEventListener('characteristicvaluechanged', subscribed[ch.uuid]);
+            }
+            ch.addEventListener('characteristicvaluechanged', subscribed[ch.uuid]);
           }catch(e){ log('      สมัครรับข้อมูลไม่ได้: ' + e.message); }
         }
       }
@@ -406,9 +415,13 @@ async function enumerate(quiet){
     $('liveCard').style.display = '';
     if(writables.length){
       const sel = $('cmdTarget');
-      sel.innerHTML = writables.map((w, i)=>
-        '<option value="' + i + '">' + w.uuid.slice(0, 8) + ' … ' +
-        (w.ch.properties.notify ? '(ช่องข้อมูล)' : '(ช่องควบคุม)') + '</option>').join('');
+      sel.innerHTML = writables.map(w=>
+        '<option value="' + w.uuid + '"' + (w.uuid === cmdChannel ? ' selected' : '') + '>' +
+        w.uuid.slice(0, 8) + ' … ' + (w.ch.properties.notify ? '(ช่องข้อมูล)' : '(ช่องควบคุม)') + '</option>').join('');
+      // ช่องที่พิสูจน์แล้วว่ารับคำสั่งได้ ถ้าไม่มีก็ใช้ช่องข้อมูลช่องแรก
+      if(!writables.some(w=> w.uuid === cmdChannel)) cmdChannel = writables[0].uuid;
+      sel.value = cmdChannel;
+      sel.onchange = ()=>{ cmdChannel = sel.value; log('   เปลี่ยนช่องส่งคำสั่งเป็น ' + cmdChannel.slice(0, 8)); };
       $('cmdCard').style.display = '';
     }
     // เงียบเกิน 10 วินาที แปลว่าเครื่องรอคำสั่งอยู่ ไม่ได้ส่งเอง
@@ -494,24 +507,15 @@ function toBytes(text, mode){
   }
   return new TextEncoder().encode(text + '\r\n');
 }
-async function sendTo(w, bytes, label){
-  if(!device || !device.gatt.connected){ log('!! สายหลุดอยู่ ส่งไม่ได้'); return 'nolink'; }
-  try{
-    if(w.ch.properties.write) await w.ch.writeValueWithResponse(bytes);
-    else await w.ch.writeValueWithoutResponse(bytes);
-    log('>> ส่ง ' + label + ' ไปที่ ' + w.uuid.slice(0, 8) + ' สำเร็จ');
-    return 'ok';
-  }catch(e){
-    log('!! ส่ง ' + label + ' ไปที่ ' + w.uuid.slice(0, 8) + ' ไม่ได้: ' + e.message);
-    return 'err';
-  }
-}
+/* ช่องที่ใช้ส่งคำสั่ง — พิสูจน์แล้วว่าเป็นช่องนี้ของ CM3286-01 (คำตอบกลับมาทาง 78b028ce) */
+let cmdChannel = '1af0deb5-6219-4ea0-b551-8c4fec32dc92';
+let subscribed = {};
+
 $('cmdSend').addEventListener('click', async ()=>{
-  const w = writables[parseInt($('cmdTarget').value, 10)];
-  if(!w) return;
-  const mode = document.querySelector('input[name="cmdMode"]:checked').value;
-  const txt = $('cmdPayload').value;
-  await sendTo(w, toBytes(txt, mode), '"' + txt + '"');
+  const txt = $('cmdPayload').value.trim();
+  if(!txt) return;
+  const res = await askDevice(txt, 2000);
+  if(res == null) log('   (ไม่มีคำตอบใน 2 วินาที — เครื่องอาจไม่รู้จักคำสั่งนี้)');
 });
 $('reconnBtn').addEventListener('click', async ()=>{
   if(!device){ log('!! ยังไม่เคยเลือกอุปกรณ์ — กด "ค้นหาและเชื่อม" ก่อน'); return; }
@@ -519,91 +523,162 @@ $('reconnBtn').addEventListener('click', async ()=>{
   await reconnect();
 });
 
-/* ไล่คำสั่งทีละตัว — หยุดทันทีที่เครื่องตัดสาย แล้วเชื่อมกลับก่อนไปช่องถัดไป
-   ถ้าช่องไหนทำให้หลุดซ้ำ แปลว่าช่องนั้นต้องใช้รหัสจับมือเฉพาะ จึงข้ามไปเลย */
-let probing = false;
-$('cmdProbe').addEventListener('click', async ()=>{
-  if(probing){ log('   กำลังไล่อยู่แล้ว รอให้จบก่อน'); return; }
-  if(!writables.length){ log('!! ไม่มีช่องที่เขียนได้'); return; }
-  probing = true;
-  $('cmdProbe').disabled = true;
-  const before = packetCount;
-  const probes = [
-    ['hex',  '01'],             // ไบต์สั้นที่สุดก่อน — เสี่ยงน้อยสุดถ้าเครื่องไม่รู้จัก
-    ['hex',  '00'],
-    ['hex',  '02'],
-    ['hex',  '0101'],
-    ['text', '*IDN?'],          // ชุดคำสั่งมาตรฐาน SCPI ของเครื่องมือวัด
-    ['text', ':MEAS?'],
-    ['text', ':READ?']
-  ];
-  log('=== ไล่คำสั่ง — เริ่มจากช่องข้อมูลก่อน ช่องควบคุมไว้ท้ายสุด ===');
+/* ชุดคำสั่งที่เครื่องมือวัดมักรองรับ — ไล่ทีละตัวแล้วเก็บว่าตัวไหนตอบอะไร
+   :SYSTem:ERRor? สำคัญมาก เพราะมันบอกว่าเครื่องเข้าใจคำสั่งก่อนหน้าหรือไม่ */
+const SCPI_HUNT = [
+  ['*IDN?',                  'ชื่อรุ่น — ตัวนี้ได้ผลแล้ว ใช้ยืนยันว่ายังคุยกันรู้เรื่อง'],
+  [':SYSTem:ERRor?',         'ถามว่ามีคำสั่งไหนผิดพลาดค้างอยู่ไหม'],
+  [':HEADer?',               'เครื่องใส่ชื่อค่ามากับคำตอบหรือไม่'],
+  [':FUNCtion?',             'ตอนนี้สวิตช์อยู่ตำแหน่งวัดอะไร'],
+  [':MEASure?',              'ขอค่าที่วัดได้ทั้งหมด'],
+  [':MEASure:VALue?',        'ขอค่าที่วัดได้'],
+  [':MEASure:VOLTage?',      'แรงดัน'],
+  [':MEASure:CURRent?',      'กระแส'],
+  [':MEASure:POWer?',        'กำลังไฟฟ้า'],
+  [':MEASure:PF?',           'ตัวประกอบกำลัง'],
+  [':MEAS:V?',               'แรงดัน (แบบย่อ)'],
+  [':MEAS:A?',               'กระแส (แบบย่อ)'],
+  [':MEAS:W?',               'กำลังไฟฟ้า (แบบย่อ)'],
+  [':READ?',                 'อ่านค่าปัจจุบัน'],
+  [':FETCh?',                'ดึงค่าที่อ่านไว้ล่าสุด'],
+  [':CONFigure?',            'การตั้งค่าปัจจุบันของเครื่อง'],
+  [':DISPlay?',              'สิ่งที่แสดงบนหน้าจอตอนนี้'],
+  [':MEMory?',               'ค่าที่บันทึกไว้ในเครื่อง'],
+  ['*OPT?',                  'ความสามารถเสริมที่ติดตั้งอยู่']
+];
+let hunting = false;
+$('cmdHunt').addEventListener('click', async ()=>{
+  if(hunting){ log('   กำลังไล่อยู่แล้ว รอให้จบก่อน'); return; }
+  if(!device || !device.gatt.connected){ log('!! ยังไม่ได้เชื่อม — กด "ค้นหาและเชื่อม" ก่อน'); return; }
+  hunting = true;
+  $('cmdHunt').disabled = true;
+  const rows = [];
+  log('=== ไล่หาคำสั่งอ่านค่า ' + SCPI_HUNT.length + ' คำสั่ง ===');
   try{
-    for(const w of writables){
-      const kind = w.ch.properties.notify ? 'ช่องข้อมูล' : 'ช่องควบคุม';
-      log('-- ' + kind + ' ' + w.uuid.slice(0, 8));
-      let killed = 0;
-      for(const [mode, txt] of probes){
-        if(!device.gatt.connected){
-          log('!! สายหลุด — หยุดไล่ช่องนี้ไว้ก่อน');
-          if(!(await reconnect())){ log('=== จบการไล่คำสั่ง (เชื่อมกลับไม่ได้) ==='); return; }
-          killed++;
-          if(killed >= 2){
-            log('!! ช่อง ' + w.uuid.slice(0, 8) + ' ทำให้เครื่องตัดสายซ้ำ — ข้ามช่องนี้');
-            break;
-          }
-          // หา object ตัวใหม่หลังเชื่อมกลับ (ตัวเดิมใช้ไม่ได้แล้ว)
-          const again = writables.find(x=> x.uuid === w.uuid);
-          if(again) w.ch = again.ch; else break;
-        }
-        const res = await sendTo(w, toBytes(txt, mode), (mode === 'hex' ? '0x' : '') + txt);
-        if(res === 'nolink') continue;
-        await new Promise(r=> setTimeout(r, 900));   // เว้นจังหวะให้เครื่องตอบก่อนยิงตัวถัดไป
-        if(packetCount > before){
-          log('=== มีข้อมูลตอบกลับแล้ว! คำสั่งที่ได้ผลคือ ' + (mode === 'hex' ? '0x' : '') + txt +
-              ' ที่ช่อง ' + w.uuid + ' ===');
-          log('   กดคัดลอกทั้งหมดแล้วส่งมาให้ผมได้เลย');
-          return;
-        }
+    for(const [cmd, why] of SCPI_HUNT){
+      if(!device.gatt.connected){
+        log('!! สายหลุด — พยายามเชื่อมกลับ');
+        if(!(await reconnect())) break;
       }
+      const res = await askDevice(cmd, 1600);
+      rows.push({ cmd, why, res });
+      await new Promise(r=> setTimeout(r, 250));
     }
-    log('=== ไล่ครบทุกช่องแล้วยังเงียบ ===');
-    log('   แปลว่า HIOKI ใช้รหัสจับมือเฉพาะที่เดาไม่ได้ — คัดลอกทั้งหมดส่งมาให้ผม จะบอกทางเลือกต่อไป');
   } finally {
-    probing = false;
-    $('cmdProbe').disabled = false;
+    hunting = false;
+    $('cmdHunt').disabled = false;
   }
+  const good = rows.filter(r=> r.res != null);
+  // คำสั่งที่ให้ตัวเลขจริง (ไม่ใช่ชื่อรุ่นหรือข้อความสถานะ) คือคำสั่งที่เราจะใช้อ่านค่า
+  const skip = ['*IDN?', ':SYSTem:ERRor?', '*OPT?'];   // คำสั่งบอกสถานะ ไม่ใช่ค่าที่วัดได้
+  const numeric = rows.find(r=> r.res != null && skip.indexOf(r.cmd) < 0 && scpiNumber(r.res) != null);
+  if(numeric){ bestCmd = numeric.cmd; $('cmdPayload').value = numeric.cmd;
+               log('   คำสั่งที่ให้ตัวเลข: ' + numeric.cmd + ' — กด "อ่านค่าต่อเนื่อง" เพื่อดูว่าขยับตามหน้าปัดไหม'); }
+  log('=== ไล่ครบแล้ว — ตอบกลับ ' + good.length + ' จาก ' + rows.length + ' คำสั่ง ===');
+  const esc = t=> String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  $('huntResult').style.display = '';
+  $('huntResult').innerHTML =
+    '<div style="font-weight:700;margin-bottom:6px;">ผลการไล่คำสั่ง — ตอบ ' + good.length + ' จาก ' + rows.length + '</div>' +
+    rows.map(r=>
+      '<div style="border-bottom:1px solid #ece9e2;padding:6px 0;">' +
+        '<div style="font-family:ui-monospace,monospace;font-size:.82rem;font-weight:700;">' + esc(r.cmd) + '</div>' +
+        '<div class="muted" style="font-size:.72rem;">' + esc(r.why) + '</div>' +
+        (r.res == null
+          ? '<div style="font-size:.78rem;color:#8a867c;">— ไม่ตอบ</div>'
+          : '<div style="font-size:.86rem;font-weight:700;color:#175c3a;word-break:break-all;">' + esc(r.res) + '</div>') +
+      '</div>').join('');
+  if(good.length > 1) log('   มีคำสั่งที่ใช้ได้ — กดคัดลอกทั้งหมดส่งมาให้ผมได้เลย');
+  else log('   ตอบแค่ *IDN? — ส่งข้อมูลดิบมาให้ผม จะลองชุดคำสั่งแบบอื่นต่อ');
 });
 
-let packetCount = 0;
+/* อ่านค่าซ้ำทุก 1 วินาที — ใช้ยืนยันด้วยตาว่าตัวเลขขยับตามหน้าปัดจริง
+   ใช้คำสั่งที่ไล่เจอแล้วว่าให้ตัวเลข ถ้ายังไม่ได้ไล่ก็ใช้ที่พิมพ์ไว้ในช่อง */
+let loopTimer = null, bestCmd = '';
+$('cmdLoop').addEventListener('click', async ()=>{
+  if(loopTimer){
+    clearInterval(loopTimer); loopTimer = null;
+    $('cmdLoop').textContent = '▶ อ่านค่าต่อเนื่อง';
+    log('=== หยุดอ่านค่าต่อเนื่อง ===');
+    return;
+  }
+  const cmd = bestCmd || $('cmdPayload').value.trim();
+  if(!cmd){ log('!! ยังไม่รู้ว่าจะใช้คำสั่งไหน — กด "ไล่หาคำสั่งอ่านค่า" ก่อน'); return; }
+  log('=== อ่านค่าต่อเนื่องด้วย ' + cmd + ' — เทียบตัวเลขกับหน้าปัดเครื่องได้เลย ===');
+  $('cmdLoop').textContent = '⏸ หยุดอ่าน';
+  loopTimer = setInterval(async ()=>{
+    if(!device || !device.gatt.connected){
+      clearInterval(loopTimer); loopTimer = null;
+      $('cmdLoop').textContent = '▶ อ่านค่าต่อเนื่อง';
+      log('!! สายหลุด — หยุดอ่านค่าต่อเนื่อง');
+      return;
+    }
+    await askDevice(cmd, 900);
+  }, 1000);
+});
+
+/* ---------- รับข้อมูลจากเครื่อง ----------
+   CM3286 ตอบเป็นข้อความ SCPI แต่ถูกหั่นเป็นท่อนละ 20 ไบต์ตามขนาดแพ็กเก็ตบลูทูธ
+   จึงต้องต่อท่อนเก็บไว้จนเจอ CR LF ถึงจะได้ข้อความเต็มบรรทัด */
+let packetCount = 0, rxBuf = '', lineCount = 0;
+let waiting = null;            // คำสั่งที่ยิงไปแล้วกำลังรอคำตอบ
 function onPacket(uuid, dv){
   packetCount++;
-  const h = hex(dv), a = ascii(dv), g = guesses(dv);
-  if(packetCount <= 60){           // เก็บ 60 แพ็กเก็ตแรกพอ ไม่ให้ล้น
-    log('[' + packetCount + '] ' + uuid.slice(0, 8) + ' (' + dv.byteLength + 'B) ' + h);
-    if(a.replace(/·/g, '').length > 2) log('      ascii: "' + a + '"');
-    if(g) log('      ลองถอด: ' + g);
-  } else if(packetCount === 61){
-    log('... (หยุดบันทึกที่ 60 แพ็กเก็ต — เท่านี้พอให้ดูรูปแบบแล้ว)');
-  }
+  const h = hex(dv);
+  if(packetCount <= 200) log('[' + packetCount + '] ' + uuid.slice(0, 8) + ' (' + dv.byteLength + 'B) ' + h);
+  else if(packetCount === 201) log('... (หยุดบันทึกแพ็กเก็ตดิบที่ 200)');
   seen.push({ uuid, hex: h });
 
-  // เดาค่าที่น่าจะเป็นตัวเลขบนหน้าจอ แล้วโชว์ตัวใหญ่ไว้เทียบกับเครื่อง
-  let best = null;
-  for(let i = 0; i + 4 <= dv.byteLength; i++){
-    const f = dv.getFloat32(i, true);
-    if(isFinite(f) && f > 0.01 && f < 100000){ best = f; break; }
+  let txt = '';
+  for(let i = 0; i < dv.byteLength; i++) txt += String.fromCharCode(dv.getUint8(i));
+  rxBuf += txt;
+  let nl;
+  while((nl = rxBuf.indexOf('\n')) >= 0){
+    const line = rxBuf.slice(0, nl).replace(/\r$/, '');
+    rxBuf = rxBuf.slice(nl + 1);
+    if(line !== '') onLine(line, uuid);
   }
-  if(best == null){
-    for(let i = 0; i + 4 <= dv.byteLength; i++){
-      const u = dv.getUint32(i, true);
-      if(u > 0 && u < 10000000){ best = u / 1000; break; }
+  // ข้อมูลไบนารีล้วน (ไม่มี CR LF เลย) ก็อย่าให้บัฟเฟอร์บวมไปเรื่อยๆ
+  if(rxBuf.length > 4096) rxBuf = rxBuf.slice(-1024);
+}
+/* ได้ข้อความเต็มบรรทัดแล้ว — นี่คือคำตอบจริงของเครื่อง */
+function onLine(line, uuid){
+  lineCount++;
+  log('<<< "' + line + '"');
+  if(waiting){ const w = waiting; waiting = null; w.resolve(line); }
+  const n = scpiNumber(line);
+  $('liveVal').textContent = n != null ? String(n)
+    : (line.length > 16 ? line.slice(0, 16) + '…' : line);
+  $('liveSrc').textContent = n != null ? 'ข้อความที่ ' + lineCount : 'ข้อความที่ ' + lineCount + ' (ไม่ใช่ตัวเลข)';
+}
+/* ดึงตัวเลขออกจากคำตอบแบบ SCPI เช่น "U 231.4E+00" หรือ "231.4" — ชื่อรุ่นที่มีตัวเลขปนไม่นับ */
+function scpiNumber(line){
+  const t = String(line).trim();
+  let m = t.match(/^[A-Za-z]{0,5}\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*[A-Za-z%]{0,4}$/);
+  // ต้องจบบรรทัดหรือคั่นด้วย ; เท่านั้น — 0,"No error" จึงไม่ถูกนับเป็นตัวเลข
+  if(!m) m = t.match(/^([A-Za-z]{1,5}\s+)?([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)(?=;|$)/);
+  const v = m ? parseFloat(m[m.length - 1]) : NaN;
+  return isFinite(v) ? Number(v.toPrecision(7)) : null;
+}
+/* ยิงคำสั่งแล้วรอคำตอบ 1 บรรทัด — ไม่มาใน 1.6 วินาทีถือว่าเครื่องไม่รู้จักคำสั่งนี้ */
+function askDevice(cmd, ms){
+  return new Promise(async resolve=>{
+    const w = writables.find(x=> x.uuid === cmdChannel) || writables[0];
+    if(!w || !device || !device.gatt.connected){ resolve(null); return; }
+    rxBuf = '';
+    let done = false;
+    waiting = { resolve: v=>{ if(!done){ done = true; resolve(v); } } };
+    const t = setTimeout(()=>{ if(!done){ done = true; waiting = null; resolve(null); } }, ms || 1600);
+    log('>>> ' + cmd);
+    try{
+      const bytes = new TextEncoder().encode(cmd + '\r\n');
+      if(w.ch.properties.write) await w.ch.writeValueWithResponse(bytes);
+      else await w.ch.writeValueWithoutResponse(bytes);
+    }catch(e){
+      clearTimeout(t);
+      log('!! ส่งไม่ได้: ' + e.message);
+      if(!done){ done = true; waiting = null; resolve(null); }
     }
-  }
-  if(best != null){
-    $('liveVal').textContent = Number(best.toPrecision(6)).toString();
-    $('liveSrc').textContent = 'แพ็กเก็ตที่ ' + packetCount;
-  }
+  });
 }
 
 $('copyBtn').addEventListener('click', async ()=>{
