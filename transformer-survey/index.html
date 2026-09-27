@@ -5536,7 +5536,8 @@ function txlPhotoLabel(kind){
   }
   return 'รูป';
 }
-let txlHist = { deviceId:'', records:[], open:'', confirmCancel:'' };
+let txlHist = { deviceId:'', records:[], open:'', confirmCancel:'',
+                manage:false, picked:{}, confirmDel:false, deleting:false };
 
 function txlHistNum(v){ const n = parseFloat(v); return isNaN(n) ? null : n; }
 function txlHistAlive(r){ return String(r.Status || '') !== 'ยกเลิก'; }
@@ -5721,10 +5722,20 @@ function txlRenderHistory(){
     return;
   }
   const alive = recs.filter(txlHistAlive);
-  const head = '<div class="txl-hhead">' +
-    '<span>ประวัติการวัด ' + recs.length + ' ครั้ง' +
-      (recs.length !== alive.length ? ' <small>(ยกเลิก ' + (recs.length - alive.length) + ')</small>' : '') + '</span>' +
-    '<button type="button" class="txl-hexport" data-txl-hexport="1">⬇ ส่งออก</button></div>';
+  const isAdmin = CURRENT_USER && String(CURRENT_USER.role || '') === 'admin';
+  const picked = Object.keys(txlHist.picked).filter(k=> txlHist.picked[k]);
+  const head = txlHist.manage
+    ? '<div class="txl-hbar"><b>เลือกผลวัดที่จะลบ' +
+        (picked.length ? ' · เลือกแล้ว ' + picked.length : '') + '</b>' +
+        (recs.length !== alive.length
+          ? '<button type="button" data-txl-hpickdead="1">เลือกที่ยกเลิก</button>' : '') +
+        '<button type="button" class="done" data-txl-hmanage="0">เสร็จ</button></div>'
+    : '<div class="txl-hhead">' +
+        '<span>ประวัติการวัด ' + recs.length + ' ครั้ง' +
+          (recs.length !== alive.length ? ' <small>(ยกเลิก ' + (recs.length - alive.length) + ')</small>' : '') + '</span>' +
+        '<button type="button" class="txl-hexport" data-txl-hexport="1">⬇ ส่งออก</button>' +
+        (isAdmin ? '<button type="button" class="txl-hmanage" data-txl-hmanage="1">🗑 จัดการ</button>' : '') +
+      '</div>';
 
   const list = recs.map((r, idx)=>{
     const pct = txlHistNum(r.LoadPercent);
@@ -5732,7 +5743,7 @@ function txlRenderHistory(){
     const dead = !txlHistAlive(r);
     const open = txlHist.open === r.LoadID;
     const cfgLabel = (TXL_CONFIGS[r.SysConfig] || {}).label || String(r.SysConfig || '');
-    return '<div class="txl-hrec' + (dead ? ' cancelled' : '') + (open ? ' open' : '') + '">' +
+    const card = '<div class="txl-hrec' + (dead ? ' cancelled' : '') + (open ? ' open' : '') + '">' +
       '<button type="button" class="txl-hline" data-txl-open="' + (open ? '' : escapeHtml(r.LoadID)) + '">' +
         '<b class="' + cls + '">' + (pct == null ? '-' : Math.round(pct) + '%') + '</b>' +
         '<span class="kva">' + escapeHtml(String(r.KvaMeasured || '-')) + ' kVA</span>' +
@@ -5743,12 +5754,27 @@ function txlRenderHistory(){
       '<div class="txl-hmeta">' + escapeHtml(String(r.MeasuredAt || '')) + ' · ' + escapeHtml(String(r.MeasuredBy || '')) +
         (cfgLabel ? ' · ' + escapeHtml(cfgLabel) : '') + ' · ' + escapeHtml(String(r.MeasurePoint || '')) +
         (dead && r.UpdatedBy ? ' · ยกเลิกโดย ' + escapeHtml(String(r.UpdatedBy)) : '') + '</div>' +
-      (open ? txlHistDetailHtml(r)
-            : '<button type="button" class="txl-hmore" data-txl-open="' + escapeHtml(r.LoadID) + '">ดูค่าที่วัดทั้งหมด ▾</button>') +
+      (txlHist.manage ? ''
+        : open ? txlHistDetailHtml(r)
+               : '<button type="button" class="txl-hmore" data-txl-open="' + escapeHtml(r.LoadID) + '">ดูค่าที่วัดทั้งหมด ▾</button>') +
     '</div>';
+    if(!txlHist.manage) return card;
+    return '<div class="txl-hpick"><input type="checkbox" data-txl-hpick="' + escapeHtml(r.LoadID) + '"' +
+      (txlHist.picked[r.LoadID] ? ' checked' : '') + ' aria-label="เลือกผลวัดนี้">' +
+      '<div class="body">' + card + '</div></div>';
   }).join('');
 
-  box.innerHTML = head + txlTrendSvg(recs) + list;
+  const delBar = txlHist.manage
+    ? '<div class="txl-hdelbar">' +
+        '<button type="button" class="cancel" data-txl-hmanage="0">ยกเลิก</button>' +
+        '<button type="button" class="go" data-txl-hdel="1"' + (picked.length ? '' : ' disabled') + '>' +
+        '🗑 ลบที่เลือก' + (picked.length ? ' (' + picked.length + ')' : '') + '</button></div>'
+    : '';
+  const confirmPanel = (txlHist.manage && txlHist.confirmDel && picked.length)
+    ? txlHistDeleteConfirm(recs.filter(r=> txlHist.picked[r.LoadID])) : '';
+
+  box.innerHTML = head + (txlHist.manage ? '' : txlTrendSvg(recs)) +
+                  confirmPanel + list + delBar;
 
   box.querySelectorAll('[data-txl-open]').forEach(b=>{
     b.addEventListener('click', ()=>{
@@ -5765,6 +5791,100 @@ function txlRenderHistory(){
   box.querySelectorAll('[data-txl-cancel]').forEach(b=>{
     b.addEventListener('click', ()=> txlCancelRecord(b.dataset.txlCancel));
   });
+  box.querySelectorAll('[data-txl-hmanage]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      txlHist.manage = b.dataset.txlHmanage === '1';
+      txlHist.picked = {}; txlHist.confirmDel = false; txlHist.open = '';
+      txlRenderHistory();
+    });
+  });
+  box.querySelectorAll('[data-txl-hpick]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      txlHist.picked[cb.dataset.txlHpick] = cb.checked;
+      txlHist.confirmDel = false;
+      txlRenderHistory();
+    });
+  });
+  const pd = box.querySelector('[data-txl-hpickdead]');
+  if(pd) pd.addEventListener('click', ()=>{
+    txlHist.records.forEach(r=>{ if(!txlHistAlive(r)) txlHist.picked[r.LoadID] = true; });
+    txlHist.confirmDel = false;
+    txlRenderHistory();
+  });
+  const gd = box.querySelector('[data-txl-hdel]');
+  if(gd) gd.addEventListener('click', ()=>{ txlHist.confirmDel = true; txlRenderHistory();
+    const c = box.querySelector('.txl-conf'); if(c) c.scrollIntoView({ block:'nearest' }); });
+  const dno = box.querySelector('[data-txl-hdelno]');
+  if(dno) dno.addEventListener('click', ()=>{ txlHist.confirmDel = false; txlRenderHistory(); });
+  const dyes = box.querySelector('[data-txl-hdelyes]');
+  if(dyes) dyes.addEventListener('click', ()=> txlDeleteRecords());
+}
+
+/* หน้ายืนยันก่อนลบ — บอกชัดว่าจะลบอะไร และลบแล้วเกิดอะไรขึ้นกับรูป */
+function txlHistDeleteConfirm(list){
+  const rows = list.map(r=>{
+    const pct = txlHistNum(r.LoadPercent);
+    return '<li><b>' + escapeHtml(String(r.MeasuredAt || '')) + '</b> · ' +
+      (pct == null ? '-' : Math.round(pct) + '%') + ' ' +
+      escapeHtml(String(r.KvaMeasured || '-')) + ' kVA' +
+      '<span>' + escapeHtml(txlHistAlive(r) ? String(r.Verdict || '') : 'ยกเลิกแล้ว') + '</span></li>';
+  }).join('');
+  const nPh = list.reduce((s2, r)=> s2 + ((r.photos || []).length), 0);
+  return '<div class="txl-conf">' +
+    '<h5>ยืนยันลบผลวัด ' + list.length + ' รายการ</h5>' +
+    '<p>รายการที่ลบจะหายจากประวัติและไม่ถูกนับในรายงาน แต่แถวข้อมูลยังคงอยู่ในชีตเพื่อคงร่องรอยว่าเคยมีการวัด</p>' +
+    '<ul>' + rows + '</ul>' +
+    '<div class="txl-conf-ph">📷 <b>รูปถ่าย ' + nPh + ' ภาพยังอยู่ในไดรฟ์ตามเดิม</b> ' +
+      'ระบบจะต่อท้ายคำบรรยายรูปไว้ว่าผลวัดถูกลบออกจากประวัติแล้ว</div>' +
+    '<div class="btns">' +
+      '<button type="button" class="no" data-txl-hdelno="1">ไม่ลบ</button>' +
+      '<button type="button" class="yes" data-txl-hdelyes="1"' + (txlHist.deleting ? ' disabled' : '') + '>' +
+      (txlHist.deleting ? 'กำลังลบ...' : 'ลบ ' + list.length + ' รายการ') + '</button>' +
+    '</div></div>';
+}
+
+/* ลบจริง — ส่งรหัสทั้งชุดไปครั้งเดียว ชีตจะตั้งสถานะเป็น "ลบแล้ว" ให้ */
+async function txlDeleteRecords(){
+  const ids = Object.keys(txlHist.picked).filter(k=> txlHist.picked[k]);
+  if(!ids.length || txlHist.deleting) return;
+  if(!(await requireAuth())){ showToast('ต้องเข้าสู่ระบบก่อน', 'warn'); return; }
+  txlHist.deleting = true; txlRenderHistory();
+  PEAUI.saving.show('กำลังลบผลวัด ' + ids.length + ' รายการ');
+  try{
+    const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'txLoadDelete', loadIds: ids,
+        changedBy: CURRENT_USER.name, changedByPassword: CURRENT_USER.password }) });
+    const json = await res.json();
+    txlHist.deleting = false;
+    if(!json || !json.ok){
+      PEAUI.saving.fail('ลบไม่สำเร็จ', (json && json.error) || 'ชีตตอบกลับว่าไม่สำเร็จ');
+      txlRenderHistory();
+      return;
+    }
+    const gone = {};
+    (json.deleted || ids).forEach(id=> gone[id] = true);
+    txlHist.records = txlHist.records.filter(r=> !gone[r.LoadID]);
+    txlHist.picked = {}; txlHist.confirmDel = false; txlHist.manage = false; txlHist.open = '';
+    PEAUI.saving.done('ลบผลวัดแล้ว ' + (json.count || ids.length) + ' รายการ',
+                      'รูปถ่ายยังอยู่ในไดรฟ์');
+    // ผลวัดล่าสุดของเครื่องอาจเปลี่ยน — เอาจากรายการที่ยังใช้ได้มาแทน
+    const alive = txlHist.records.filter(txlHistAlive);
+    const dev = form && form.d;
+    if(dev){
+      if(alive.length){
+        const a = alive[0];
+        dev.lastLoad = { at: String(a.MeasuredAt || ''), pct: txlHistNum(a.LoadPercent),
+                         kva: txlHistNum(a.KvaMeasured), verdict: String(a.Verdict || '') };
+      } else { delete dev.lastLoad; }
+      txlLatest[dev.id] = dev.lastLoad;
+      if(typeof renderDetail === 'function') renderDetail();
+    }
+    txlRenderHistory();
+  }catch(e){
+    txlHist.deleting = false;
+    PEAUI.saving.fail('ลบไม่สำเร็จ', 'ตรวจสอบสัญญาณแล้วลองใหม่');
+    txlRenderHistory();
+  }
 }
 
 async function txlShowHistory(deviceId){
@@ -5773,7 +5893,8 @@ async function txlShowHistory(deviceId){
   if(box.dataset.open === '1'){ box.dataset.open = '0'; box.innerHTML = ''; return; }
   box.dataset.open = '1';
   box.innerHTML = '<div class="txl-note">⏳ กำลังโหลดประวัติการวัด ...</div>';
-  txlHist = { deviceId, records: [], open:'', confirmCancel:'' };
+  txlHist = { deviceId, records: [], open:'', confirmCancel:'',
+              manage:false, picked:{}, confirmDel:false, deleting:false };
   try{
     const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({ action:'txLoadHistory', deviceId, limit:30,
@@ -6736,6 +6857,32 @@ let txlCarry = null;    // การตั้งค่าของการว�
     '.txc-vs span{font-size:.62rem;font-weight:700;color:var(--muted);}',
     '.txc-okline{background:#e8f5e9;color:#175c3a;border-radius:8px;padding:7px 9px;font-size:.7rem;font-weight:700;line-height:1.45;}',
     '.txc-okline.mem{background:#e3f0fb;color:#0d3e6b;}',
+    '.txl-hmanage{border:1px solid #c8d2dc;background:#fff;border-radius:8px;padding:5px 10px;font-size:.64rem;font-weight:700;color:#2b3a4a;cursor:pointer;margin-left:6px;flex:0 0 auto;}',
+    '.txl-hbar{display:flex;align-items:center;gap:8px;background:#fdf3f2;border:1px solid #e9c0bc;border-radius:10px;padding:8px 10px;margin:0 0 8px;}',
+    '.txl-hbar b{font-size:.68rem;color:#8c2f28;flex:1;line-height:1.35;}',
+    '.txl-hbar button{border:1px solid #c8d2dc;background:#fff;border-radius:8px;padding:5px 9px;font-size:.62rem;font-weight:700;color:#2b3a4a;cursor:pointer;flex:0 0 auto;}',
+    '.txl-hpick{display:flex;align-items:flex-start;gap:9px;padding:0 0 0 2px;}',
+    '.txl-hpick input{width:19px;height:19px;flex:0 0 auto;margin-top:16px;accent-color:#b3261e;}',
+    '.txl-hpick .body{flex:1;min-width:0;}',
+    '.txl-hdelbar{position:sticky;bottom:0;display:flex;gap:8px;padding:9px 0 2px;background:linear-gradient(180deg,rgba(255,255,255,0),#fff 32%);}',
+    '.txl-hdelbar button{flex:1;border:0;border-radius:11px;padding:12px;font-size:.74rem;font-weight:800;cursor:pointer;font-family:inherit;}',
+    '.txl-hdelbar .go{background:#b3261e;color:#fff;}',
+    '.txl-hdelbar .go[disabled]{background:#ddd6d5;color:#fff;}',
+    '.txl-hdelbar .cancel{background:#eef1f4;color:#41586e;flex:0 0 34%;}',
+    '.txl-conf{border:1px solid #e9c0bc;background:#fff;border-radius:12px;padding:12px 13px;margin:0 0 10px;}',
+    '.txl-conf h5{margin:0 0 4px;font-size:.8rem;color:#8c2f28;font-weight:800;}',
+    '.txl-conf p{margin:0 0 9px;font-size:.66rem;color:#5c6b7a;line-height:1.55;}',
+    '.txl-conf ul{margin:0 0 10px;padding:0;list-style:none;border:1px solid #e6e9ed;border-radius:9px;overflow:hidden;}',
+    '.txl-conf li{display:flex;gap:8px;padding:7px 9px;font-size:.65rem;border-bottom:1px solid #f0f2f5;color:#41586e;}',
+    '.txl-conf li:last-child{border-bottom:0;}',
+    '.txl-conf li b{color:#22313f;}',
+    '.txl-conf li span{color:#7b8794;margin-left:auto;white-space:nowrap;}',
+    '.txl-conf-ph{background:#f7f9fb;border-radius:9px;padding:9px 10px;margin:0 0 10px;font-size:.65rem;color:#41586e;line-height:1.5;}',
+    '.txl-conf .btns{display:flex;gap:8px;}',
+    '.txl-conf .btns button{flex:1;border:0;border-radius:10px;padding:11px;font-size:.72rem;font-weight:800;cursor:pointer;font-family:inherit;}',
+    '.txl-conf .btns .no{background:#eef1f4;color:#41586e;}',
+    '.txl-conf .btns .yes{background:#b3261e;color:#fff;}',
+    '.txl-conf .btns .yes[disabled]{background:#ddd6d5;}',
     '.txl-end{border:1px solid #d7dee6;border-radius:12px;padding:10px 11px 11px;margin:9px 0 0;background:#fff;}',
     '.txl-end.bad{border-color:#e9c0bc;background:#fffbfa;}',
     '.txl-end-h{display:flex;align-items:center;gap:7px;margin:0 0 8px;}',
