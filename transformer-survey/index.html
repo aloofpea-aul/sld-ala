@@ -2967,14 +2967,30 @@ function txlStampPhoto(dataUrl, lines){
         ctx.drawImage(img, 0, 0);
         const fs = Math.max(13, Math.round(c.width / 46));
         const pad = Math.round(fs * 0.55), lh = Math.round(fs * 1.42);
+        const gap = Math.round(fs * 0.5);          // ระยะห่างจากขอบรูป
+        const fontOf = i => (i === 0 ? '700 ' : '400 ') + fs + 'px "Noto Sans Thai", "Sarabun", sans-serif';
+        // วัดความกว้างจริงของข้อความแต่ละบรรทัด แล้ววาดแถบดำเฉพาะช่วงที่มีตัวหนังสือ ไม่คลุมเต็มความกว้างรูป
+        let textW = 0;
+        lines.forEach((t, i)=>{ ctx.font = fontOf(i); textW = Math.max(textW, ctx.measureText(t).width); });
+        const boxW = Math.min(c.width - gap * 2, Math.ceil(textW) + pad * 2);
         const boxH = lines.length * lh + pad * 2;
-        ctx.fillStyle = 'rgba(15,14,13,0.80)';
-        ctx.fillRect(0, c.height - boxH, c.width, boxH);
+        const bx = gap, by = c.height - boxH - gap, r = Math.round(fs * 0.4);
+        ctx.fillStyle = 'rgba(15,14,13,0.78)';
+        ctx.beginPath();
+        if(ctx.roundRect) ctx.roundRect(bx, by, boxW, boxH, r);
+        else {                                      // เบราว์เซอร์รุ่นเก่าที่ยังไม่มี roundRect
+          ctx.moveTo(bx + r, by);
+          ctx.arcTo(bx + boxW, by, bx + boxW, by + boxH, r);
+          ctx.arcTo(bx + boxW, by + boxH, bx, by + boxH, r);
+          ctx.arcTo(bx, by + boxH, bx, by, r);
+          ctx.arcTo(bx, by, bx + boxW, by, r);
+        }
+        ctx.fill();
         ctx.textBaseline = 'top';
         lines.forEach((t, i)=>{
-          ctx.font = (i === 0 ? '700 ' : '400 ') + fs + 'px "Noto Sans Thai", "Sarabun", sans-serif';
+          ctx.font = fontOf(i);
           ctx.fillStyle = '#ffffff';
-          ctx.fillText(t, pad, c.height - boxH + pad + i * lh);
+          ctx.fillText(t, bx + pad, by + pad + i * lh);
         });
         resolve(c.toDataURL('image/jpeg', PHOTO_QUALITY));
       }catch(e){ resolve(dataUrl); }   // ฝังลายน้ำไม่ได้ ก็ยังได้รูปต้นฉบับ ดีกว่าไม่ได้รูป
