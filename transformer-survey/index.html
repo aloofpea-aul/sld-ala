@@ -2,7 +2,9 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<!-- ไม่ใส่ viewport-fit=cover เหมือนงานพาโทรล เพื่อให้ขอบล่างชนจอ ไม่มีแถบคั่น
+     (ถ้าใส่ cover ค่า env(safe-area-inset-bottom) จะกลายเป็น 34px แล้วดันแถบปุ่มลอยขึ้นจากขอบ) -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>สำรวจหม้อแปลง - กฟส.อ่าวลึก</title>
 
 <link rel="manifest" href="manifest.json">
@@ -23,8 +25,13 @@
     --good:#2e7d32; --bad:#c62828; --warn:#b26a00;
   }
   *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;height:100%;background:var(--paper);color:var(--ink);
+  html,body{margin:0;padding:0;height:100%;color:var(--ink);
     font-family:"Noto Sans Thai","TH Sarabun New","Segoe UI",sans-serif;overflow-x:hidden;font-size:16px;}
+  /* สีของผ้าใบ (canvas) = สีที่โชว์ในแถบขอบล่างสุดใต้พื้นที่ที่หน้าเว็บวาดได้
+     ปกติขอบล่างสุดของแอปเป็นแถบปุ่มสีขาว จึงใช้ขาวให้กลืนเป็นเนื้อเดียวกัน */
+  html{background:#fff;}
+  html.edge-dark{background:#0f0e0d;}   /* ตอนเปิดหน้ากล้อง ขอบล่างเป็นสีเข้ม */
+  body{background:var(--paper);}        /* หน้าตาส่วนที่มองเห็นทั้งหมดคงเดิม */
   #app{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;}
   button{font-family:inherit;}
   button:focus-visible, input:focus-visible, select:focus-visible{outline:2px solid #9b7fd4;outline-offset:2px;}
@@ -4641,6 +4648,7 @@ function txlCapOpen(key, manualOnly){
               shot: null, value: txlGetVal(key) == null ? '' : String(txlGetVal(key)),
               camErr: '', ocr: null, view: 'crop', rect: Object.assign({}, txlCapRect) };
   document.getElementById('txlCapOverlay').classList.add('show');
+  document.documentElement.classList.add('edge-dark');
   txlCapRender();
   if(!manualOnly) txlCapStartCamera();
 }
@@ -4648,6 +4656,7 @@ function txlCapClose(){
   txlCapStopCamera();
   txl && (txl.cap = null);
   document.getElementById('txlCapOverlay').classList.remove('show');
+  document.documentElement.classList.remove('edge-dark');
 }
 let txlCapStream = null;
 // กรอบล่าสุดที่ใช้ จำไว้ใช้กับช่องถัดไป เพราะหน้าปัดเครื่องเดิมขนาดเท่าเดิม
