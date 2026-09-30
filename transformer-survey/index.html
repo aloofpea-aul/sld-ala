@@ -1686,7 +1686,7 @@ function openDetail(feederId, id){
   const { f, d } = found;
   if(currentPopup && lmap){ try{ lmap.Overlays.remove(currentPopup); }catch(e){} currentPopup = null; }
   form = { f, d, gps: null, status: null, issues: {}, correctedRating:'', correctedDesc:'', peaNo:'',
-    note:'', noGps:false, updateCoords:false, photos:{},
+    note:'', noGps:false, updateCoords:false, photos:{}, photoLinks:{},
     parentCheck:'skip', newParentId:'', savedVerify:false,
     checks:{}, newPhase:'', newTxType:'', pole:null };
   document.getElementById('detailOverlay').classList.add('show');
@@ -2109,6 +2109,8 @@ async function renderHistoryBox(deviceId){
 function bindDetailForm(){
   const { f, d } = form;
   const body = document.getElementById('detailBody');
+  // หารูปที่งานวัดโหลดถ่ายไว้แล้ว เพื่อเสนอให้ใช้ร่วมกัน
+  txlLoadShared(d.id).then(()=>{ if(form && form.d.id === d.id) fvRenderShare(); });
   const on = (id, fn)=>{ const el = document.getElementById(id); if(el) el.addEventListener('click', fn); };
   on('poleMeBtn', ()=>{
     if(!poleMap) return;
@@ -2245,6 +2247,56 @@ function restoreFormValues(){
   document.getElementById('parentSearch').value = form.newParentId;
   syncParentUi();
 }
+/* ===== ฝั่งงานตรวจสอบ: เสนอรูปที่งานวัดโหลดถ่ายไว้แล้ว =====
+   เสนอเฉพาะรูปจาก "วัดโหลด" — รูปจากการตรวจครั้งก่อนไม่เสนอ เพราะการตรวจต้องบันทึกสภาพปัจจุบัน */
+function fvRenderShare(){
+  if(!form) return;
+  PHOTO_SLOTS.forEach(sl=>{
+    const slot = document.getElementById('slot-' + sl.key);
+    if(!slot) return;
+    const old = slot.querySelector('.txl-link, .txl-used');
+    if(old) old.remove();
+    const lk = form.photoLinks[sl.key];
+    if(lk){
+      const box = document.createElement('div');
+      box.className = 'txl-used';
+      box.innerHTML = '🔗 ใช้รูปเดียวกับ' + escapeHtml(lk.from) + ' · ' + escapeHtml(String(lk.at || '')) +
+                      '<button type="button" class="x">เปลี่ยนเป็นถ่ายใหม่</button>';
+      box.querySelector('.x').addEventListener('click', ()=>{
+        delete form.photoLinks[sl.key];
+        const img = document.getElementById('photoPrev-' + sl.key);
+        if(img){ img.src = ''; img.style.display = 'none'; }
+        slot.classList.remove('has');
+        document.getElementById('photoMeta-' + sl.key).textContent = '';
+        fvRenderShare();
+      });
+      slot.appendChild(box);
+      return;
+    }
+    if(form.photos[sl.key]) return;
+    const c = txlShare.found[sl.key];
+    if(!c || c.from !== 'วัดโหลดครั้งก่อน') return;
+    const box = document.createElement('div');
+    box.innerHTML = txlShareOffer(sl.key, c);
+    const card = box.firstElementChild;
+    card.querySelector('[data-txl-shareuse]').addEventListener('click', ()=>{
+      form.photoLinks[sl.key] = { url: c.url, at: c.at, by: c.by, from: c.from };
+      const th = driveThumb(c.url);
+      const img = document.getElementById('photoPrev-' + sl.key);
+      if(img && th){ img.src = th; img.referrerPolicy = 'no-referrer'; img.style.display = 'block'; }
+      slot.classList.add('has');
+      document.getElementById('photoMeta-' + sl.key).textContent = 'ใช้ไฟล์เดิมบนไดรฟ์ ไม่ได้อัปโหลดใหม่';
+      fvRenderShare();
+      showToast('ใช้รูปเดียวกับ' + c.from + 'แล้ว', 'ok');
+    });
+    card.querySelector('[data-txl-shareno]').addEventListener('click', ()=>{
+      delete txlShare.found[sl.key];
+      fvRenderShare();
+    });
+    slot.appendChild(card);
+  });
+}
+
 function showPhoto(key){
   const p = form.photos[key];
   if(!p) return;
@@ -2254,6 +2306,8 @@ function showPhoto(key){
   document.querySelector(`#slot-${key} .pp-text`).textContent = '✓ ถ่ายใหม่ / เปลี่ยนรูป';
   document.getElementById('photoMeta-' + key).textContent =
     `${Math.round(p.bytes/1024)} KB (${p.width}×${p.height})${p.origBytes ? ` · ย่อจาก ${(p.origBytes/1048576).toFixed(1)} MB` : ''}`;
+  delete form.photoLinks[key];       // ถ่ายรูปใหม่แล้ว ให้รูปใหม่ชนะลิงก์ที่เคยเลือกไว้
+  fvRenderShare();
 }
 // สรุปผลจากการตรวจรายช่อง → form.status / form.issues / ค่าที่แก้ (ใช้ต่อในหน้ายืนยันและตอนบันทึก)
 function deriveFromChecks(){
@@ -2618,6 +2672,9 @@ async function saveSurvey(){
       body: JSON.stringify({ action:'fieldVerify', feeder:f.id, deviceId:d.id, verification,
         // photos = รูปหลายช่อง (Code.gs ใหม่) · photoBase64 = รูปต้นหม้อแปลงช่องเดียว เผื่อ Code.gs ยังเป็นเวอร์ชันเดิม
         photos: PHOTO_SLOTS.filter(sl=>form.photos[sl.key]).map(sl=>({ kind: sl.key, base64: form.photos[sl.key].base64, mimeType: form.photos[sl.key].mime })),
+        // รูปที่ใช้ร่วมกับงานวัดโหลด — ส่งเป็นลิงก์ไฟล์เดิม ไม่อัปโหลดซ้ำ
+        photoLinks: Object.keys(form.photoLinks || {}).map(k=> ({ kind:k, url: form.photoLinks[k].url,
+                      sourceAt: form.photoLinks[k].at || '', sourceFrom: form.photoLinks[k].from || '' })),
         photoBase64: (form.photos.pole || form.photos.tank) ? (form.photos.pole || form.photos.tank).base64 : null,
         photoMimeType: 'image/jpeg',
         changedBy:CURRENT_USER.name, changedByPassword:CURRENT_USER.password, updatedDevice })
@@ -2745,6 +2802,93 @@ const TXL_PHOTOS = [
   { key:'pole',  title:'1) รูปต้นหม้อแปลง',      hint:'ถ่ายให้เห็นทั้งต้นเสาและหม้อแปลง พร้อมสภาพรอบข้าง', req:true  },
   { key:'tank',  title:'2) รูปตัวถังหม้อแปลง',   hint:'ถ่ายให้อ่านหมายเลขบนตัวถังได้ชัดเจน (ซูมเข้าได้)',    req:true  }
 ];
+/* ===== รูปหม้อแปลงใช้ร่วมกันระหว่าง "ตรวจสอบหม้อแปลง" กับ "วัดโหลด" =====
+   ทั้งสองงานใช้ชื่อช่องเดียวกัน (pole / tank) จึงอ้างไฟล์เดียวกันบนไดรฟ์ได้ตรงๆ
+   - อ่านจาก getFieldHistory (งานตรวจสอบ) และ txLoadHistory (วัดโหลดครั้งก่อน)
+   - ไม่ใส่ให้เงียบๆ ต้องกด "ใช้รูปนี้" เอง และขึ้นวันที่ให้เห็นชัดทุกครั้ง
+   - ใช้ไฟล์เดิมจริง ไม่ก๊อปใหม่ ลายน้ำจึงเป็นของวันที่ถ่ายครั้งแรก */
+const txlShare = { deviceId: null, state: 'idle', found: {} };
+
+function txlShareUsable(u){
+  return !!u && typeof u === 'string' && !u.startsWith('UPLOAD_FAILED');
+}
+
+// สองงานเก็บวันที่คนละรูปแบบ ("12/9/2569 09:14" กับ "2569-06-01 10:00")
+// เทียบเป็นข้อความตรงๆ ไม่ได้ ต้องแปลงเป็นตัวเลขก่อน · ปี พ.ศ. แปลงเป็น ค.ศ. ให้เอง
+function txlShareTime(s){
+  const t = String(s || '').trim();
+  if(!t) return 0;
+  let m = t.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:[ ,]+(\d{1,2}):(\d{2}))?/);
+  if(m){
+    let y = +m[3]; if(y > 2400) y -= 543;
+    return Date.UTC(y, +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0));
+  }
+  m = t.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})(?:[ T]+(\d{1,2}):(\d{2}))?/);
+  if(m){
+    let y = +m[1]; if(y > 2400) y -= 543;
+    return Date.UTC(y, +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0));
+  }
+  const d = Date.parse(t);
+  return isFinite(d) ? d : 0;
+}
+
+// การ์ดเสนอรูปเดิม — ต้องกดเองเสมอ ไม่ใส่ให้เงียบๆ
+function txlShareOffer(key, c){
+  const th = driveThumb(c.url);
+  return '<div class="txl-link">' +
+    '<div class="txl-link-h">🔗 มีรูปนี้อยู่แล้วจาก' + escapeHtml(c.from) + '</div>' +
+    '<div class="txl-link-b">' +
+      (th ? '<img src="' + escapeHtml(th) + '" alt="รูปเดิม" loading="lazy" referrerpolicy="no-referrer">' : '') +
+      '<div class="txl-link-i"><b>ถ่ายเมื่อ ' + escapeHtml(String(c.at || 'ไม่ทราบวันที่')) + '</b>' +
+        (c.by ? 'โดย ' + escapeHtml(c.by) + ' · ' : '') + escapeHtml(c.from) +
+        '<br>ลายน้ำในรูปเป็นของวันที่ถ่าย</div></div>' +
+    '<div class="txl-link-r">' +
+      '<button type="button" class="new" data-txl-shareno="' + key + '">📷 ถ่ายใหม่</button>' +
+      '<button type="button" class="use" data-txl-shareuse="' + key + '">ใช้รูปนี้</button></div></div>';
+}
+
+async function txlLoadShared(deviceId){
+  if(txlShare.deviceId === deviceId && txlShare.state !== 'idle') return txlShare.found;
+  txlShare.deviceId = deviceId; txlShare.state = 'loading'; txlShare.found = {};
+  const found = {};
+  const put = (kind, rec)=>{
+    if(!txlShareUsable(rec.url)) return;
+    const cur = found[kind];
+    if(!cur || txlShareTime(rec.at) > txlShareTime(cur.at)) found[kind] = rec;
+  };
+
+  // 1) งานตรวจสอบหม้อแปลง
+  try{
+    const h = await loadFieldHistory(deviceId);
+    if(h && !h.outdated && h.records){
+      h.records.forEach(r=>{
+        put('pole', { url: r.photoPoleUrl, at: r.time || '', by: r.inspector || '', from: 'ตรวจสอบหม้อแปลง' });
+        put('tank', { url: r.photoTankUrl, at: r.time || '', by: r.inspector || '', from: 'ตรวจสอบหม้อแปลง' });
+      });
+    }
+  }catch(e){ /* ไม่มีก็ไม่เป็นไร */ }
+
+  // 2) การวัดโหลดครั้งก่อน
+  try{
+    const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'txLoadHistory', deviceId, limit: 10,
+        changedBy: CURRENT_USER.name, changedByPassword: CURRENT_USER.password }) });
+    const json = await res.json();
+    (json && json.records || []).forEach(r=>{
+      if(String(r.Status || '') === 'ลบแล้ว' || String(r.Status || '') === 'ยกเลิกแล้ว') return;
+      (r.photos || []).forEach(p=>{
+        const k = String(p.PhotoKind || '');
+        if(k !== 'pole' && k !== 'tank') return;
+        put(k, { url: p.DriveUrl, at: r.MeasuredAt || '', by: r.MeasuredBy || '', from: 'วัดโหลดครั้งก่อน' });
+      });
+    });
+  }catch(e){ /* ไม่มีก็ไม่เป็นไร */ }
+
+  txlShare.found = found;
+  txlShare.state = 'done';
+  return found;
+}
+
 const TXL_RECOMMEND = [
   'ขอเพิ่มขนาดหม้อแปลง',
   'สลับเฟสผู้ใช้ไฟให้สมดุล',
@@ -3169,7 +3313,7 @@ function txlOpen(feederId, deviceId){
     ratedKva: txlRatedKva(d),
     v: { va:'', vb:'', vc:'', vng:'', vab:'', vbc:'', vca:'' },
     ends: [],          // จุดปลายสาย — วัดเฉพาะแรงดัน ไม่บังคับ
-    photos: {}, extras: [],
+    photos: {}, extras: [], photoLinks: {},
     vPhoto: {},        // คีย์ช่อง → รูปหน้าปัดเครื่องวัดของค่านั้น
     vCrop: {},         // คีย์ช่อง → ภาพช่วงตัวเลขไว้ย้อนดูเทียบ
     openCrop: '',      // ช่องที่กำลังกางรูปดูอยู่ในตารางค่า
@@ -3513,17 +3657,30 @@ function txlStepValues(){
 
 /* ---------- ขั้นที่ 2 · รูปตัวหม้อแปลง — ถ่ายก่อนลงมือวัด ---------- */
 function txlStepPhotos(){
+  // หารูปเดิมของหม้อแปลงเครื่องนี้ (งานตรวจสอบ + วัดโหลดครั้งก่อน) ครั้งเดียวต่อเครื่อง
+  if(txlShare.deviceId !== txl.d.id){
+    txlLoadShared(txl.d.id).then(()=>{ if(txl && txl.step === 2) txlRender(); });
+  }
   const slots = TXL_PHOTOS.map(sl=>{
     const p = txl.photos[sl.key];
-    return '<div class="txl-slot' + (sl.req ? ' req' : '') + (p ? ' has' : '') + '">' +
+    const lk = txl.photoLinks[sl.key];
+    const cand = (!p && !lk && txlShare.state === 'done') ? txlShare.found[sl.key] : null;
+    const th = lk ? driveThumb(lk.url) : null;
+    return '<div class="txl-slot' + (sl.req ? ' req' : '') + ((p || lk) ? ' has' : '') + '">' +
       '<div class="txl-slot-h"><b>' + escapeHtml(sl.title) + '</b>' +
         '<span class="' + (sl.req ? 'txl-req' : 'txl-opt') + '">' + (sl.req ? 'จำเป็น' : 'แนะนำ') + '</span></div>' +
       '<div class="txl-slot-hint">' + escapeHtml(sl.hint) + '</div>' +
       '<div class="txl-pick"><label><span>📷 ถ่ายรูป / เลือกรูป</span>' +
         '<input type="file" accept="image/*" capture="environment" data-txl-photo="' + sl.key + '"></label>' +
-        (p ? '<img src="' + p.dataUrl + '" alt="' + escapeHtml(sl.title) + '">' : '') + '</div>' +
+        (p ? '<img src="' + p.dataUrl + '" alt="' + escapeHtml(sl.title) + '">'
+           : (th ? '<img src="' + escapeHtml(th) + '" alt="' + escapeHtml(sl.title) + '" referrerpolicy="no-referrer">' : '')) +
+      '</div>' +
       (p ? '<div class="txl-slot-m">ฝังลายน้ำแล้ว · ' + Math.round(p.bytes / 1024) + ' KB' +
            ' <button type="button" class="txl-x" data-txl-rmphoto="' + sl.key + '">ลบรูป</button></div>' : '') +
+      (lk ? '<div class="txl-used">🔗 ใช้รูปเดียวกับ' + escapeHtml(lk.from) + ' · ' + escapeHtml(String(lk.at || '')) +
+            '<button type="button" class="x" data-txl-unlink="' + sl.key + '">เปลี่ยนเป็นถ่ายใหม่</button></div>' : '') +
+      (cand ? txlShareOffer(sl.key, cand) : '') +
+      (!p && !lk && txlShare.state === 'loading' ? '<div class="txl-slot-m">⏳ กำลังหารูปเดิมของหม้อแปลงเครื่องนี้…</div>' : '') +
       '</div>';
   }).join('');
   const extras = txl.extras.map((p, i)=>
@@ -3608,7 +3765,7 @@ function txlStep4(){
       (txl.recommend[r] ? ' checked' : '') + '><span>' + escapeHtml(label) + '</span></label>';
   }).join('');
 
-  const missing = TXL_PHOTOS.filter(sl=> sl.req && !txl.photos[sl.key]).map(sl=> sl.title);
+  const missing = TXL_PHOTOS.filter(sl=> sl.req && !txl.photos[sl.key] && !txl.photoLinks[sl.key]).map(sl=> sl.title);
   // ค่าที่กรอกไว้แต่ไม่มีรูปหน้าปัดกำกับ — ไม่ห้ามบันทึก แต่บอกให้รู้ว่าช่องไหนไม่มีหลักฐาน
   const noPhoto = txlFieldList().all.filter(k=> txlNum(txlGetVal(k)) != null && !txl.vPhoto[k])
                     .map(k=> txlFieldInfoOf(k).label);
@@ -3744,6 +3901,26 @@ function txlBind(){
   body.querySelectorAll('[data-txl-rmphoto]').forEach(b=>{
     b.addEventListener('click', ()=>{ delete txl.photos[b.dataset.txlRmphoto]; txlRender(); });
   });
+  // ใช้รูปเดิมร่วมกับอีกงาน / ไม่ใช้ / เลิกใช้
+  body.querySelectorAll('[data-txl-shareuse]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const k = b.dataset.txlShareuse, c = txlShare.found[k];
+      if(!c) return;
+      txl.photoLinks[k] = { url: c.url, at: c.at, by: c.by, from: c.from };
+      delete txl.photos[k];
+      txlRender();
+      showToast('ใช้รูปเดียวกับ' + c.from + 'แล้ว', 'ok');
+    });
+  });
+  body.querySelectorAll('[data-txl-shareno]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      delete txlShare.found[b.dataset.txlShareno];   // ซ่อนข้อเสนอของช่องนี้ไว้ก่อน
+      txlRender();
+    });
+  });
+  body.querySelectorAll('[data-txl-unlink]').forEach(b=>{
+    b.addEventListener('click', ()=>{ delete txl.photoLinks[b.dataset.txlUnlink]; txlRender(); });
+  });
   body.querySelectorAll('[data-txl-rmextra]').forEach(b=>{
     b.addEventListener('click', ()=>{ txl.extras.splice(parseInt(b.dataset.txlRmextra, 10), 1); txlRender(); });
   });
@@ -3809,7 +3986,7 @@ function txlGoStep(n){
 function txlValidate(step){
   if(step === 1 && !TXL_CONFIGS[txl.sysConfig]) return 'เลือกรูปแบบระบบแรงต่ำก่อน';
   if(step === 2){                       // ขั้นรูปตัวหม้อแปลง
-    const missing = TXL_PHOTOS.filter(sl=> sl.req && !txl.photos[sl.key]);
+    const missing = TXL_PHOTOS.filter(sl=> sl.req && !txl.photos[sl.key] && !txl.photoLinks[sl.key]);
     if(missing.length) return 'ต้องมีรูป: ' + missing.map(sl=> sl.title.replace(/^\d\)\s*/, '')).join(' และ ');
   }
   if(step === 3){                       // ขั้นวัดค่า
@@ -5483,8 +5660,15 @@ async function txlSave(){
   txl.extras.forEach(p=> photos.push({ kind:'extra', base64: p.base64, mimeType: p.mime,
                         takenAt: txl.measuredAt.toISOString(), lat: txl.lat, lon: txl.lon }));
 
+  // รูปที่ใช้ร่วมกับงานอื่น — ส่งเป็นลิงก์ไฟล์เดิมบนไดรฟ์ ไม่อัปโหลดซ้ำ
+  const photoLinks = Object.keys(txl.photoLinks || {}).map(k=> ({
+    kind: k, url: txl.photoLinks[k].url,
+    sourceAt: txl.photoLinks[k].at || '', sourceFrom: txl.photoLinks[k].from || ''
+  }));
+
   const payload = {
     action: 'txLoadSave',
+    photoLinks: photoLinks,
     measure: {
       deviceId: txl.d.id, feeder: txl.f.id, measuredAt: txl.measuredAt.toISOString(),
       sysConfig: txl.sysConfig, numFeeders: txl.feeders.length, measurePoint: txl.measurePoint,
@@ -6919,6 +7103,18 @@ let txlCarry = null;    // การตั้งค่าของการว�
     '.txc-crop{position:relative;background:#c9d2cf;border:2px solid #2e7d32;border-radius:11px;padding:6px;}',
     '.txc-crop.warn{border-color:#b26a00;}',
     '.txc-crop img{display:block;width:100%;max-height:190px;object-fit:contain;border-radius:7px;cursor:zoom-in;}',
+    '.txl-link{border:1px solid #b9c6d3;background:#f4f8fc;border-radius:11px;padding:10px 11px;margin:8px 0 0;}',
+    '.txl-link-h{display:flex;align-items:center;gap:7px;font-size:.7rem;font-weight:800;color:#2a5d8f;margin:0 0 8px;}',
+    '.txl-link-b{display:flex;gap:10px;align-items:center;}',
+    '.txl-link-b img{width:74px;height:56px;object-fit:cover;border-radius:8px;border:1px solid #d7dee6;flex:0 0 auto;background:#e9edf1;}',
+    '.txl-link-i{flex:1;min-width:0;font-size:.63rem;color:#41586e;line-height:1.5;}',
+    '.txl-link-i b{display:block;font-size:.68rem;color:#22313f;}',
+    '.txl-link-r{display:flex;gap:8px;margin:9px 0 0;}',
+    '.txl-link-r button{flex:1;border:0;border-radius:9px;padding:10px;font-size:.7rem;font-weight:800;cursor:pointer;}',
+    '.txl-link-r .use{background:#2a5d8f;color:#fff;}',
+    '.txl-link-r .new{background:#eef1f4;color:#41586e;}',
+    '.txl-used{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:.6rem;color:#2a5d8f;font-weight:700;background:#eef4fa;border-radius:7px;padding:5px 8px;margin:7px 0 0;}',
+    '.txl-used .x{margin-left:auto;border:0;background:none;color:#8c6f2f;font-weight:700;font-size:.6rem;cursor:pointer;}',
     '.txc-crop-z{position:absolute;right:10px;bottom:10px;font-size:.56rem;font-weight:700;background:rgba(15,14,13,.72);color:#fff;padding:3px 8px;border-radius:6px;pointer-events:none;}',
     '#txcZoom{position:fixed;inset:0;z-index:9800;background:rgba(8,8,8,.96);display:none;align-items:center;justify-content:center;padding:14px;}',
     '#txcZoom.show{display:flex;}',
