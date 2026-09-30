@@ -4667,11 +4667,30 @@ function txlCapOpen(key, manualOnly){
   txlCapRender();
   if(!manualOnly) txlCapStartCamera();
 }
+// ดูแถบรูปแบบเต็มจอ — เผื่อแดดจ้าหรือตัวเลขเลือน จะได้ซูมดูก่อนพิมพ์เอง
+function txlCropZoom(src){
+  if(!src) return;
+  let z = document.getElementById('txcZoom');
+  if(!z){
+    z = document.createElement('div');
+    z.id = 'txcZoom';
+    z.innerHTML = '<img alt="ภาพช่วงตัวเลขแบบเต็มจอ">' +
+                  '<button type="button" class="zx" aria-label="ปิด">✕</button>' +
+                  '<span class="zt">แตะที่ใดก็ได้เพื่อปิด</span>';
+    document.body.appendChild(z);
+    z.addEventListener('click', ()=> z.classList.remove('show'));
+  }
+  z.querySelector('img').src = src;
+  z.classList.add('show');
+}
+
 function txlCapClose(){
   txlCapStopCamera();
   txl && (txl.cap = null);
   document.getElementById('txlCapOverlay').classList.remove('show');
   document.documentElement.classList.remove('edge-dark');
+  const z = document.getElementById('txcZoom');
+  if(z) z.classList.remove('show');
 }
 let txlCapStream = null;
 // กรอบล่าสุดที่ใช้ จำไว้ใช้กับช่องถัดไป เพราะหน้าปัดเครื่องเดิมขนาดเท่าเดิม
@@ -5079,31 +5098,53 @@ function txlCapRunOcr(){
         const res = txlSegOcr.read(ctx.getImageData(0, 0, c.width, c.height), opt);
 
         if(res && res.box){
-          // ตัดภาพให้เหลือเฉพาะแถวตัวเลขที่เจอ แล้วขีดสีส้มใต้หลักที่อ่านไม่ออก
+          // กรอบขยับไปเกาะตัวเลขที่เจอจริง ครั้งต่อไปจะเล็งง่ายขึ้นเอง
           const mg = Math.round((res.box.y1 - res.box.y0 + 1) * 0.22);
           const bx = Math.max(0, res.box.x0 - mg), by = Math.max(0, res.box.y0 - mg);
           const bw = Math.min(c.width - bx, res.box.x1 - res.box.x0 + 1 + mg * 2);
           const bh = Math.min(c.height - by, res.box.y1 - res.box.y0 + 1 + mg * 2);
-          const c2 = document.createElement('canvas');
-          c2.width = bw; c2.height = bh;
-          const g2 = c2.getContext('2d');
-          g2.drawImage(c, bx, by, bw, bh, 0, 0, bw, bh);
-          (res.digits || []).forEach(d=>{
-            if(d.x0 == null) return;
-            // ขีดส้ม = อ่านไม่ออก · ขีดฟ้า = ขีดไม่ชัด แต่เทียบจากคลังภาพได้
-            if(d.ok && !d.fromMem) return;
-            const th = Math.max(4, Math.round(bh * 0.055));
-            g2.fillStyle = d.fromMem ? '#1565c0' : '#b26a00';
-            g2.fillRect(d.x0 - bx, bh - th - 2, Math.max(6, d.x1 - d.x0 + 1), th);
-          });
-          res.cropUrl = c2.toDataURL('image/jpeg', 0.88);
-          // กรอบขยับไปเกาะตัวเลขที่เจอจริง ครั้งต่อไปจะเล็งง่ายขึ้นเอง
           res.foundRect = {
             x: (sx + bx / k) / IW, y: (sy + by / k) / IH,
             w: (bw / k) / IW, h: (bh / k) / IH
           };
-        } else {
-          res.cropUrl = c.toDataURL('image/jpeg', 0.88);
+        }
+
+        // ---- แถบรูปสำหรับหน้ายืนยัน ----
+        // ตัดตาม "กรอบเขียวที่ช่างเล็งไว้" เสมอ ไม่ผูกกับผลการอ่าน
+        // เพราะถ้าอ่านไม่ออกแล้วไปโชว์บริเวณวิเคราะห์ทั้งก้อน ตัวเลขจะเล็กจนพิมพ์ตามไม่ได้
+        // เผื่อขอบบน-ล่าง 30% ของความสูงกรอบ (ลองแล้วว่าไม่ตัดหัว-ท้ายตัวเลข) ซ้าย-ขวา 6%
+        if(res){
+          try{
+            const myP = r.h * 0.30, mxP = r.w * 0.06;
+            const pv = {
+              x: Math.max(0, r.x - mxP), y: Math.max(0, r.y - myP),
+              x1: Math.min(1, r.x + r.w + mxP), y1: Math.min(1, r.y + r.h + myP)
+            };
+            const pX = Math.round(pv.x * IW), pY = Math.round(pv.y * IH);
+            const pW = Math.max(1, Math.round((pv.x1 - pv.x) * IW));
+            const pH = Math.max(1, Math.round((pv.y1 - pv.y) * IH));
+            const pk = Math.min(4, Math.max(1, 640 / pW));
+            const cp = document.createElement('canvas');
+            cp.width = Math.round(pW * pk); cp.height = Math.round(pH * pk);
+            const gp = cp.getContext('2d');
+            gp.imageSmoothingEnabled = true;
+            gp.drawImage(img, pX, pY, pW, pH, 0, 0, cp.width, cp.height);
+
+            // ขีดใต้หลักที่ไม่มั่นใจ — แปลงพิกัดจากภาพที่ใช้วิเคราะห์มาเป็นภาพกรอบเขียว
+            // ส้ม = อ่านไม่ออก · ฟ้า = ขีดไม่ชัด แต่เทียบจากคลังภาพได้
+            const toPv = ax => (sx + ax / k - pX) * pk;
+            const th = Math.max(4, Math.round(cp.height * 0.055));
+            (res.digits || []).forEach(d=>{
+              if(d.x0 == null || (d.ok && !d.fromMem)) return;
+              const a = Math.max(0, toPv(d.x0)), b2 = Math.min(cp.width, toPv(d.x1 + 1));
+              if(b2 <= 0 || a >= cp.width || b2 <= a) return;
+              gp.fillStyle = d.fromMem ? '#1565c0' : '#b26a00';
+              gp.fillRect(a, cp.height - th - 2, Math.max(6, b2 - a), th);
+            });
+            res.cropUrl = cp.toDataURL('image/jpeg', 0.9);
+          }catch(e){
+            res.cropUrl = c.toDataURL('image/jpeg', 0.88);   // เผื่อพลาด ยังมีภาพให้ดู
+          }
         }
         resolve(res);
       }catch(e){ resolve(null); }
@@ -5308,8 +5349,9 @@ function txlCapRender(){
   // ---- แถบรูปช่วงตัวเลข วางชิดเหนือช่องกรอก เพื่อเทียบโดยไม่ต้องใช้ความจำ ----
   const cropBox = (!manual && ocr && ocr.cropUrl)
     ? '<div class="txc-crop' + (good ? '' : ' warn') + '">' +
-        '<img src="' + ocr.cropUrl + '" alt="ภาพหน้าปัดเฉพาะช่วงตัวเลข">' +
-        '<span class="txc-crop-t">ภาพจริงจากหน้าปัด · ขยายให้ดูชัด</span></div>'
+        '<img id="txcCropImg" src="' + ocr.cropUrl + '" alt="ภาพหน้าปัดเฉพาะช่วงตัวเลข">' +
+        '<span class="txc-crop-t">ภาพจริงจากหน้าปัด · ตามกรอบที่เล็งไว้</span>' +
+        '<span class="txc-crop-z">🔍 แตะขยาย</span></div>'
     : '';
   const divider = cropBox
     ? '<div class="txc-vs"><i></i><span>เทียบกับที่จะบันทึก</span><i></i></div>' : '';
@@ -5369,6 +5411,8 @@ function txlCapRender(){
   syncUse();
   useBtn.addEventListener('click', txlCapUse);
   document.getElementById('txcRetake').addEventListener('click', txlCapRetake);
+  const cimg = document.getElementById('txcCropImg');
+  if(cimg) cimg.addEventListener('click', ()=> txlCropZoom(cimg.src));
   const keep = document.getElementById('txcKeep');
   if(keep) keep.addEventListener('click', txlCapKeepOnly);
   const full = document.getElementById('txcFull');
@@ -6874,7 +6918,13 @@ let txlCarry = null;    // การตั้งค่าของการว�
     /* แถบรูปช่วงตัวเลข วางชิดเหนือช่องกรอก — เทียบสองแถวโดยไม่ต้องใช้ความจำ */
     '.txc-crop{position:relative;background:#c9d2cf;border:2px solid #2e7d32;border-radius:11px;padding:6px;}',
     '.txc-crop.warn{border-color:#b26a00;}',
-    '.txc-crop img{display:block;width:100%;max-height:132px;object-fit:contain;border-radius:7px;}',
+    '.txc-crop img{display:block;width:100%;max-height:190px;object-fit:contain;border-radius:7px;cursor:zoom-in;}',
+    '.txc-crop-z{position:absolute;right:10px;bottom:10px;font-size:.56rem;font-weight:700;background:rgba(15,14,13,.72);color:#fff;padding:3px 8px;border-radius:6px;pointer-events:none;}',
+    '#txcZoom{position:fixed;inset:0;z-index:9800;background:rgba(8,8,8,.96);display:none;align-items:center;justify-content:center;padding:14px;}',
+    '#txcZoom.show{display:flex;}',
+    '#txcZoom img{max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;}',
+    '#txcZoom .zx{position:absolute;top:calc(12px + env(safe-area-inset-top));right:14px;border:0;background:rgba(255,255,255,.16);color:#fff;font-size:1rem;width:40px;height:40px;border-radius:50%;cursor:pointer;}',
+    '#txcZoom .zt{position:absolute;left:0;right:0;bottom:calc(16px + env(safe-area-inset-bottom));text-align:center;color:#cfc9c0;font-size:.66rem;}',
     '.txc-crop-t{position:absolute;left:10px;top:10px;font-size:.56rem;font-weight:700;background:rgba(15,14,13,.72);color:#fff;padding:2px 7px;border-radius:6px;}',
     '.txc-vs{display:flex;align-items:center;gap:8px;}',
     '.txc-vs i{flex:1;height:1px;background:#ddd9d0;}',
