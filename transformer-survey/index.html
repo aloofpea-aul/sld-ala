@@ -2889,6 +2889,26 @@ async function txlLoadShared(deviceId){
   return found;
 }
 
+/* ===== รุ่นเครื่องวัดที่ช่างใช้จริง =====
+   ชื่อรุ่นถูกเก็บลงชีตและติดไปกับทุกภาพในคลัง ใช้สองอย่าง
+     1) เทียบคลังภาพเฉพาะรุ่นเดียวกันก่อน แม่นกว่าเทียบรวมทุกรุ่น
+     2) เป็นที่ตั้งสูตรเฉพาะรุ่นของเครื่องอ่าน (prof) เมื่อจูนค่าได้แล้ว
+   ตอนนี้ยังไม่มีรุ่นไหนมีสูตรของตัวเอง — วัดแล้วยังไม่มีค่าชุดไหนที่อ่านเพิ่มได้
+   โดยไม่เริ่มอ่านผิด จึงคงค่าปริยายไว้ก่อน ดีกว่าได้ค่าผิดที่ดูน่าเชื่อ */
+const TXL_METERS = [
+  { id:'KYORITSU KEW SNAP 200', short:'KYORITSU 200',  prof:null },
+  { id:'HIOKI 3282',            short:'HIOKI 3282',    prof:null },
+  { id:'HIOKI CM3286-01',       short:'HIOKI CM3286',  prof:null }
+];
+function txlMeterOther(){
+  if(txl && txl.meterOther) return true;
+  return !!(txl && txl.meterModel && !TXL_METERS.some(m=> m.id === txl.meterModel));
+}
+function txlMeterProf(name){
+  const m = TXL_METERS.find(x=> x.id === name);
+  return (m && m.prof) || null;
+}
+
 const TXL_RECOMMEND = [
   'ขอเพิ่มขนาดหม้อแปลง',
   'สลับเฟสผู้ใช้ไฟให้สมดุล',
@@ -3407,7 +3427,16 @@ function txlStep1(){
       '<span>วงจร (1–6)</span></div></div>' : '') +
   '<div class="txl-sec"><div class="txl-sec-t">' + (perFeeder ? '4' : '3') + '. บริบทการวัด</div>' +
     '<label class="txl-f">เครื่องวัดที่ใช้</label>' +
-    '<input class="txl-in" id="txlMeter" placeholder="เช่น Fluke 376 FC" value="' + escapeHtml(txl.meterModel) + '">' +
+    '<div class="txl-chips">' +
+      TXL_METERS.map(m=> '<button type="button" class="txl-chip' +
+        (txl.meterModel === m.id ? ' on' : '') + '" data-txl-meter="' + escapeHtml(m.id) + '">' +
+        escapeHtml(m.short) + '</button>').join('') +
+      '<button type="button" class="txl-chip' + (txlMeterOther() ? ' on' : '') +
+        '" data-txl-meter="__other">อื่นๆ</button></div>' +
+    (txlMeterOther()
+      ? '<input class="txl-in" id="txlMeter" placeholder="พิมพ์ชื่อรุ่น เช่น Fluke 376 FC" value="' +
+        escapeHtml(txl.meterModel) + '">'
+      : '') +
     '<label class="txl-f">ช่วงเวลา</label><div class="txl-chips">' + periods + '</div>' +
     '<label class="txl-f">สภาพอากาศ</label><div class="txl-chips">' + weathers + '</div></div>' +
   '<div class="txl-preview">จากที่เลือก ขั้นวัดค่าจะมี <b>แรงดัน ' + nV + ' ช่อง</b> และ <b>กระแส ' +
@@ -3857,6 +3886,21 @@ function txlBind(){
   });
   const meter = document.getElementById('txlMeter');
   if(meter) meter.addEventListener('input', ()=>{ txl.meterModel = meter.value; localStorage.setItem('txl_meter', meter.value); });
+  // ปุ่มเลือกรุ่นเครื่องวัด — จำรุ่นที่เลือกไว้ ครั้งหน้าเปิดมาเป็นรุ่นเดิม
+  body.querySelectorAll('[data-txl-meter]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const v = btn.dataset.txlMeter;
+      if(v === '__other'){
+        txl.meterOther = true;
+        if(TXL_METERS.some(m=> m.id === txl.meterModel)) txl.meterModel = '';
+      } else {
+        txl.meterOther = false;
+        txl.meterModel = v;
+        localStorage.setItem('txl_meter', v);
+      }
+      txlRender();
+    });
+  });
   const note = document.getElementById('txlNote');
   if(note) note.addEventListener('input', ()=>{ txl.note = note.value; });
 
@@ -4078,7 +4122,24 @@ function txlValidate(step){
     }
     return o;
   }
-  function binarize(g0, W, H, core) {
+  // ===== สูตรเฉพาะรุ่นเครื่องวัด =====
+  // ค่าปริยายคือค่าที่ใช้มาตลอด ถ้าไม่ส่งสูตรมาจะได้พฤติกรรมเดิมทุกประการ
+  var PROF_DEFAULT = {
+    k: 0.18,          // ความไวการแยกหมึก (เซาโวลา) ยิ่งน้อยยิ่งไวกับจอคอนทราสต์ต่ำ
+    narrow: 0.34,     // กว้าง/สูง ต่ำกว่านี้ถือว่าเป็นเลข 1
+    wide: 0.82,       // กว้าง/สูง เกินนี้ไม่ใช่ตัวเลข
+    minRealH: 24,     // ความสูงจริงขั้นต่ำของหลัก (จุดภาพ)
+    thickLo: 3.2,     // สูง/หนาขีด ต่ำกว่านี้ไม่ใช่แถวตัวเลข
+    thickHi: 15       // สูง/หนาขีด เกินนี้ไม่ใช่แถวตัวเลข
+  };
+  function profOf(opt) {
+    var o = {}, kk;
+    for (kk in PROF_DEFAULT) o[kk] = PROF_DEFAULT[kk];
+    if (opt && opt.prof) for (kk in opt.prof) if (opt.prof[kk] != null) o[kk] = opt.prof[kk];
+    return o;
+  }
+
+  function binarize(g0, W, H, core, prof) {
     var g = smooth(g0, W, H), n = W * H, i;
 
     // ขั้วของภาพ: เลขดำบนพื้นสว่าง หรือเลขสว่างบนพื้นมืด (จอมีไฟส่องหลัง)
@@ -4109,7 +4170,7 @@ function txlValidate(step){
 
     // หน้าต่างกว้างเกินไปจะทำให้ขอบจอที่ตัดกับตัวเครื่องกลายเป็นหมึกเป็นแถบหนา
     var r = Math.max(8, Math.min(40, Math.round(Math.min(W, H) / 10)));
-    var k = 0.18, R = 128;
+    var k = (prof && prof.k != null) ? prof.k : 0.18, R = 128;
 
     // ค่าที่จุดนั้นเข้มกว่าบริเวณรอบๆ อยู่เท่าไร — เป็นภาพที่หักพื้นหลังออกแล้ว
     // แสงไม่เท่ากันทั้งจอหรือมีเงาพาดก็ไม่มีผล เพราะเทียบกับรอบๆ ตัวเองเสมอ
@@ -4267,20 +4328,21 @@ function txlValidate(step){
   }
 
   /* อ่านทีละหลัก: ส่องทั้ง 7 ตำแหน่งว่าขีดไหนติด แล้วเปิดตาราง */
-  function readDigit(bin, W, box, thick, slope) {
+  function readDigit(bin, W, box, thick, slope, prof) {
+    prof = prof || PROF_DEFAULT;
     var bw = box.x1 - box.x0 + 1, bh = box.y1 - box.y0 + 1;
     var tk = thick > 0 ? thick : Math.max(2, bh * 0.12);
     // ตัวเลข 1 มีแค่ขีดตั้งสองเส้นซ้อนกัน กล่องจึงผอมกว่าหลักอื่นมาก
     // แต่ต้องผอม "เท่าความหนาขีดจริง" ด้วย ไม่งั้นขอบตัวเครื่องหรือปุ่มที่เป็นแท่งยาว
     // จะถูกอ่านเป็นเลข 1 แล้วได้ค่าอย่าง 111 ที่ดูน่าเชื่อแต่ผิดสนิท
-    if (bw / bh < 0.34) {
+    if (bw / bh < prof.narrow) {
       if (bw <= tk * 2.8) return { ch: '1', ok: true, conf: 1, narrow: true };
       return { ch: '?', ok: false, conf: 0, tooWide: true };
     }
     // ตัวเลขบนจอ 7 ขีดสูงกว่ากว้างเสมอ กว้างราว 0.5–0.65 เท่าของความสูง
     // ถ้ากล่องกว้างเกือบเท่าความสูง สิ่งนั้นไม่ใช่ตัวเลข แต่เป็นกรอบสี่เหลี่ยมอย่างอื่น
     // เช่นกรอบป้าย Bluetooth บนตัวเครื่อง ซึ่งกลวงตรงกลางเหมือนเลข 0 เป๊ะ
-    if (bw / bh > 0.82) return { ch: '?', ok: false, conf: 0, wideBox: true };
+    if (bw / bh > prof.wide) return { ch: '?', ok: false, conf: 0, wideBox: true };
 
     // ถ้าขีดบาง ช่องที่ไปส่องจะมีหมึกไม่เต็มแม้ขีดนั้นติดอยู่ จึงต้องเทียบกับ
     // สัดส่วนที่ "ควรจะเป็น" ของขีดที่ติดจริง ไม่ใช่เทียบกับเลขคงที่
@@ -4574,7 +4636,7 @@ function txlValidate(step){
     var thick = strokeThickness(bin, W, band.y0, band.y1);
     // ตัวเลขบนจอ 7 ขีด สูงราว 4–12 เท่าของความหนาขีดเสมอ ไม่ว่าจอไหนยี่ห้อไหน
     // ถ้าหลุดช่วงนี้แปลว่าสิ่งที่เจอไม่ใช่ตัวเลข แต่เป็นขอบตัวเครื่องหรือเงาก้อนใหญ่
-    if (thick > 0 && (medH < thick * 3.2 || medH > thick * 15)) return null;
+    if (thick > 0 && (medH < thick * PROFCUR.thickLo || medH > thick * PROFCUR.thickHi)) return null;
 
     var digits = [], text = '', k;
     for (k = 0; k < items.length; k++) {
@@ -4595,7 +4657,7 @@ function txlValidate(step){
         box.y0 = Math.max(band.y0, Math.round(cy - cellH / 2));
         box.y1 = Math.min(band.y1, Math.round(cy + cellH / 2));
       }
-      var d = readDigit(bin, W, box, thick, slope);
+      var d = readDigit(bin, W, box, thick, slope, PROFCUR);
       // ตัดภาพหลักนี้เก็บไว้เฉพาะเท่าที่จำเป็น เพราะทำทุกหลักทุกแถบจะช้าบนมือถือ
       //  · ตอนอ่านปกติ ทำเฉพาะหลักที่อ่านไม่ออก เพื่อเอาไปเทียบกับคลัง
       //  · ตอนช่างกดยืนยัน แอปสั่งอ่านซ้ำด้วย wantPatch เพื่อเก็บภาพทุกหลักเข้าคลัง
@@ -4697,9 +4759,9 @@ function txlValidate(step){
     }
 
     var realH = medH / (opt.scale > 0 ? opt.scale : 1);
-    if (ok && realH < 24) {
+    if (ok && realH < PROFCUR.minRealH) {
       ok = false;
-      reason = 'ตัวเลขในรูปเล็กเกินไป (สูงราว ' + Math.round(realH) + ' จุด ต้องการอย่างน้อย 24) — เข้าไปใกล้อีกนิดแล้วถ่ายใหม่';
+      reason = 'ตัวเลขในรูปเล็กเกินไป (สูงราว ' + Math.round(realH) + ' จุด ต้องการอย่างน้อย ' + PROFCUR.minRealH + ') — เข้าไปใกล้อีกนิดแล้วถ่ายใหม่';
     }
     if (ok && opt.min != null && opt.max != null && (value < opt.min || value > opt.max)) {
       ok = false;
@@ -4723,13 +4785,15 @@ function txlValidate(step){
     return (tighter && tighter.score > out.score) ? tighter : out;
   }
 
+  var PROFCUR = PROF_DEFAULT;        // สูตรที่ใช้อยู่ของการอ่านรอบนี้
   function read(img, opt) {
     opt = opt || {};
     var W = img.width, H = img.height;
     if (W < 40 || H < 20) return fail('กรอบเล็กเกินกว่าจะอ่านได้');
 
+    PROFCUR = profOf(opt);
     var g = toGray(img);
-    var b = binarize(g, W, H, opt.core);
+    var b = binarize(g, W, H, opt.core, PROFCUR);
     var inkFrac = b.ink / (W * H);
     if (inkFrac < 0.004) return fail('ในกรอบแทบไม่มีตัวเลข — เล็งกรอบให้ตรงตัวเลขก่อน');
     if (inkFrac > 0.60) return fail('ในกรอบมืดหรือรกเกินไป — ขยับกรอบให้เหลือเฉพาะตัวเลข');
@@ -5124,10 +5188,17 @@ function txlMemPack(patch){
   return q;
 }
 /* ตัวเทียบที่ส่งให้ตัวอ่านใช้ — คืนค่าเฉพาะตอนมั่นใจพอเท่านั้น */
-function txlMemMatcher(){
+function txlMemMatcher(model){
   if(!TXMEM.items.length) return null;
-  const by = txlMemCount();
-  const items = TXMEM.items;
+  // เทียบเฉพาะรุ่นเดียวกันก่อน ถ้าภาพรุ่นนั้นยังน้อยเกินไปค่อยเทียบรวมทุกรุ่น
+  // ภาพต่างรุ่นทรงเลขไม่เหมือนกัน เอามาแข่งกันทำให้ "ชนะไม่ขาด" แล้วระบบไม่กล้าอ่าน
+  let items = TXMEM.items, by = txlMemCount();
+  if(model){
+    const same = TXMEM.items.filter(r=> r.model === model);
+    const byS = {};
+    same.forEach(r=> byS[r.label] = (byS[r.label] || 0) + 1);
+    if(same.length >= TXMEM.minSame * 2){ items = same; by = byS; }
+  }
   return function(patch){
     const q = txlMemPack(patch);
     let best = Infinity, bestL = null, second = Infinity;
@@ -5142,7 +5213,9 @@ function txlMemMatcher(){
       } else if(items[k].label !== bestL && s < second) second = s;
     }
     if(bestL == null || !isFinite(second) || !(by[bestL] >= TXMEM.minSame)) return null;
-    const margin = best > 0 ? second / best : 99;
+    // ตรงเป๊ะ (ระยะ 0) ไม่ได้แปลว่ามั่นใจ ถ้ามีภาพของเลขอื่นตรงเป๊ะเท่ากัน
+    // กรณีนี้คือคลังมีภาพเดียวกันติดป้ายคนละเลข ต้องไม่กล้าอ่าน ไม่ใช่เดา
+    const margin = best > 0 ? second / best : (second > 0 ? 99 : 1);
     if(margin < TXMEM.margin) return null;
     return { ch: bestL, margin: Math.round(margin * 100) / 100 };
   };
@@ -5271,7 +5344,9 @@ function txlCapRunOcr(){
           x0: Math.round((r.x - ex.x) * IW * k), y0: Math.round((r.y - ex.y) * IH * k),
           x1: Math.round((r.x + r.w - ex.x) * IW * k), y1: Math.round((r.y + r.h - ex.y) * IH * k)
         };
-        const opt = Object.assign({ scale: k, core: core, mem: txlMemMatcher() }, txlOcrRange(cap.key));
+        const mdl = (txl && txl.meterModel) || '';
+        const opt = Object.assign({ scale: k, core: core, mem: txlMemMatcher(mdl),
+                                    prof: txlMeterProf(mdl) }, txlOcrRange(cap.key));
         const res = txlSegOcr.read(ctx.getImageData(0, 0, c.width, c.height), opt);
 
         if(res && res.box){
