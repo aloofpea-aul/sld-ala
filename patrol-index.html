@@ -906,7 +906,7 @@ function autoPickNearestPole(){
   if(ANCHOR.type !== 'POLE' || ANCHOR.ref || !POLES || !GPS) return;
   const near = nearestPoles(GPS.lat, GPS.lon, 1);
   if(near.length && near[0].d <= 60){
-    ANCHOR.ref = poleTag(near[0].p);
+    ANCHOR.ref = poleKey(near[0].p);
     toast('เลือกเสาใกล้ที่สุดให้แล้ว (ห่าง ' + Math.round(near[0].d) + ' ม.) เปลี่ยนได้ในข้อ 1', 'ok');
   }
 }
@@ -976,7 +976,7 @@ function updateSteps(){
     if(cd){ cd.classList.toggle('needed', !ok); cd.classList.toggle('done', ok); }
   });
   const items = [
-    [okLoc, GPS ? (ANCHOR.type === 'POINT' ? 'ระบุตำแหน่งแล้ว (หมุดอิสระ)' : (ANCHOR.ref ? 'ผูกกับ ' + ANCHOR.ref : 'เลือกสิ่งที่จะผูกในข้อ 1')) : 'จับพิกัดหรือวางพิกัดในข้อ 1'],
+    [okLoc, GPS ? (ANCHOR.type === 'POINT' ? 'ระบุตำแหน่งแล้ว (หมุดอิสระ)' : (ANCHOR.ref ? 'ผูกกับ ' + refShow(ANCHOR.ref) : 'เลือกสิ่งที่จะผูกในข้อ 1')) : 'จับพิกัดหรือวางพิกัดในข้อ 1'],
     [okType, okType ? 'เลือกประเภทปัญหาแล้ว' : 'เลือกประเภทปัญหาในข้อ 2'],
     [okPhoto, okPhoto ? 'มีรูปก่อนปรับปรุง ' + PHOTOS.length + ' รูป' : 'ถ่ายรูปก่อนปรับปรุงในข้อ 3']
   ];
@@ -1014,6 +1014,23 @@ function poleTag(p){
   const pre = (POLES.prefix && POLES.prefix[p[3]]) || '';
   return p[4] ? pre + String(p[4]).padStart(9,'0') : '(ไม่มีเลขในระบบ)';
 }
+/* ชื่อที่ใช้ "ชี้ตัว" เสา — ต้องไม่ซ้ำกันเด็ดขาด
+   เดิมใช้ poleTag ตรงๆ ซึ่งคืนคำว่า "(ไม่มีเลขในระบบ)" เหมือนกันหมดทุกต้นที่ยังไม่มีเลข
+   ผลคือพอเลือกต้นหนึ่ง ต้นที่ไม่มีเลขอื่นๆ ก็ติ๊กถูกและขึ้นวงกลมตามไปด้วยทั้งแผนที่
+   และบันทึกที่เก็บไว้ก็บอกไม่ได้ว่าหมายถึงต้นไหน จึงต้องผูกพิกัดเข้าไปในชื่อ */
+function poleKey(p){
+  const t = poleTag(p);
+  return p[4] ? t : t + ' @' + Number(p[0]).toFixed(6) + ',' + Number(p[1]).toFixed(6);
+}
+/* ชื่อที่เอาไว้แสดงให้คนอ่าน — ตัดพิกัดท้ายออก เหลือข้อความสั้นๆ */
+function refShow(key){
+  const i = String(key || '').indexOf(' @');
+  return i > 0 ? String(key).slice(0, i) : String(key || '');
+}
+/* ป้ายสั้นบนหมุดในแผนที่ */
+function poleBadge(p){
+  return p[4] ? String(poleTag(p)).slice(-6) : 'ไม่มีเลข';
+}
 function anchorSummary(){
   const el = $('anchorState');
   if(!el) return;
@@ -1031,7 +1048,7 @@ function anchorSummary(){
       extra = ANCHOR.ref.indexOf('~') >= 0 ? '' : ' · เลือกอุปกรณ์ตัวที่ 2 ด้วย';
     }
     el.innerHTML = '<span style="color:var(--sev3);font-weight:700;">✓ ผูกกับ' + names[ANCHOR.type] + ': ' +
-      esc(ANCHOR.ref) + '</span><br><span class="hint">' + esc(SCOPE_LABEL[scopeOf()] || '') + extra + '</span>';
+      esc(ANCHOR.ref.split('~').map(refShow).join(' ~ ')) + '</span><br><span class="hint">' + esc(SCOPE_LABEL[scopeOf()] || '') + extra + '</span>';
   } else {
     el.innerHTML = '<span style="color:var(--sev1);font-weight:700;">⚠ ยังไม่ได้เลือก' + names[ANCHOR.type] +
       ' — เลือกจากรายการด้านล่าง หรือกดปุ่ม "หมุดอิสระ" ถ้าไม่ต้องการผูกกับอะไร</span>';
@@ -1075,11 +1092,11 @@ function renderAnchorPick(){
     const picked = ANCHOR.ref ? ANCHOR.ref.split('~') : [];
     box.innerHTML = '<div class="hint" style="margin-bottom:6px;">' + label + '</div>' +
       near.map((x, i)=>{
-        const tag = poleTag(x.p);
-        const on = picked.indexOf(tag) >= 0;
-        return `<button class="ghost small" data-tag="${esc(tag)}" style="width:100%;text-align:left;margin-bottom:5px;
+        const key = poleKey(x.p);
+        const on = picked.indexOf(key) >= 0;
+        return `<button class="ghost small" data-tag="${esc(key)}" style="width:100%;text-align:left;margin-bottom:5px;
           ${on ? 'border-width:2px;background:#efeaf7;font-weight:700;' : ''}">
-          ${on ? '✓ ' : ''}${esc(tag)} · ห่าง ${Math.round(x.d)} ม. ทาง${bearing(GPS.lat, GPS.lon, x.p[0], x.p[1])}</button>`;
+          ${on ? '✓ ' : ''}${esc(poleTag(x.p))} · ห่าง ${Math.round(x.d)} ม. ทาง${bearing(GPS.lat, GPS.lon, x.p[0], x.p[1])}</button>`;
       }).join('');
     box.querySelectorAll('button').forEach(b=>{
       b.onclick = ()=>{
@@ -1133,7 +1150,7 @@ function renderAnchorPick(){
       bind();
     };
     if(ANCHOR.ref) box.insertAdjacentHTML('afterbegin',
-      `<div class="hint" style="color:var(--pea-purple);font-weight:700;margin-bottom:6px;">เลือกแล้ว: ${esc(ANCHOR.ref)}</div>`);
+      `<div class="hint" style="color:var(--pea-purple);font-weight:700;margin-bottom:6px;">เลือกแล้ว: ${esc(ANCHOR.ref.split('~').map(refShow).join(' ~ '))}</div>`);
   }
 }
 
@@ -1186,11 +1203,11 @@ function drawPickMap(){
   const chosen = {};
 
   near.forEach(x=>{
-    const tag = poleTag(x.p);
-    const on = picked.indexOf(tag) >= 0;
-    if(on) chosen[tag] = x.p;
+    const key = poleKey(x.p);
+    const on = picked.indexOf(key) >= 0;
+    if(on) chosen[key] = x.p;
     const col = POLE_MAP_COLOR[x.p[2]] || '#9e9e9e';
-    pickItems.push({ lat:x.p[0], lon:x.p[1], key:tag });
+    pickItems.push({ lat:x.p[0], lon:x.p[1], key:key });
     // ต้นที่เลือก = หมุดม่วงใหญ่มีวงแหวนและป้ายเลขเสา · ต้นอื่น = สี่เหลี่ยมสีตามระดับแรงดัน
     const html = on
       ? `<div style="position:relative;width:34px;height:34px;">
@@ -1200,7 +1217,7 @@ function drawPickMap(){
                        border:3px solid #fff;box-shadow:0 0 5px rgba(0,0,0,.55);"></div>
            <div style="position:absolute;top:-19px;left:50%;transform:translateX(-50%);background:#4b2e83;color:#fff;
                        font-size:10px;padding:2px 6px;border-radius:9px;white-space:nowrap;font-family:Consolas,monospace;">
-             ${esc(tag.slice(-6))}</div>
+             ${esc(poleBadge(x.p))}</div>
          </div>`
       : `<div style="width:14px;height:14px;background:${col};border:2px solid #fff;
            box-shadow:0 0 3px rgba(0,0,0,.5);"></div>`;
@@ -1573,7 +1590,7 @@ function clearForm(){
 }
 $('btnClear').onclick = ()=>{
   const hasData = GPS || PHOTOS.length || $('problemType').value || $('detail').value.trim() ||
-                  $('moo').value.trim() || $('landmark').value.trim() || ANCHOR.ref;
+                  $('moo').value.trim() || $('landmark').value.trim() || refShow(ANCHOR.ref);
   if(!hasData){ toast('ยังไม่ได้กรอกอะไร', 'err'); return; }
   if(!confirm('ล้างข้อมูลที่กรอกไว้ทั้งหมด?' + (PHOTOS.length ? '\nรูป ' + PHOTOS.length + ' รูปที่ถ่ายไว้จะหายด้วย' : ''))) return;
   clearForm();
