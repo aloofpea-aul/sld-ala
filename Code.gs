@@ -447,6 +447,14 @@ function doPost(e) {
       return jsonOut({ ok: true, name: changedByName, role: requesterRole,
         apps: requesterRole ? getUserApps_(changedByName, requesterRole) : [] });
     }
+    // นับการเข้าใช้แม้ยังไม่ได้ล็อกอินศูนย์รวมงาน (เช่น เข้าระบบเลขหนังสือ/งบประมาณตรงๆ ด้วยล็อกอินของโปรแกรมนั้น)
+    // userHint = ชื่อที่โปรแกรมนั้นจำไว้ในเครื่อง (ไม่ได้ตรวจรหัสผ่าน) — รับเฉพาะรหัสโปรแกรมที่มีในรายการ
+    if (!requesterRole && body.action === 'appOpen') {
+      const anonApp = String(body.app || '').trim();
+      if (!APP_LIST.some(function (a) { return a.code === anonApp; })) return jsonOut({ ok: false, error: 'ไม่รู้จักโปรแกรมนี้' });
+      const hint = String(body.userHint || '').replace(/[\r\n\t]/g, ' ').trim().slice(0, 60);
+      return appOpen_(body, hint ? hint + ' (ไม่ได้ยืนยันตัวตน)' : 'ไม่ระบุชื่อ');
+    }
     if (!requesterRole) {
       return jsonOut({ ok: false, error: 'unauthorized', name: changedByName,
         message: 'ชื่อ "' + (changedByName || '(ยังไม่ได้เลือกชื่อ)') + '" หรือรหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง หรือติดต่อผู้ดูแลระบบ' });
