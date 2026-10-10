@@ -2,6 +2,7 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
+<script src="/pea-hub.js" data-app="patrol" data-gate="off"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#4b2e83">
 <title>Patrol ระบบจำหน่าย — กฟส.อ่าวลึก</title>
@@ -3264,7 +3265,7 @@ async function afterLogin(){
     bootStep('types', TYPES.length ? 'done' : 'skip','');
   }
 
-  api({ action:'appOpen', app:'patrol' }).catch(()=>{});   // นับการเข้าใช้โปรแกรม
+  // การนับการเข้าใช้ย้ายไปอยู่ที่ /pea-hub.js (บนสุดของหน้า) — นับครั้งละการเปิดจริง แยกที่มา
 
   bootStep('findings','run');
   try{
