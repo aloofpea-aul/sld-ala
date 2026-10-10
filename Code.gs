@@ -443,7 +443,9 @@ function doPost(e) {
     const changedByPassword = body.changedByPassword || '';
     const requesterRole = getUserRole_(changedByName, changedByPassword);
     if (body.action === 'whoAmI') {
-      return jsonOut({ ok: true, name: changedByName, role: requesterRole });
+      // apps = รหัสโปรแกรมที่ใช้ได้ — หน้าโปรแกรมแต่ละตัวใช้ตรวจสิทธิ์ก่อนเปิดให้ใช้
+      return jsonOut({ ok: true, name: changedByName, role: requesterRole,
+        apps: requesterRole ? getUserApps_(changedByName, requesterRole) : [] });
     }
     if (!requesterRole) {
       return jsonOut({ ok: false, error: 'unauthorized', name: changedByName,
@@ -896,7 +898,13 @@ const SHEET_PATROL_RISK = 'PatrolRisk';
 
 // ตัวนับการเข้าใช้แต่ละโปรแกรมในแพลตฟอร์ม — ใช้เรียงการ์ดในหน้าศูนย์รวมงานตามการใช้ล่าสุด
 const SHEET_APP_USAGE = 'AppUsage';
-const APP_USAGE_HEADERS = ['App', 'Count', 'LastUser', 'LastAt', 'TodayCount', 'TodayDate'];
+const APP_USAGE_HEADERS = ['App', 'Count', 'LastUser', 'LastAt', 'TodayCount', 'TodayDate', 'PortalCount', 'DirectCount', 'HomeAppCount'];
+// บันทึกการเข้าใช้ทีละครั้ง (เวลา ผู้ใช้ โปรแกรม มาจากไหน) — ใช้ดูย้อนหลัง/สรุปรายวัน
+const SHEET_APP_VISITS = 'AppVisits';
+const APP_VISITS_HEADERS = ['Timestamp', 'App', 'User', 'Source', 'Page'];
+// คำขอสิทธิ์ใช้โปรแกรม (ผู้ใช้กด "ขอสิทธิ์" จากหน้าโปรแกรมที่ยังใช้ไม่ได้)
+const SHEET_APP_REQUESTS = 'AppRequests';
+const APP_REQUESTS_HEADERS = ['Timestamp', 'User', 'App', 'Status'];
 const PATROL_RISK_HEADERS = ['RiskID', 'Status', 'FindingID', 'Note', 'UpdatedAt', 'UpdatedBy', 'History'];
 
 const PATROL_TYPE_SEED = [
@@ -1015,7 +1023,7 @@ function patrolRowToObj_(headers, row) {
  */
 function handlePatrolAction_(body, requesterRole, changedByName) {
   const action = body && body.action;
-  const SHARED_ACTIONS = ['appOpen', 'appStats'];
+  const SHARED_ACTIONS = ['appOpen', 'appStats', 'appRequest', 'appRequests', 'appRequestDismiss', 'appVisits'];
   if (!action || (String(action).indexOf('patrol') !== 0 && SHARED_ACTIONS.indexOf(action) < 0)) return null;
 
   PATROL_ROLE_HINT = requesterRole;
@@ -1043,6 +1051,10 @@ function handlePatrolAction_(body, requesterRole, changedByName) {
     case 'patrolCloseBulk':   return patrolCloseBulk_(body, changedByName);
     case 'appOpen':           return appOpen_(body, changedByName);
     case 'appStats':          return appStats_();
+    case 'appRequest':        return appRequest_(body, changedByName, requesterRole);
+    case 'appRequests':       return appRequests_(requesterRole);
+    case 'appRequestDismiss': return appRequestDismiss_(body, requesterRole, changedByName);
+    case 'appVisits':         return appVisits_(body, requesterRole);
     default:
       return jsonOut({ ok: false, error: 'unknown patrol action: ' + action });
   }
@@ -1060,7 +1072,12 @@ const APP_LIST = [
   { code: 'sld',          name: 'Single Line Diagram' },
   { code: 'tx-survey',    name: 'สำรวจหม้อแปลง' },
   { code: 'patrol',       name: 'Patrol ระบบจำหน่าย' },
-  { code: 'construction', name: 'สำรวจงานก่อสร้าง' }
+  { code: 'construction', name: 'สำรวจงานก่อสร้าง' },
+  { code: 'tree',         name: 'งานตัดต้นไม้' },
+  { code: 'booknum',      name: 'ระบบออกเลขหนังสือ' },
+  { code: 'budget',       name: 'ระบบตัดงบทำการ' },
+  { code: 'analytics',    name: 'วิเคราะห์ข้อมูลไฟฟ้า' },
+  { code: 'drawings',     name: 'คลังแบบมาตรฐาน กฟภ.' }
 ];
 const APPS_COL = 5;        // คอลัมน์ E = Apps (รหัสโปรแกรมที่ใช้ได้)
 const APPS_META_COL = 6;   // คอลัมน์ F = AppsUpdated (แก้ล่าสุดเมื่อไหร่ โดยใคร เหตุผลอะไร)
@@ -1636,29 +1653,40 @@ function patrolRiskSet_(body, changedByName) {
 function appOpen_(body, changedByName) {
   const app = String(body.app || '').trim();
   if (!app) return jsonOut({ ok: false, error: 'ไม่ได้ระบุรหัสโปรแกรม' });
+  // ที่มาของการเปิด: portal = กดจากศูนย์รวมงาน · app = เปิดจากไอคอนบนหน้าจอ · direct = ลิงก์ตรง/บุ๊กมาร์ก
+  // (หน้าเว็บรุ่นเก่าไม่ส่ง src มา ถือว่าเปิดจากศูนย์รวมงาน เพราะเดิมนับเฉพาะตอนกดการ์ด)
+  let src = String(body.src || 'portal').trim();
+  if (['portal', 'direct', 'app'].indexOf(src) < 0) src = 'direct';
   const sheet = getOrCreatePatrolSheet_(SHEET_APP_USAGE, APP_USAGE_HEADERS);
-  const values = sheet.getDataRange().getValues();
-  const today = Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd');
+  if (sheet.getLastColumn() < APP_USAGE_HEADERS.length) {
+    sheet.getRange(1, 1, 1, APP_USAGE_HEADERS.length).setValues([APP_USAGE_HEADERS]);   // ชีตเดิมมี 6 คอลัมน์ เติมหัวคอลัมน์ใหม่
+  }
+  const values = sheet.getRange(1, 1, Math.max(sheet.getLastRow(), 1), APP_USAGE_HEADERS.length).getValues();
+  const now = new Date();
+  const today = Utilities.formatDate(now, 'GMT+7', 'yyyy-MM-dd');
   let rowIndex = -1;
   for (let i = 1; i < values.length; i++) {
     if (String(values[i][0] || '').trim() === app) { rowIndex = i; break; }
   }
-  if (rowIndex < 0) {
-    sheet.appendRow([app, 1, changedByName, new Date(), 1, today]);
-  } else {
-    const count = (parseInt(values[rowIndex][1], 10) || 0) + 1;
-    const sameDay = String(values[rowIndex][5] || '').indexOf(today) === 0;
-    const todayCount = sameDay ? (parseInt(values[rowIndex][4], 10) || 0) + 1 : 1;
-    sheet.getRange(rowIndex + 1, 1, 1, APP_USAGE_HEADERS.length)
-         .setValues([[app, count, changedByName, new Date(), todayCount, today]]);
-  }
+  const old = rowIndex < 0 ? [app, 0, '', '', 0, '', 0, 0, 0] : values[rowIndex];
+  const n = function (v) { return parseInt(v, 10) || 0; };
+  const sameDay = String(old[5] || '').indexOf(today) === 0;
+  const row = [app, n(old[1]) + 1, changedByName, now, sameDay ? n(old[4]) + 1 : 1, today,
+               n(old[6]) + (src === 'portal' ? 1 : 0),
+               n(old[7]) + (src === 'direct' ? 1 : 0),
+               n(old[8]) + (src === 'app' ? 1 : 0)];
+  if (rowIndex < 0) sheet.appendRow(row);
+  else sheet.getRange(rowIndex + 1, 1, 1, row.length).setValues([row]);
+
+  const vs = getOrCreatePatrolSheet_(SHEET_APP_VISITS, APP_VISITS_HEADERS);
+  vs.appendRow([now, app, changedByName, src, String(body.page || '').slice(0, 120)]);
   return jsonOut({ ok: true });
 }
 
 /** สถิติการใช้งานทุกโปรแกรม — หน้าศูนย์รวมงานใช้เรียงการ์ดและแสดงชื่อผู้เข้าล่าสุด */
 function appStats_() {
   const sheet = getOrCreatePatrolSheet_(SHEET_APP_USAGE, APP_USAGE_HEADERS);
-  const values = sheet.getDataRange().getValues();
+  const values = sheet.getRange(1, 1, Math.max(sheet.getLastRow(), 1), APP_USAGE_HEADERS.length).getValues();
   const today = Utilities.formatDate(new Date(), 'GMT+7', 'yyyy-MM-dd');
   const out = {};
   for (let i = 1; i < values.length; i++) {
@@ -1670,10 +1698,83 @@ function appStats_() {
       lastUser: String(values[i][2] || ''),
       lastAt: values[i][3] instanceof Date ? Utilities.formatDate(values[i][3], 'GMT+7', 'yyyy-MM-dd HH:mm') : String(values[i][3] || ''),
       lastTs: values[i][3] instanceof Date ? values[i][3].getTime() : 0,
-      today: sameDay ? (parseInt(values[i][4], 10) || 0) : 0
+      today: sameDay ? (parseInt(values[i][4], 10) || 0) : 0,
+      portal: parseInt(values[i][6], 10) || 0,
+      direct: parseInt(values[i][7], 10) || 0,
+      homeApp: parseInt(values[i][8], 10) || 0
     };
   }
   return jsonOut({ ok: true, stats: out, appList: APP_LIST });
+}
+
+/** ประวัติการเข้าใช้ย้อนหลัง (เฉพาะผู้ดูแลระบบ) body = { days: 7 } — ส่งกลับแถวล่าสุดไม่เกิน 2000 แถว */
+function appVisits_(body, requesterRole) {
+  if (requesterRole !== 'admin') return jsonOut({ ok: false, error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+  const days = Math.min(Math.max(parseInt(body.days, 10) || 7, 1), 365);
+  const since = Date.now() - days * 86400000;
+  const sheet = getOrCreatePatrolSheet_(SHEET_APP_VISITS, APP_VISITS_HEADERS);
+  const last = sheet.getLastRow();
+  if (last < 2) return jsonOut({ ok: true, visits: [] });
+  const start = Math.max(2, last - 1999);
+  const values = sheet.getRange(start, 1, last - start + 1, APP_VISITS_HEADERS.length).getValues();
+  const out = [];
+  for (let i = values.length - 1; i >= 0; i--) {
+    const t = values[i][0] instanceof Date ? values[i][0].getTime() : 0;
+    if (t < since) break;
+    out.push({ ts: t, app: String(values[i][1] || ''), user: String(values[i][2] || ''), src: String(values[i][3] || '') });
+  }
+  return jsonOut({ ok: true, visits: out });
+}
+
+/** ผู้ใช้ขอสิทธิ์ใช้โปรแกรม — เข้าคิวให้แอดมินเห็น (ขอซ้ำโปรแกรมเดิมที่ยังค้างอยู่ จะไม่เพิ่มแถวใหม่) */
+function appRequest_(body, changedByName, requesterRole) {
+  const app = String(body.app || '').trim();
+  if (!APP_LIST.some(function (a) { return a.code === app; })) return jsonOut({ ok: false, error: 'ไม่รู้จักโปรแกรมนี้' });
+  if (getUserApps_(changedByName, requesterRole).indexOf(app) >= 0) return jsonOut({ ok: true, already: true });
+  const sheet = getOrCreatePatrolSheet_(SHEET_APP_REQUESTS, APP_REQUESTS_HEADERS);
+  const values = sheet.getDataRange().getValues();
+  const lower = changedByName.toLowerCase();
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][1] || '').trim().toLowerCase() === lower && String(values[i][2]) === app &&
+        String(values[i][3] || '') === 'pending') return jsonOut({ ok: true, duplicate: true });
+  }
+  sheet.appendRow([new Date(), changedByName, app, 'pending']);
+  return jsonOut({ ok: true });
+}
+
+/** คำขอสิทธิ์ที่ยังค้าง (เฉพาะผู้ดูแลระบบ) — คนที่ได้สิทธิ์ไปแล้วจะหายจากรายการเอง */
+function appRequests_(requesterRole) {
+  if (requesterRole !== 'admin') return jsonOut({ ok: false, error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+  const sheet = getOrCreatePatrolSheet_(SHEET_APP_REQUESTS, APP_REQUESTS_HEADERS);
+  const values = sheet.getDataRange().getValues();
+  const out = [];
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][3] || '') !== 'pending') continue;
+    const user = String(values[i][1] || '').trim(), app = String(values[i][2] || '').trim();
+    const found = findUserRow_(user);
+    if (!found) continue;
+    if (getUserApps_(user, found.role).indexOf(app) >= 0) {
+      sheet.getRange(i + 1, 4).setValue('granted');
+      continue;
+    }
+    out.push({ user: user, app: app,
+      at: values[i][0] instanceof Date ? Utilities.formatDate(values[i][0], 'GMT+7', 'yyyy-MM-dd HH:mm') : '' });
+  }
+  return jsonOut({ ok: true, requests: out, appList: APP_LIST });
+}
+
+/** แอดมินปัดคำขอสิทธิ์ทิ้ง (ไม่ให้สิทธิ์) body = { targetName, app } */
+function appRequestDismiss_(body, requesterRole, changedByName) {
+  if (requesterRole !== 'admin') return jsonOut({ ok: false, error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+  const user = String(body.targetName || '').trim().toLowerCase(), app = String(body.app || '').trim();
+  const sheet = getOrCreatePatrolSheet_(SHEET_APP_REQUESTS, APP_REQUESTS_HEADERS);
+  const values = sheet.getDataRange().getValues();
+  let n = 0;
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][1] || '').trim().toLowerCase() === user && String(values[i][2]) === app &&
+        String(values[i][3] || '') === 'pending') { sheet.getRange(i + 1, 4).setValue('dismissed:' + changedByName); n++; }
+  }
+  return jsonOut({ ok: true, dismissed: n });
 }
 
 /** สร้างชีตของ Patrol ให้ครบ — เปิด Apps Script แล้วเลือกฟังก์ชันนี้ กด Run 1 ครั้ง */
