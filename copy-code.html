@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>คัดลอก Code.gs</title>
+<style>
+body{margin:0;font-family:"Noto Sans Thai",-apple-system,sans-serif;background:#f4f1ea;color:#222}
+.w{max-width:520px;margin:0 auto;padding:24px 16px}
+h1{font-size:20px;color:#4b2e83;margin:0 0 8px}
+p,li{font-size:15px;line-height:1.7;color:#444}
+button{width:100%;height:60px;border:0;border-radius:12px;background:#4b2e83;color:#fff;font:inherit;font-size:18px;font-weight:700;margin:12px 0}
+button:disabled{opacity:.5}
+#msg{font-size:15px;min-height:24px;font-weight:600}
+.ok{color:#2e7d32}.err{color:#c0392b}
+textarea{width:100%;height:120px;box-sizing:border-box;font-size:12px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="w">
+<h1>คัดลอก Code.gs (หลังบ้าน SLD/ศูนย์รวมงาน)</h1>
+<p id="info">กำลังโหลดโค้ด…</p>
+<button id="b" disabled>คัดลอกโค้ดทั้งหมด</button>
+<div id="msg"></div>
+<ol>
+<li>กดปุ่มด้านบน</li>
+<li>ไปที่หน้า Apps Script → คลิกในโค้ด → เลือกทั้งหมด (⌘A) → วาง (⌘V)</li>
+<li>กดบันทึก (ไอคอนแผ่นดิสก์)</li>
+<li>Deploy → Manage deployments → ✏️ → Version: <b>New version</b> → Deploy</li>
+</ol>
+<textarea id="t" readonly hidden></textarea>
+</div>
+<script>
+var code = '';
+fetch('Code.gs?v=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.text(); }).then(function (t) {
+  code = t;
+  document.getElementById('info').textContent = 'โหลดแล้ว ' + t.split('\n').length.toLocaleString() + ' บรรทัด';
+  document.getElementById('b').disabled = false;
+}).catch(function () { document.getElementById('info').textContent = 'โหลดโค้ดไม่ได้ ลองรีเฟรช'; });
+document.getElementById('b').onclick = function () {
+  var m = document.getElementById('msg');
+  var fallback = function () {
+    var ta = document.getElementById('t'); ta.hidden = false; ta.value = code;
+    ta.focus(); ta.setSelectionRange(0, code.length);
+    var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+    m.className = ok ? 'ok' : 'err';
+    m.textContent = ok ? '✓ คัดลอกแล้ว ไปวางใน Apps Script ได้เลย' : 'คัดลอกอัตโนมัติไม่ได้ — แตะกล่องด้านล่าง เลือกทั้งหมด แล้วคัดลอก';
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(code).then(function () {
+      m.className = 'ok'; m.textContent = '✓ คัดลอกแล้ว ' + code.length.toLocaleString() + ' ตัวอักษร ไปวางใน Apps Script ได้เลย';
+    }, fallback);
+  } else fallback();
+};
+</script>
+</body>
+</html>
