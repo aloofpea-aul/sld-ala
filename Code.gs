@@ -1031,7 +1031,7 @@ function patrolRowToObj_(headers, row) {
  */
 function handlePatrolAction_(body, requesterRole, changedByName) {
   const action = body && body.action;
-  const SHARED_ACTIONS = ['appOpen', 'appStats', 'appRequest', 'appRequests', 'appRequestDismiss', 'appVisits'];
+  const SHARED_ACTIONS = ['appOpen', 'appStats', 'appRequest', 'appRequests', 'appRequestDismiss', 'appVisits', 'booksKey'];
   if (!action || (String(action).indexOf('patrol') !== 0 && SHARED_ACTIONS.indexOf(action) < 0)) return null;
 
   PATROL_ROLE_HINT = requesterRole;
@@ -1063,6 +1063,7 @@ function handlePatrolAction_(body, requesterRole, changedByName) {
     case 'appRequests':       return appRequests_(requesterRole);
     case 'appRequestDismiss': return appRequestDismiss_(body, requesterRole, changedByName);
     case 'appVisits':         return appVisits_(body, requesterRole);
+    case 'booksKey':          return booksKey_(changedByName, requesterRole);
     default:
       return jsonOut({ ok: false, error: 'unknown patrol action: ' + action });
   }
@@ -1732,6 +1733,25 @@ function appVisits_(body, requesterRole) {
     out.push({ ts: t, app: String(values[i][1] || ''), user: String(values[i][2] || ''), src: String(values[i][3] || '') });
   }
   return jsonOut({ ok: true, visits: out });
+}
+
+/**
+ * กุญแจถอดรหัสดัชนีค้นหาเนื้อหาหนังสือ (คลังแบบ › หนังสือ คู่มือ ระเบียบ)
+ * ดัชนีบน GitHub ถูกเข้ารหัสไว้ — ให้กุญแจเฉพาะผู้ที่ล็อกอินแล้วและมีสิทธิ์ใช้คลังแบบ (drawings)
+ * กุญแจเก็บในไฟล์ Google Drive ส่วนตัว (ไม่ได้อยู่ในโค้ด) — ห้ามแชร์ไฟล์นั้น
+ */
+const BOOKS_KEY_FILE_ID = '1vFQ-MQUCg7G2gLvE15HZaL2Z0Fpnko7U';
+function booksKey_(changedByName, requesterRole) {
+  if (getUserApps_(changedByName, requesterRole).indexOf('drawings') < 0) {
+    return jsonOut({ ok: false, error: 'บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้คลังแบบ' });
+  }
+  const cache = CacheService.getScriptCache();
+  let key = cache.get('books_key');
+  if (!key) {
+    key = DriveApp.getFileById(BOOKS_KEY_FILE_ID).getBlob().getDataAsString().trim();
+    cache.put('books_key', key, 21600);
+  }
+  return jsonOut({ ok: true, key: key });
 }
 
 /** ผู้ใช้ขอสิทธิ์ใช้โปรแกรม — เข้าคิวให้แอดมินเห็น (ขอซ้ำโปรแกรมเดิมที่ยังค้างอยู่ จะไม่เพิ่มแถวใหม่) */
