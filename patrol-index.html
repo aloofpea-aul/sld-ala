@@ -1601,9 +1601,9 @@ $('btnClear').onclick = ()=>{
 
 /* ---------- รายการ ---------- */
 /* ดึงจุดที่พบจากระบบ แล้วรีเฟรชทุกหน้าจอที่ใช้ข้อมูลชุดนี้ */
-async function loadList(){
-  if(!navigator.onLine){ toast('ต้องมีสัญญาณจึงจะโหลดรายการได้', 'err'); return; }
-  showLoading('listBox', 'skeleton', 'กำลังดึงจุดที่พบจากระบบ');
+async function loadList(quiet){
+  if(!navigator.onLine){ if(!quiet) toast('ต้องมีสัญญาณจึงจะโหลดรายการได้', 'err'); return; }
+  if(quiet !== true) showLoading('listBox', 'skeleton', 'กำลังดึงจุดที่พบจากระบบ');
   try{
     const r = await api({ action:'patrolList', limit:400 });
     if(!r || !r.ok){
@@ -1611,6 +1611,7 @@ async function loadList(){
       return;
     }
     FINDINGS = r.findings || [];
+    cPut('findings', FINDINGS).catch(()=>{});   // เก็บไว้ในเครื่อง เปิดครั้งหน้าแสดงทันที
     renderList(); renderHome();
     if(mapReady) drawMapPins();
   }catch(e){
@@ -1681,7 +1682,7 @@ $('btnExport').onclick = ()=>{
   toast('ส่งออก ' + rows.length + ' รายการแล้ว', 'ok');
 };
 
-let FINDINGS = [];
+let FINDINGS = [], FINDINGS_CACHED = false;
 const SEV_COLOR = { 1:'var(--sev1)', 2:'var(--sev2)', 3:'var(--sev3)' };
 const ANCHOR_TEXT = { POLE:'เสาไฟ', SPAN:'ช่วงสายระหว่างเสา', DEVICE:'ที่ตัวอุปกรณ์',
   DEVICE2:'ระหว่างอุปกรณ์ 2 ตัว', DEVICE_DS:'ตั้งแต่อุปกรณ์นี้ถึงปลายสาย', POINT:'หมุดอิสระ' };
@@ -3230,10 +3231,18 @@ function renderInstall(){
 /* ---------- เริ่มทำงาน ---------- */
 /* ทำงานหลังเข้าสู่ระบบสำเร็จ — เรียกทั้งตอนเปิดแอปและตอนเพิ่งล็อกอิน */
 async function afterLogin(){
-  bootClosed = false;
-  $('bootOverlay').classList.add('show');
-  startBoot();
+  // เปิดเร็ว: เคยเข้าใช้แล้ว มีบัญชี/ประเภทปัญหา/รายการจุดที่พบเก็บในเครื่อง → แสดงทันที แล้วอัปเดตเบื้องหลัง
+  const fast = !!(PROFILE && PROFILE.allowed !== false && TYPES.length && FINDINGS_CACHED);
+  if(fast){
+    bootClosed = true; $('bootOverlay').classList.remove('show');
+    fillTypes(); renderUser(); renderList(); renderHome();
+  } else {
+    bootClosed = false;
+    $('bootOverlay').classList.add('show');
+    startBoot();
+  }
   syncQueue(true);
+  const listP = loadList(fast ? true : undefined);   // ดึงรายการพร้อมกับตรวจบัญชี ไม่ต้องรอต่อกัน
 
   try{
     const r = await api({ action:'patrolBootstrap' });
@@ -3269,7 +3278,7 @@ async function afterLogin(){
 
   bootStep('findings','run');
   try{
-    await loadList();
+    await listP;
     bootStep('findings','done', FINDINGS.length + ' รายการ');
   }catch(e){ bootStep('findings','skip',''); }
   renderHome();
@@ -3291,6 +3300,7 @@ async function afterLogin(){
   const cp = await cGet('poles');  if(cp) POLES = cp.value;
   const cd = await cGet('devices'); if(cd) DEVICES = cd.value;
   const cm = await cGet('mvlines'); if(cm) MVLINES = cm.value;
+  const cf = await cGet('findings'); if(cf && Array.isArray(cf.value)){ FINDINGS = cf.value; FINDINGS_CACHED = true; }
   showCacheInfo();
   renderAnchorPick();
   await refreshQueueBadge();
