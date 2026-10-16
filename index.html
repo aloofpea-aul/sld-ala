@@ -1362,65 +1362,96 @@ function setLocalOverride(feederId, devId, deviceOrNull){
   saveLocalOverrides(ov);
 }
 
+/* ===== เปิดเร็ว: เก็บคำตอบล่าสุดจาก Google Sheet ไว้ในเครื่อง (IndexedDB) เปิดครั้งต่อไปแสดงทันที
+   แล้วดึงข้อมูลสดเบื้องหลัง — ระหว่างยังไม่ได้ข้อมูลสด ห้ามบันทึก (dataIsFallback) กันข้อมูลเก่าทับของจริง ===== */
+const SLD_DB='sld_cache', SLD_ST='kv';
+function sldDb(){ return new Promise((ok,no)=>{ const r=indexedDB.open(SLD_DB,1); r.onupgradeneeded=()=>r.result.createObjectStore(SLD_ST); r.onsuccess=()=>ok(r.result); r.onerror=()=>no(r.error); }); }
+async function sldCacheGet(){ try{ const db=await sldDb(); return await new Promise(ok=>{ const q=db.transaction(SLD_ST).objectStore(SLD_ST).get('gas'); q.onsuccess=()=>ok(q.result||null); q.onerror=()=>ok(null); }); }catch(e){ return null; } }
+async function sldCachePut(text){ try{ const db=await sldDb(); db.transaction(SLD_ST,'readwrite').objectStore(SLD_ST).put({text, at:Date.now()},'gas'); }catch(e){} }
+function sldCloseLoading(){
+  const loadingEl = document.getElementById('loadingOverlay');
+  if(loadingEl){ loadingEl.classList.add('hide'); setTimeout(()=>{ loadingEl.style.display = 'none'; }, 400); }
+}
+function sldRenderNow(){
+  applyOpsaOverlay(DATA);
+  renderLegend();
+  if(viewMode === 'detail' && selectedFeeder && DATA.feeders.some(f=>f.id===selectedFeeder)) showFeederDetail(selectedFeeder);
+  else renderOverview();
+}
+
 async function loadData(){
   PEAUI.setTips(SLD_TIPS);
+  document.getElementById('sourceMeta').textContent = DATA.substation.sourceDrawing || '';
+  const cached = GAS_URL ? await sldCacheGet() : null;
+  let cachedJson = null;
+  try{ cachedJson = cached && JSON.parse(cached.text); }catch(e){ cachedJson = null; }
+  if(cachedJson && cachedJson.feeders && cachedJson.feeders.length){
+    // มีข้อมูลในเครื่อง — แสดงทันที ไม่ต้องรอหลังบ้าน
+    DATA = cachedJson; dataIsFallback = true;
+    document.getElementById('sourceMeta').textContent = '🟡 กำลังอัปเดตข้อมูลล่าสุด…';
+    sldRenderNow(); sldCloseLoading();
+    loadMemberList();
+    sldRefreshLive(cached.text);
+    return;
+  }
   PEAUI.boot.start([
     { k:'data',   t:'ดึงข้อมูลอุปกรณ์จาก Google Sheet' },
-    { k:'member', t:'ตรวจรายชื่อผู้ใช้งาน' },
     { k:'render', t:'จัดผังวงจรและแผนที่' }
   ], { title:'Single Line Diagram', sub:'สถานีไฟฟ้าอ่าวลึก · กฟส.อ่าวลึก' });
   PEAUI.boot.step('data','run');
-  document.getElementById('sourceMeta').textContent = DATA.substation.sourceDrawing || '';
   if(GAS_URL){
-    // ลองเชื่อมต่อซ้ำถ้าล้มเหลว — เซิร์ฟเวอร์ Apps Script บางทีตอบช้า/ล้มเหลวชั่วคราว (เช่น cold start)
-    // ไม่อยากให้ตกไปใช้ข้อมูลสำรองในไฟล์ทันทีตั้งแต่ครั้งแรก เพราะข้อมูลสำรองนั้นไม่มีการยืนยันลำดับ/แก้ไขล่าสุดใดๆ เลย
-    const MAX_ATTEMPTS = 3;
-    let lastError = null;
-    let succeeded = false;
-    for(let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++){
-      try{
-        const statusEl = document.querySelector('.loading-status');
-        if(statusEl && attempt > 1) statusEl.textContent = `กำลังลองเชื่อมต่อใหม่ (ครั้งที่ ${attempt}/${MAX_ATTEMPTS})...`;
-        const res = await fetch(GAS_URL);
-        const json = await res.json();
-        if(json && json.feeders && json.feeders.length){
-          DATA = json;
-          document.getElementById('sourceMeta').textContent = '🟢 ข้อมูลสดจาก Google Sheet';
-          succeeded = true;
-          PEAUI.boot.step('data','done', DATA.feeders.reduce((n,f)=> n + f.devices.length, 0).toLocaleString() + ' รายการ');
-        }
-        break; // ได้คำตอบกลับมาแล้ว (ไม่ว่าจะมีข้อมูลหรือไม่) ไม่ต้องลองซ้ำอีก
-      }catch(e){
-        lastError = e;
-        console.warn(`โหลดข้อมูลจาก GAS ไม่สำเร็จ (ครั้งที่ ${attempt}/${MAX_ATTEMPTS})`, e);
-        if(attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, 1200)); // เว้นจังหวะสั้นๆ ก่อนลองใหม่
-      }
-    }
-    if(!succeeded && lastError){
+    loadMemberList();   // ตรวจรายชื่อผู้ใช้เบื้องหลัง ไม่ต้องรอ
+    const ok = await sldFetchLive(3);
+    if(ok){ PEAUI.boot.step('data','done', DATA.feeders.reduce((n,f)=> n + f.devices.length, 0).toLocaleString() + ' รายการ'); }
+    else {
       dataIsFallback = true;
       PEAUI.boot.step('data','skip','ใช้ข้อมูลสำรอง');
-      showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จหลังลองหลายครั้ง ใช้ข้อมูลสำรองในไฟล์แทน (ข้อมูลอาจไม่ใช่ปัจจุบัน — แนะนำให้รีเฟรชหน้าใหม่อีกครั้ง)','err');
-      // ขึ้นป้ายเตือนค้างไว้ถาวร (ไม่ใช่แค่ toast ที่หายไปเอง) เพราะเป็นเรื่องสำคัญที่ต้องรู้ตลอดว่ากำลังดูข้อมูลสำรอง ไม่ใช่ข้อมูลสดจริง
+      showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จหลังลองหลายครั้ง ใช้ข้อมูลสำรองในไฟล์แทน (ข้อมูลอาจไม่ใช่ล่าสุด) — กรุณารีเฟรชหน้าเว็บภายหลัง');
       document.getElementById('sourceMeta').innerHTML = '🔴 <b>ออฟไลน์ — ใช้ข้อมูลสำรองในไฟล์ (ไม่ใช่ข้อมูลล่าสุด)</b>';
     }
-    PEAUI.boot.step('member','run');
-    await loadMemberList();
-    PEAUI.boot.step('member','done');
   } else {
     PEAUI.boot.step('data','skip','ยังไม่ได้ตั้งค่า URL');
-    PEAUI.boot.step('member','skip','');
     applyLocalOverrides();
   }
   PEAUI.boot.step('render','run');
-  setTimeout(()=>{ PEAUI.boot.step('render','done'); PEAUI.boot.close(); }, 500);
+  setTimeout(()=>{ PEAUI.boot.step('render','done'); PEAUI.boot.close(); }, 300);
   applyOpsaOverlay(DATA);
   renderLegend();
   renderOverview();
-  const loadingEl = document.getElementById('loadingOverlay');
-  if(loadingEl){
-    loadingEl.classList.add('hide');
-    setTimeout(()=>{ loadingEl.style.display = 'none'; }, 400); // รอ transition จางหายจบก่อนค่อยเอาออกจริง กันมันไปบังคลิกตอนกำลังจาง
+  sldCloseLoading();
+}
+
+/* ดึงข้อมูลสดจาก Google Sheet (ลองซ้ำได้) — สำเร็จแล้วเก็บลงเครื่องไว้ใช้เปิดครั้งหน้า */
+async function sldFetchLive(maxAttempts){
+  for(let attempt = 1; attempt <= maxAttempts; attempt++){
+    try{
+      const statusEl = document.querySelector('.loading-status');
+      if(statusEl && attempt > 1) statusEl.textContent = `กำลังลองเชื่อมต่อใหม่ (ครั้งที่ ${attempt}/${maxAttempts})...`;
+      const res = await fetch(GAS_URL);
+      const text = await res.text();
+      const json = JSON.parse(text);
+      if(json && json.feeders && json.feeders.length){
+        DATA = json; dataIsFallback = false;
+        document.getElementById('sourceMeta').textContent = '🟢 ข้อมูลสดจาก Google Sheet';
+        sldCachePut(text);
+        return text;
+      }
+      return null;
+    }catch(e){
+      console.warn(`โหลดข้อมูลจาก GAS ไม่สำเร็จ (ครั้งที่ ${attempt}/${maxAttempts})`, e);
+      if(attempt < maxAttempts) await new Promise(r => setTimeout(r, 1200));
+    }
   }
+  return null;
+}
+async function sldRefreshLive(cachedText){
+  const text = await sldFetchLive(3);
+  if(!text){
+    document.getElementById('sourceMeta').innerHTML = '🔴 <b>ออฟไลน์ — แสดงข้อมูลที่เก็บไว้ในเครื่อง (อาจไม่ใช่ล่าสุด) บันทึกไม่ได้จนกว่าจะเชื่อมต่อได้</b>';
+    showToast('เชื่อมต่อ Google Sheet ไม่สำเร็จ — กำลังแสดงข้อมูลที่เก็บไว้ในเครื่อง');
+    return;
+  }
+  if(text !== cachedText) sldRenderNow();   // ข้อมูลเปลี่ยน — วาดใหม่ (คงหน้าที่ดูอยู่)
 }
 
 // ============ ระบุตัวตนผู้ใช้งาน — เลือก/พิมพ์ชื่อ+รหัสผ่านจากรายชื่อที่แอดมินอนุมัติไว้ล่วงหน้า (Admins/Members) ============
