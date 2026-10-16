@@ -1031,7 +1031,7 @@ function patrolRowToObj_(headers, row) {
  */
 function handlePatrolAction_(body, requesterRole, changedByName) {
   const action = body && body.action;
-  const SHARED_ACTIONS = ['appOpen', 'appStats', 'appRequest', 'appRequests', 'appRequestDismiss', 'appVisits', 'booksKey'];
+  const SHARED_ACTIONS = ['appOpen', 'appStats', 'appRequest', 'appRequests', 'appRequestDismiss', 'appVisits', 'booksKey', 'bookDlRequest', 'bookDlMine', 'bookDlList', 'bookDlDecide', 'bookLog'];
   if (!action || (String(action).indexOf('patrol') !== 0 && SHARED_ACTIONS.indexOf(action) < 0)) return null;
 
   PATROL_ROLE_HINT = requesterRole;
@@ -1064,6 +1064,11 @@ function handlePatrolAction_(body, requesterRole, changedByName) {
     case 'appRequestDismiss': return appRequestDismiss_(body, requesterRole, changedByName);
     case 'appVisits':         return appVisits_(body, requesterRole);
     case 'booksKey':          return booksKey_(changedByName, requesterRole);
+    case 'bookDlRequest':     return bookDlRequest_(body, changedByName, requesterRole);
+    case 'bookDlMine':        return bookDlMine_(body, changedByName);
+    case 'bookDlList':        return bookDlList_(requesterRole);
+    case 'bookDlDecide':      return bookDlDecide_(body, requesterRole, changedByName);
+    case 'bookLog':           return bookLog_(body, changedByName, requesterRole);
     default:
       return jsonOut({ ok: false, error: 'unknown patrol action: ' + action });
   }
@@ -1752,6 +1757,89 @@ function booksKey_(changedByName, requesterRole) {
     cache.put('books_key', key, 21600);
   }
   return jsonOut({ ok: true, key: key });
+}
+
+/* ===================== หนังสือ: ขออนุญาตดาวน์โหลด + บันทึกการอ่าน =====================
+ * BookDownloads: คำขอดาวน์โหลด (pending → approved/denied/revoked) อนุมัติแล้วมีวันหมดอายุ
+ * BookReads    : บันทึกการเปิดอ่าน/ดาวน์โหลด (ใคร เล่มไหน หน้าไหน เมื่อไหร่)
+ */
+const SHEET_BOOK_DL = 'BookDownloads';
+const BOOK_DL_HEADERS = ['Timestamp', 'User', 'Book', 'Title', 'Reason', 'Days', 'Status', 'DecidedBy', 'DecidedAt', 'ExpiresAt'];
+const SHEET_BOOK_READS = 'BookReads';
+const BOOK_READS_HEADERS = ['Timestamp', 'User', 'Book', 'Page', 'Kind'];
+function bookFmt_(d) { return d instanceof Date ? Utilities.formatDate(d, 'GMT+7', 'yyyy-MM-dd HH:mm') : ''; }
+function bookHasDrawings_(name, role) { return getUserApps_(name, role).indexOf('drawings') >= 0; }
+
+function bookDlRequest_(body, changedByName, requesterRole) {
+  if (!bookHasDrawings_(changedByName, requesterRole)) return jsonOut({ ok: false, error: 'บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้คลังแบบ' });
+  const book = parseInt(body.book, 10), days = [7, 30, 0].indexOf(parseInt(body.days, 10)) >= 0 ? parseInt(body.days, 10) : 7;
+  const reason = String(body.reason || '').trim().slice(0, 300);
+  if (!book) return jsonOut({ ok: false, error: 'ไม่ระบุเล่ม' });
+  if (!reason) return jsonOut({ ok: false, error: 'กรุณาระบุเหตุผล' });
+  const sh = getOrCreatePatrolSheet_(SHEET_BOOK_DL, BOOK_DL_HEADERS);
+  const v = sh.getDataRange().getValues(), lower = changedByName.toLowerCase();
+  for (let i = 1; i < v.length; i++) {
+    if (String(v[i][1]).trim().toLowerCase() === lower && Number(v[i][2]) === book && v[i][6] === 'pending') return jsonOut({ ok: true, duplicate: true });
+  }
+  sh.appendRow([new Date(), changedByName, book, String(body.title || '').slice(0, 200), reason, days, 'pending', '', '', '']);
+  return jsonOut({ ok: true });
+}
+
+/** สถานะคำขอของผู้ใช้เอง (ทุกเล่ม หรือเล่มเดียว) */
+function bookDlMine_(body, changedByName) {
+  const sh = getOrCreatePatrolSheet_(SHEET_BOOK_DL, BOOK_DL_HEADERS);
+  const v = sh.getDataRange().getValues(), lower = changedByName.toLowerCase(), now = new Date(), out = {};
+  for (let i = 1; i < v.length; i++) {
+    if (String(v[i][1]).trim().toLowerCase() !== lower) continue;
+    const b = Number(v[i][2]); let st = v[i][6];
+    if (st === 'approved' && v[i][9] instanceof Date && v[i][9] < now) st = 'expired';
+    out[b] = { status: st, at: bookFmt_(v[i][0]), expires: st === 'approved' ? (bookFmt_(v[i][9]) || 'ถาวร') : '' };
+  }
+  return jsonOut({ ok: true, mine: out });
+}
+
+/** รายการคำขอสำหรับผู้ดูแล: ค้าง + ล่าสุด 30 รายการ */
+function bookDlList_(requesterRole) {
+  if (requesterRole !== 'admin') return jsonOut({ ok: false, error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+  const sh = getOrCreatePatrolSheet_(SHEET_BOOK_DL, BOOK_DL_HEADERS);
+  const v = sh.getDataRange().getValues(), now = new Date(), pending = [], recent = [];
+  for (let i = v.length - 1; i >= 1; i--) {
+    let st = v[i][6];
+    if (st === 'approved' && v[i][9] instanceof Date && v[i][9] < now) st = 'expired';
+    const r = { row: i + 1, at: bookFmt_(v[i][0]), user: v[i][1], book: Number(v[i][2]), title: v[i][3], reason: v[i][4],
+      days: Number(v[i][5]), status: st, by: v[i][7], expires: bookFmt_(v[i][9]) };
+    if (st === 'pending') pending.push(r); else if (recent.length < 30) recent.push(r);
+  }
+  return jsonOut({ ok: true, pending: pending, recent: recent });
+}
+
+/** ผู้ดูแลอนุมัติ/ไม่อนุมัติ/ยกเลิกสิทธิ์  body = { row, decision: approve|deny|revoke } */
+function bookDlDecide_(body, requesterRole, changedByName) {
+  if (requesterRole !== 'admin') return jsonOut({ ok: false, error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+  const sh = getOrCreatePatrolSheet_(SHEET_BOOK_DL, BOOK_DL_HEADERS);
+  const row = parseInt(body.row, 10);
+  if (!row || row < 2 || row > sh.getLastRow()) return jsonOut({ ok: false, error: 'ไม่พบคำขอ' });
+  const r = sh.getRange(row, 1, 1, BOOK_DL_HEADERS.length).getValues()[0], d = String(body.decision || '');
+  const now = new Date();
+  if (d === 'approve') {
+    const days = Number(r[5]) || 0;
+    sh.getRange(row, 7, 1, 4).setValues([['approved', changedByName, now, days ? new Date(now.getTime() + days * 864e5) : '']]);
+  } else if (d === 'deny' || d === 'revoke') {
+    sh.getRange(row, 7, 1, 3).setValues([[d === 'deny' ? 'denied' : 'revoked', changedByName, now]]);
+  } else return jsonOut({ ok: false, error: 'คำสั่งไม่ถูกต้อง' });
+  return jsonOut({ ok: true });
+}
+
+/** บันทึกการอ่าน/ดาวน์โหลด  body = { book, page, kind: read|download }  ดาวน์โหลดได้เฉพาะผู้ที่อนุมัติแล้ว */
+function bookLog_(body, changedByName, requesterRole) {
+  if (!bookHasDrawings_(changedByName, requesterRole)) return jsonOut({ ok: false, error: 'ไม่มีสิทธิ์' });
+  const book = parseInt(body.book, 10), kind = body.kind === 'download' ? 'download' : 'read';
+  if (kind === 'download' && requesterRole !== 'admin') {
+    const mine = JSON.parse(bookDlMine_(body, changedByName).getContent()).mine[book];
+    if (!mine || mine.status !== 'approved') return jsonOut({ ok: false, error: 'ยังไม่ได้รับอนุญาตให้ดาวน์โหลดเล่มนี้' });
+  }
+  getOrCreatePatrolSheet_(SHEET_BOOK_READS, BOOK_READS_HEADERS).appendRow([new Date(), changedByName, book, parseInt(body.page, 10) || '', kind]);
+  return jsonOut({ ok: true });
 }
 
 /** ผู้ใช้ขอสิทธิ์ใช้โปรแกรม — เข้าคิวให้แอดมินเห็น (ขอซ้ำโปรแกรมเดิมที่ยังค้างอยู่ จะไม่เพิ่มแถวใหม่) */
