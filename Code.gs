@@ -1092,7 +1092,8 @@ const APP_LIST = [
   { code: 'budget',       name: 'ระบบตัดงบทำการ' },
   { code: 'analytics',    name: 'วิเคราะห์ข้อมูลไฟฟ้า' },
   { code: 'drawings',     name: 'คลังแบบมาตรฐาน กฟภ.' },
-  { code: 'dutyroster',   name: 'ตารางเวรแก้ไฟ' }
+  { code: 'dutyroster',   name: 'ตารางเวรแก้ไฟ' },
+  { code: 'vehicle',      name: 'ระบบยานพาหนะ' }
 ];
 const APPS_COL = 5;        // คอลัมน์ E = Apps (รหัสโปรแกรมที่ใช้ได้)
 const APPS_META_COL = 6;   // คอลัมน์ F = AppsUpdated (แก้ล่าสุดเมื่อไหร่ โดยใคร เหตุผลอะไร)
