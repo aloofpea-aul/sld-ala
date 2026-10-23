@@ -1037,7 +1037,13 @@ function handlePatrolAction_(body, requesterRole, changedByName) {
   PATROL_ROLE_HINT = requesterRole;
   // ตรวจสิทธิ์การใช้โปรแกรม Patrol ก่อนทุกคำสั่งที่เปลี่ยนแปลงข้อมูล (หน้าเว็บซ่อนปุ่มไว้แล้ว แต่กันไว้ที่หลังบ้านอีกชั้น)
   const WRITE_ACTIONS = ['patrolCreate', 'patrolAddPhoto', 'patrolUpdate', 'patrolDelete', 'patrolRiskSet', 'patrolCloseBulk'];
-  if (WRITE_ACTIONS.indexOf(action) >= 0 && getUserApps_(changedByName, requesterRole).indexOf('patrol') < 0) {
+  // รูปเหตุการณ์ไฟดับจากงานเวรแก้ไฟ (parentType OUTAGE) ใช้สิทธิ์งานเวรแก้ไฟหรือ Patrol ก็ได้
+  const isOutPhoto = action === 'patrolAddPhoto' && body.parentType === 'OUTAGE';
+  const myApps = WRITE_ACTIONS.indexOf(action) >= 0 ? getUserApps_(changedByName, requesterRole) : [];
+  if (isOutPhoto && myApps.indexOf('dutyroster') < 0 && myApps.indexOf('patrol') < 0) {
+    return jsonOut({ ok: false, error: 'บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งานงานเวรแก้ไฟ กรุณาติดต่อผู้ดูแลระบบ' });
+  }
+  if (!isOutPhoto && WRITE_ACTIONS.indexOf(action) >= 0 && myApps.indexOf('patrol') < 0) {
     return jsonOut({ ok: false, error: 'บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งานโปรแกรม Patrol กรุณาติดต่อผู้ดูแลระบบ' });
   }
 
@@ -1092,7 +1098,7 @@ const APP_LIST = [
   { code: 'budget',       name: 'ระบบตัดงบทำการ' },
   { code: 'analytics',    name: 'วิเคราะห์ข้อมูลไฟฟ้า' },
   { code: 'drawings',     name: 'คลังแบบมาตรฐาน กฟภ.' },
-  { code: 'dutyroster',   name: 'ตารางเวรแก้ไฟ' },
+  { code: 'dutyroster',   name: 'งานเวรแก้ไฟ' },
   { code: 'vehicle',      name: 'ระบบยานพาหนะ' }
 ];
 const APPS_COL = 5;        // คอลัมน์ E = Apps (รหัสโปรแกรมที่ใช้ได้)
@@ -1315,7 +1321,7 @@ function patrolCreateFinding_(body, changedByName) {
 
 /** เพิ่มรูปให้จุดที่พบหรืองานที่มีอยู่แล้ว — เพิ่มได้ไม่จำกัดจำนวน ทุกเวลา */
 function patrolAddPhoto_(body, changedByName) {
-  const parentType = body.parentType === 'JOB' ? 'JOB' : 'FINDING';
+  const parentType = body.parentType === 'JOB' ? 'JOB' : body.parentType === 'OUTAGE' ? 'OUTAGE' : 'FINDING';
   const parentId = String(body.parentId || '').trim();
   const photos = body.photos || [];
   if (!parentId) return jsonOut({ ok: false, error: 'ไม่ได้ระบุรายการที่จะเพิ่มรูป' });
