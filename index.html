@@ -402,13 +402,29 @@
   #moreMenuOverlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
     align-items:flex-start;justify-content:flex-end;z-index:5000;padding:16px;}
   #moreMenuOverlay.show{display:flex;}
+  /* max-height:100% กับการให้เนื้อในเลื่อนได้ สำคัญมาก
+     เมนูมี 16 รายการ สูงรวม 840 จุด บนจอ 360×640 จึงล้นใต้จอไป 216 จุด
+     และเพราะกล่องตั้ง overflow:hidden โดยไม่กำหนดความสูงสูงสุด รายการท้ายๆ
+     อย่าง "ตั้งค่าการเชื่อมต่อ Google Sheet" "เปลี่ยนชื่อผู้ใช้งาน"
+     และ "จัดการรายชื่อสมาชิก" จึงกดไม่ได้เลยบนมือถือจอเล็ก และเลื่อนก็ไม่ได้ */
   #moreMenuPanel{background:#fff;border-radius:10px;max-width:320px;width:100%;
-    box-shadow:0 12px 40px rgba(0,0,0,.3);overflow:hidden;}
+    box-shadow:0 12px 40px rgba(0,0,0,.3);overflow:hidden;
+    max-height:100%;display:flex;flex-direction:column;}
   #moreMenuHeader{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;
-    align-items:center;justify-content:space-between;}
+    align-items:center;justify-content:space-between;flex:0 0 auto;}
   #moreMenuHeader h2{margin:0;font-size:1rem;color:var(--pea-purple);}
-  #moreMenuCloseBtn{border:none;background:none;font-size:1.2rem;cursor:pointer;color:var(--muted);}
-  #moreMenuBody{padding:6px;}
+  /* ปุ่มปิดเดิม 29×27 จุด เล็กกว่านิ้ว · ขยายพื้นที่กดโดยไม่ให้หัวเมนูสูงขึ้น ด้วย margin ติดลบ */
+  #moreMenuCloseBtn{border:none;background:none;font-size:1.2rem;cursor:pointer;color:var(--muted);
+    min-width:44px;min-height:44px;margin:-10px -12px -10px 0;
+    display:inline-flex;align-items:center;justify-content:center;}
+  #moreMenuBody{padding:6px 6px 10px;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    flex:1 1 auto;overscroll-behavior:contain;}
+  /* หัวข้อคั่นกลุ่ม — เมนูมี 15 รายการ ถ้าเรียงติดกันหมดต้องไล่อ่านทีละบรรทัดกว่าจะเจอ */
+  .menugroup{padding:6px 14px 5px;font-size:.72rem;font-weight:700;color:#6b5a8a;letter-spacing:.02em;}
+  .menugroup.first{padding-top:11px;}
+  .menusep{height:1px;background:#ece9e3;margin:7px 14px;}
+  .menunote{padding:11px 14px 2px;color:var(--muted);font-size:.78rem;line-height:1.45;
+    border-top:1px solid #ece9e3;margin-top:7px;}
   #moreMenuBody .menuitem{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
     padding:12px 14px;border:none;background:none;font-size:.9rem;font-family:inherit;
     cursor:pointer;border-radius:6px;color:var(--ink);box-sizing:border-box;min-height:44px;
@@ -909,22 +925,39 @@
       <button id="moreMenuCloseBtn">✕</button>
     </div>
     <div id="moreMenuBody">
-      <button class="menuitem" id="reportBtn">📊 รายงานเปรียบเทียบ</button>
-      <a class="menuitem" id="viewA0Btn" href="a0-drawing.pdf" target="_blank" rel="noopener">📄 ดูผัง A0 จริง (ต้นฉบับ)</a>
-      <button class="menuitem" id="seqReviewBtn">🔢 ยืนยันลำดับการเชื่อมต่อ</button>
-      <button class="menuitem" id="txTypeSeedBtn">🏷 จำแนกชนิดหม้อแปลง (เติมค่าครั้งแรก)</button>
-      <button class="menuitem" id="opsaImportBtn">➕ เพิ่มหม้อแปลงที่พบใน OPSA แต่ไม่มีในผัง</button>
-      <button class="menuitem" id="gisCoordBtn">📍 แก้พิกัดหม้อแปลงตาม GIS</button>
-      <button class="menuitem" id="gisImportBtn">➕ เพิ่มหม้อแปลงที่พบใน GIS แต่ไม่มีในผัง</button>
-      <button class="menuitem" id="fuseCompareBtn">🔧 เทียบขนาดฟิวส์กับ GIS</button>
+      <!-- เรียงตามความถี่ที่ใช้จริง สวิตช์โหมดอยู่บนสุดเพราะกดบ่อยที่สุดในงานประจำวัน
+           ส่วนตั้งค่ากับจัดการผู้ใช้ไว้ล่างสุดเพราะนานๆ ใช้ที
+           เมนู "เปลี่ยนชื่อผู้ใช้งาน" ถูกตัดออก เพราะเรียก showUserPicker() ตัวเดียวกับ
+           การกดชื่อตัวเองบนหัวเรื่อง ซึ่งแสดงอยู่ตลอดเวลาที่ล็อกอินแล้ว -->
+      <div class="menugroup first">โหมดการแสดงผล</div>
       <label class="menuitem"><input type="checkbox" id="leafToggle"> แสดงหม้อแปลง/มิเตอร์</label>
       <label class="menuitem"><input type="checkbox" id="editToggle"> โหมดแก้ไข</label>
       <label class="menuitem"><input type="checkbox" id="fieldToggle"> 📷 ตรวจสอบภาคสนาม</label>
+
+      <div class="menusep"></div>
+      <div class="menugroup">ดูและรายงาน</div>
+      <button class="menuitem" id="reportBtn">📊 รายงานเปรียบเทียบ</button>
+      <a class="menuitem" id="viewA0Btn" href="a0-drawing.pdf" target="_blank" rel="noopener">📄 ดูผัง A0 จริง (ต้นฉบับ)</a>
+
+      <div class="menusep"></div>
+      <div class="menugroup">ตรวจความถูกต้องของผัง</div>
+      <button class="menuitem" id="seqReviewBtn">🔢 ยืนยันลำดับการเชื่อมต่อ</button>
+      <button class="menuitem" id="txTypeSeedBtn">🏷 จำแนกชนิดหม้อแปลง (เติมค่าครั้งแรก)</button>
+
+      <div class="menusep"></div>
+      <div class="menugroup">เทียบกับ GIS และ OPSA</div>
+      <button class="menuitem" id="gisCoordBtn">📍 แก้พิกัดหม้อแปลงตาม GIS</button>
+      <button class="menuitem" id="gisImportBtn">➕ เพิ่มหม้อแปลงที่พบใน GIS แต่ไม่มีในผัง</button>
+      <button class="menuitem" id="opsaImportBtn">➕ เพิ่มหม้อแปลงที่พบใน OPSA แต่ไม่มีในผัง</button>
+      <button class="menuitem" id="fuseCompareBtn">🔧 เทียบขนาดฟิวส์กับ GIS</button>
+
+      <div class="menusep"></div>
+      <div class="menugroup">ตั้งค่าและผู้ใช้</div>
       <button class="menuitem" id="settingsBtn">⚙ ตั้งค่าการเชื่อมต่อ Google Sheet</button>
-      <button class="menuitem" id="usernameBtn">🙋 เปลี่ยนชื่อผู้ใช้งาน</button>
       <button class="menuitem" id="manageMembersBtn">🛡 จัดการรายชื่อสมาชิก (Admin)</button>
       <button class="menuitem" id="installAppBtn" style="display:none;">📲 เพิ่มไปยังหน้าจอโฮม (ติดตั้งเป็นแอป)</button>
-      <div class="menuitem" style="color:var(--muted);font-size:.78rem;cursor:default;line-height:1.4;">
+
+      <div class="menunote">
         ที่มา: แบบ Single Line Diagram (AutoCAD) · เปิด "โหมดแก้ไข" เพื่อแก้ไข/เติมข้อมูลที่ขาดได้โดยตรง
       </div>
     </div>
@@ -6718,13 +6751,53 @@ document.getElementById('settingsBtn').addEventListener('click', ()=>{
   else { localStorage.removeItem('sld_gas_url'); }
   location.reload();
 });
-document.getElementById('usernameBtn').addEventListener('click', ()=>{
-  document.getElementById('moreMenuOverlay').classList.remove('show');
-  showUserPicker();
-});
+/* เมนู "เปลี่ยนชื่อผู้ใช้งาน" ถูกตัดออกแล้ว — กดชื่อตัวเองบนหัวเรื่อง (#userBadge)
+   เรียก showUserPicker() ตัวเดียวกันอยู่แล้ว จึงไม่ต้องมีสองทางเข้า */
 
 // เมนู "เพิ่มเติม" — ใช้หน้าต่างป๊อปอัพแบบเดียวกับรายงานเปรียบเทียบ (ทำงานเสถียรกว่าดรอปดาวน์)
+/* ซ่อนเมนูที่คนนี้ใช้ไม่ได้ หรือที่ไม่มีงานค้างให้ทำ — คิดใหม่ทุกครั้งที่เปิดเมนู
+   เพราะบทบาทผู้ใช้และจำนวนหม้อแปลงที่ยังไม่จำแนกเปลี่ยนได้ระหว่างใช้งาน */
+function refreshMoreMenu(){
+  // จัดการรายชื่อสมาชิก — ซ่อนเมื่อ "รู้แน่" ว่าไม่ใช่ผู้ดูแล
+  // ถ้ายังไม่ได้ล็อกอิน (ยังไม่รู้บทบาท) ให้คงไว้ เพราะกดแล้วระบบจะชวนล็อกอินก่อน
+  const mm = document.getElementById('manageMembersBtn');
+  if(mm){
+    const known = !!(CURRENT_USER && CURRENT_USER.name && CURRENT_USER.role);
+    mm.style.display = (known && CURRENT_USER.role !== 'admin') ? 'none' : '';
+  }
+  // จำแนกชนิดหม้อแปลง — เป็นเครื่องมือเติมค่าย้อนหลัง ไล่เฉพาะตัวที่ยังไม่เคยระบุชนิด
+  // พอจำแนกครบแล้วเปิดมาก็ว่างเปล่า จึงให้หายไปเองเมื่อไม่มีงานค้าง
+  const seed = document.getElementById('txTypeSeedBtn');
+  if(seed){
+    let pending = 0;
+    try{
+      (DATA && DATA.feeders || []).forEach(f=> (f.devices || []).forEach(d=>{
+        if(d.type === 'TRANSFORMER' && !txTypeSaved(d)) pending++;
+      }));
+    }catch(e){ pending = 1; }   // นับไม่ได้ก็แสดงไว้ก่อน ดีกว่าซ่อนของที่ยังต้องใช้
+    seed.style.display = pending ? '' : 'none';
+    if(pending) seed.textContent = '🏷 จำแนกชนิดหม้อแปลง (ค้าง ' + pending.toLocaleString() + ')';
+  }
+  // หัวข้อกลุ่มไหนไม่เหลือรายการที่มองเห็นเลย ให้ซ่อนหัวข้อกับเส้นคั่นตามไปด้วย
+  const body = document.getElementById('moreMenuBody');
+  if(!body) return;
+  const kids = Array.from(body.children);
+  kids.forEach((el, i)=>{
+    if(!el.classList.contains('menugroup')) return;
+    let any = false;
+    for(let j = i + 1; j < kids.length; j++){
+      const k = kids[j];
+      if(k.classList.contains('menugroup') || k.classList.contains('menusep')) break;
+      if(k.classList.contains('menuitem') && k.style.display !== 'none'){ any = true; break; }
+    }
+    el.style.display = any ? '' : 'none';
+    const sep = kids[i - 1];
+    if(sep && sep.classList.contains('menusep')) sep.style.display = any ? '' : 'none';
+  });
+}
+
 document.getElementById('moreMenuBtn').addEventListener('click', ()=>{
+  refreshMoreMenu();
   document.getElementById('moreMenuOverlay').classList.add('show');
 });
 document.getElementById('moreMenuCloseBtn').addEventListener('click', ()=>{
