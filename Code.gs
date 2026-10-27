@@ -422,11 +422,22 @@ function buildData() {
  * หมายเหตุ: ส่งมาด้วย Content-Type: text/plain เพื่อเลี่ยงปัญหา CORS preflight
  * ของ Apps Script (เบราว์เซอร์จะไม่ยิง OPTIONS ก่อน) โค้ดฝั่งนี้ยัง parse เป็น JSON ตามปกติ
  */
+// คำสั่งอ่านอย่างเดียว — ไม่ต้องรอคิวล็อก (เดิมทุกคำขอต่อคิวเดียวกันหมด ทำให้หน้าจัดการผู้ใช้ค้าง/ช้า)
+const READ_ONLY_ACTIONS_ = ['getMemberList', 'whoAmI', 'getPendingList', 'patrolListUsers', 'patrolWhoAmI', 'appRequests', 'bookDlList', 'appVisits'];
 function doPost(e) {
+  let body;
+  try { body = JSON.parse(e.postData.contents); } catch (err) { return jsonOut({ ok: false, error: 'คำขอไม่ถูกต้อง' }); }
+  if (READ_ONLY_ACTIONS_.indexOf(body.action) >= 0) {
+    try { return doPostInner_(body); } catch (err) { return jsonOut({ ok: false, error: String(err) }); }
+  }
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  if (!lock.tryLock(30000)) return jsonOut({ ok: false, busy: true, error: 'ระบบกำลังทำงานให้ผู้ใช้อื่นอยู่ กรุณาลองใหม่อีกครั้ง' });
+  try { return doPostInner_(body); }
+  catch (err) { return jsonOut({ ok: false, error: String(err) }); }
+  finally { lock.releaseLock(); }
+}
+function doPostInner_(body) {
   try {
-    const body = JSON.parse(e.postData.contents);
 
     if (body.action === 'getMemberList') {
       return jsonOut({ ok: true, members: getMemberList_() });
@@ -459,6 +470,16 @@ function doPost(e) {
       return jsonOut({ ok: false, error: 'unauthorized', name: changedByName,
         message: 'ชื่อ "' + (changedByName || '(ยังไม่ได้เลือกชื่อ)') + '" หรือรหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง หรือติดต่อผู้ดูแลระบบ' });
     }
+
+    // คำสั่งที่ไม่เกี่ยวกับชีตอุปกรณ์ — ทำก่อน ไม่ต้องอ่านชีต Devices ทั้งชีต (ช้า)
+    if (body.action === 'getPendingList') {
+      if (requesterRole !== 'admin') return jsonOut({ ok: false, error: 'เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่ดูคำขอสมัครได้' });
+      return jsonOut({ ok: true, pending: getPendingList_() });
+    }
+    const patrolEarly = handlePatrolAction_(body, requesterRole, changedByName);
+    if (patrolEarly) return patrolEarly;
+    const txLoadEarly = handleTxLoadAction_(body, requesterRole, changedByName);
+    if (txLoadEarly) return txLoadEarly;
 
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_DEVICES);
     const values = sheet.getDataRange().getValues();
@@ -684,8 +705,6 @@ function doPost(e) {
 
   } catch (err) {
     return jsonOut({ ok: false, error: String(err) });
-  } finally {
-    lock.releaseLock();
   }
 }
 
@@ -1148,7 +1167,8 @@ function listUsersWithApps_(requesterRole) {
         name: name, role: pair[1],
         position: String(values[r][2] || '').trim(),
         org: String(values[r][3] || '').trim(),
-        apps: pair[1] === 'admin' ? APP_LIST.map(function (a) { return a.code; }) : getUserApps_(name, 'member'),
+        apps: pair[1] === 'admin' || !raw ? APP_LIST.map(function (a) { return a.code; })   // คิดจากแถวที่อ่านแล้ว ไม่อ่านชีตซ้ำทีละคน
+          : raw === '-' ? [] : raw.split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x; }),
         appsRaw: raw,
         appsUpdated: String(values[r][APPS_META_COL - 1] || '').trim()
       });
