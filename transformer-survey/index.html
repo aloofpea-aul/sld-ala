@@ -411,7 +411,9 @@
       <button class="map-btn" id="satBtn" title="ภาพดาวเทียม">🛰<span class="mb-text"> ภาพดาวเทียม</span></button>
       <button class="map-btn" id="locateBtn" title="ตำแหน่งฉัน">📍<span class="mb-text"> ตำแหน่งฉัน</span></button>
       <button class="map-btn" id="fitBtn" title="ดูทั้งหมด">⤢<span class="mb-text"> ดูทั้งหมด</span></button>
+      <button class="map-btn" id="lvBtn" title="มิเตอร์แรงต่ำ (ซูมใกล้ระดับ 17 ขึ้นไป)">🔌<span class="mb-text"> มิเตอร์แรงต่ำ</span></button>
     </div>
+    <div id="lvNote" style="display:none;position:absolute;left:10px;bottom:10px;z-index:400;background:rgba(255,255,255,.94);border:1px solid var(--line,#e3ddd0);border-radius:8px;padding:5px 10px;font-size:.74rem;color:#5a5448;box-shadow:0 2px 8px rgba(0,0,0,.16);max-width:min(70vw,320px);line-height:1.45;"></div>
     <div id="mapCard" role="dialog" aria-live="polite"></div>
     <div id="mapLegend">
       <button type="button" class="lg-toggle" id="legendToggle">ⓘ สัญลักษณ์</button>
@@ -1309,6 +1311,9 @@ function renderMapMarkers(){
   else if(mvLinesFailed) msgs.push('⚠ โหลดแนวสายจริงไม่สำเร็จ — แผนที่จะแสดงเฉพาะหมุดหม้อแปลง');
   if(msgs.length){ note.textContent = msgs.join(' · '); note.style.display = 'block'; }
   else note.style.display = 'none';
+  // Overlays.clear() ด้านบนลบหมุดมิเตอร์ไปด้วย จึงต้องวาดกลับทุกครั้งที่วาดแผนที่ใหม่
+  lvMainOv = []; lvViewKey = '';
+  if(lvOn){ if(LV) drawLvOnMain(true); else loadLv().then(()=> drawLvOnMain(true)); }
 }
 function showMapPopup(f, d){
   if(currentPopup){ try{ lmap.Overlays.remove(currentPopup); }catch(e){} currentPopup = null; }
@@ -1376,6 +1381,10 @@ document.getElementById('legendToggle').addEventListener('click', ()=>{
   const open = lg.classList.toggle('open');
   document.getElementById('legendToggle').textContent = open ? '✕ ปิดสัญลักษณ์' : 'ⓘ สัญลักษณ์';
 });
+document.getElementById('lvBtn').addEventListener('click', ()=>{ toggleLv(!lvOn); });
+document.addEventListener('change', e=>{
+  if(e.target && e.target.id === 'poleLvChk') toggleLv(e.target.checked);
+}, true);
 document.getElementById('satBtn').addEventListener('click', ()=>{
   if(!lmap) return;
   satelliteOn = !satelliteOn;
@@ -1464,6 +1473,102 @@ function nearPoles(lat, lon, n, maxM){
   out.sort((a,b)=> a.d - b.d);
   return out.slice(0, n || 60);
 }
+
+/* ===== มิเตอร์แรงต่ำ — ใช้ไฟล์ ../lvmeters.json ชุดเดียวกับหน้า SLD =====
+ *  โหลดครั้งแรกตอนผู้ใช้เปิดใช้งานเท่านั้น ไม่โหลดตอนเปิดแอป
+ *  ใช้ได้สองจอ: แผนที่หลัก (ปุ่มสลับ) และแผนที่เลือกเสาในฟอร์มสำรวจ          */
+const LV_OFFICE_COLOR = { ALA:'#0f8f7e', PPY:'#3f6fd8' };
+const LV_PHASE_TEXT = { 1:'1 เฟส', 2:'2 เฟส', 4:'3 เฟส', 7:'3 เฟส (แรงสูง)' };
+// รัศมีในจอเลือกเสา 300 ม. — หม้อแปลงเฉพาะราย (เช่น โรงพยาบาล โรงงาน) มิเตอร์ที่ใกล้ที่สุด
+// อาจห่างเกือบ 200 ม. เพราะเป็นของหม้อแปลงตัวอื่น ถ้าตั้งแคบกว่านี้จะไม่เห็นอะไรเลย
+const LV_ZOOM_MIN = 17, LV_MAIN_MAX = 800, LV_POLE_RADIUS_M = 300, LV_POLE_MAX = 300;
+const LV_LS_KEY = 'txs_lv_on';
+let LV = null, lvLoadingP = null, lvMainOv = [], lvViewKey = '';
+let lvOn = (function(){ try{ return localStorage.getItem(LV_LS_KEY) === '1'; }catch(e){ return false; } })();
+function loadLv(){
+  if(LV) return Promise.resolve(LV);
+  if(lvLoadingP) return lvLoadingP;
+  lvLoadingP = fetch('../lvmeters.json', { cache:'force-cache' }).then(r=> r.ok ? r.json() : null)
+    .then(j=>{ LV = j; return j; }).catch(()=> null);
+  return lvLoadingP;
+}
+function lvOffice(m){ return (LV && LV.office[m[3]]) || ''; }
+function lvColor(m){ return m[9] ? '#e8711a' : (LV_OFFICE_COLOR[lvOffice(m)] || '#0f8f7e'); }
+function lvCa(m){ return LV ? (LV.caPrefix + String(m[6]).padStart(8,'0')) : ''; }
+function lvTitle(m){
+  if(!LV) return '';
+  const off = lvOffice(m) === 'PPY' ? 'กฟส.ปลายพระยา' : 'กฟส.อ่าวลึก';
+  return 'มิเตอร์ ' + (m[7] || '-') + '\nCA ' + lvCa(m) +
+         (m[8] ? '\nบัญชี ' + m[8] : '') +
+         '\n' + off + ' · ' + (LV.feeder[m[2]] || '-') +
+         '\nเส้นทางจดหน่วย ' + (LV.route[m[4]] || '-') + ' · ' + (LV_PHASE_TEXT[m[5]] || ('เฟส ' + m[5])) +
+         (m[9] ? '\n⚡ มิเตอร์สำหรับรถ EV' : '');
+}
+function lvMarkerFor(m, sz){
+  const col = lvColor(m), s = sz || (m[9] ? 9 : 7);
+  return new longdo.Marker({ lon: m[1], lat: m[0] }, {
+    title: lvTitle(m),
+    icon: { html: `<div title="${escapeHtml(lvTitle(m))}" style="width:${s}px;height:${s}px;background:${col};border:1.4px solid #fff;border-radius:50%;box-shadow:0 0 2px rgba(0,0,0,.45);"></div>`,
+            offset: { x: s/2 + 0.7, y: s/2 + 0.7 } }
+  });
+}
+function nearLv(lat, lon, n, maxM){
+  if(!LV) return [];
+  const out = [];
+  for(const m of LV.meters){
+    if(Math.abs(m[0]-lat) > 0.003 || Math.abs(m[1]-lon) > 0.003) continue;
+    const dd = gpsDistanceMeters(lat, lon, m[0], m[1]);
+    if(dd <= (maxM || LV_POLE_RADIUS_M)) out.push({ m, d: dd });
+  }
+  out.sort((a,b)=> a.d - b.d);
+  return out.slice(0, n || LV_POLE_MAX);
+}
+function clearLvMain(){
+  lvMainOv.forEach(o=>{ try{ lmap.Overlays.remove(o); }catch(e){} });
+  lvMainOv = []; lvViewKey = '';
+}
+function setLvNote(msg){
+  const el = document.getElementById('lvNote');
+  if(el){ el.textContent = msg || ''; el.style.display = msg ? 'block' : 'none'; }
+}
+function drawLvOnMain(force){
+  if(typeof lmap === 'undefined' || !lmap) return;
+  if(!lvOn || !LV){ if(lvMainOv.length) clearLvMain(); return; }
+  let z, b;
+  try{ z = lmap.zoom(); b = lmap.bound(); }catch(e){ return; }
+  if(z < LV_ZOOM_MIN){
+    if(lvMainOv.length) clearLvMain();
+    setLvNote('🔌 ซูมเข้าอีกเพื่อดูมิเตอร์แรงต่ำ (ตอนนี้ระดับ ' + z + ')');
+    return;
+  }
+  const key = [z, b.minLat.toFixed(4), b.maxLat.toFixed(4), b.minLon.toFixed(4), b.maxLon.toFixed(4)].join('|');
+  if(!force && key === lvViewKey) return;
+  clearLvMain();
+  lvViewKey = key;
+  let capped = false, n = 0;
+  for(const m of LV.meters){
+    if(m[0] < b.minLat || m[0] > b.maxLat || m[1] < b.minLon || m[1] > b.maxLon) continue;
+    if(n >= LV_MAIN_MAX){ capped = true; break; }
+    try{ const mk = lvMarkerFor(m); lmap.Overlays.add(mk); lvMainOv.push(mk); n++; }catch(e){}
+  }
+  setLvNote('🔌 มิเตอร์แรงต่ำ ' + n.toLocaleString() + ' เครื่องในหน้าจอ' + (capped ? ' (ถึงขีดจำกัด ซูมเข้าอีกเพื่อดูครบ)' : ''));
+}
+async function toggleLv(on){
+  lvOn = !!on;
+  try{ localStorage.setItem(LV_LS_KEY, lvOn ? '1' : '0'); }catch(e){}
+  const btn = document.getElementById('lvBtn');
+  if(btn) btn.classList.toggle('on', lvOn);
+  const chk = document.getElementById('poleLvChk');
+  if(chk) chk.checked = lvOn;
+  if(!lvOn){ clearLvMain(); setLvNote(''); if(typeof drawPoleMap === 'function' && poleMap) drawPoleMap(); return; }
+  setLvNote('🔌 กำลังโหลดข้อมูลมิเตอร์แรงต่ำ …');
+  await loadLv();
+  if(!LV){ setLvNote('⚠ โหลดมิเตอร์แรงต่ำไม่สำเร็จ — ต้องมีไฟล์ lvmeters.json ในโฟลเดอร์ sld-ala'); return; }
+  drawLvOnMain(true);
+  if(typeof drawPoleMap === 'function' && poleMap) drawPoleMap();
+}
+setInterval(()=>{ if(lvOn && LV && typeof lmap !== 'undefined' && lmap) drawLvOnMain(false); }, 700);
+
 function setPole(p){
   if(!p){ form.pole = null; }
   else{
@@ -1522,6 +1627,8 @@ async function renderPoleMap(){
   poleCenter = { lat: center.lat, lon: center.lon };
   poleMap.location({ lon: center.lon, lat: center.lat }, true);
   updatePoleState();
+  const lvChk = document.getElementById('poleLvChk');
+  if(lvChk) lvChk.checked = lvOn;
   drawPoleMap();
 }
 let poleDrawnAt = null;
@@ -1535,6 +1642,13 @@ function drawPoleMap(){
   poleItems = [];
   const ref = poleMapCenter() || form.gps || poleCenter;
   poleDrawnAt = { lat: ref.lat, lon: ref.lon };
+  // มิเตอร์แรงต่ำรอบจุดนี้ — วาดก่อนเสา เพื่อให้หมุดเสาอยู่ชั้นบนและยังจิ้มเลือกได้เหมือนเดิม
+  if(lvOn){
+    if(LV) nearLv(ref.lat, ref.lon, LV_POLE_MAX, LV_POLE_RADIUS_M).forEach(x=>{
+      try{ poleMap.Overlays.add(lvMarkerFor(x.m, x.m[9] ? 10 : 8)); }catch(e){}
+    });
+    else loadLv().then(()=>{ if(lvOn && poleMap) drawPoleMap(); });
+  }
   nearPoles(ref.lat, ref.lon, 70, 400).forEach(x=>{
     const tag = poleTag(x.p);
     const on = form.pole && form.pole.tag === tag && Math.abs(form.pole.lat - x.p[0]) < 1e-6;
@@ -1881,10 +1995,14 @@ function renderDetailForm(){
           <button type="button" id="poleZoomOut">−</button>
           <button type="button" id="poleZoomIn">＋</button>
           <button type="button" id="poleClearBtn">ไม่ใช้เสา</button>
+          <label style="display:inline-flex;align-items:center;gap:5px;font-size:.78rem;white-space:nowrap;margin-left:2px;"><input type="checkbox" id="poleLvChk" style="width:16px;height:16px;"> 🔌 มิเตอร์แรงต่ำ</label>
         </div>
         <div class="pole-legend">
           <span><i style="background:#d32f2f"></i>เสาแรงสูง</span>
           <span><i style="background:#2e7d32"></i>เสาแรงต่ำ</span>
+          <span><i class="rd" style="background:#0f8f7e"></i>มิเตอร์อ่าวลึก</span>
+          <span><i class="rd" style="background:#3f6fd8"></i>มิเตอร์ปลายพระยา</span>
+          <span><i class="rd" style="background:#e8711a"></i>มิเตอร์ EV</span>
           <span><i class="rd" style="background:#1565c0"></i>ตำแหน่งฉัน</span>
           <span><i class="rd" style="background:#e07b00"></i>พิกัดในระบบ</span>
         </div>
