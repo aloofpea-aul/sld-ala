@@ -1,0 +1,11 @@
+﻿Feeder,DeviceID,Type,Rating,Description,Lat,Lon,Source,ParentID,MeterCount,VerifiedStatus,VerifiedDate
+ALA07,QSA05WS-116,WS,400A,พฤกษาฮิลล์,8.583921885,98.935122705,gis-import,,,,
+ALA03,QSA10WS-116,WS,400A,บ.หาดถั่ว,8.583570963,98.933833852,gis-import,ALA03WS-121,,,
+ALA09,CLA01WS-124,WS,400A,อนามัยบ้านนา,8.660304425,98.779622274,gis-import,,,,
+ALA05,PGA07WS-124,WS,400A,สนามกีฬา อ.ทับปุด,8.496368502,98.630144254,gis-import,,,,
+ALA07,QSA05WS-000,WS,600A,-,8.583428441,98.934124070,gis-import,,,,
+ALA07,ALA07WF-151-1,WF,,สวนปาล์มบางเหียน,8.552488081,98.893275590,gis-import,,,,
+ALA05,60-103273,TRANSFORMER,50kVA,ห้างหุ้นส่วนจำกัด วริศรา ฟาร์ม,8.482845417,98.724803238,gis-import,,,,
+ALA06,69-101663,TRANSFORMER,2000kVA,บมจ.เอเชี่ยนน้ำมันปาล์ม,8.381547381,98.716456305,gis-import,,,,
+ALA07,69-300909,TRANSFORMER,1000kVA,โรงพยาบาลอ่าวลึก,8.402548812,98.743330151,gis-import,,,,
+ALA05,69-006535,TRANSFORMER,30kVA,DCC_,8.412004310,98.630813862,gis-import,ALA05WF-159,,,
