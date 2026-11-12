@@ -41,9 +41,11 @@
     overflow-x:hidden;max-width:100vw;}
   html{height:-webkit-fill-available;}
 
+  /* position+z-index เพื่อให้แถบหัวและรายการผลค้นหาอยู่เหนือปุ่มต่าง ๆ บนแผนที่
+     (ก่อนหน้านี้ปุ่มแสดง/ซ่อนหม้อแปลงบังรายการผลค้นหา) แต่ยังต่ำกว่าป๊อบอัปที่ใช้ 5000 ขึ้นไป */
   header{background:var(--pea-purple);color:#fff;padding:12px 20px;padding-top:calc(12px + env(safe-area-inset-top));
     padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right));
-    display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+    display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:relative;z-index:1200;}
   header h1{font-size:1.05rem;margin:0;font-weight:600;letter-spacing:.2px;}
   header .sub{font-size:.8rem;opacity:.85;}
   header .meta{margin-left:auto;font-size:.72rem;opacity:.8;display:flex;align-items:center;gap:10px;}
@@ -113,7 +115,7 @@
   #searchResults{position:relative;}
   #searchResultsList{position:absolute;top:38px;left:0;width:100%;max-width:420px;
     background:#fff;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.25);
-    max-height:260px;overflow:auto;z-index:30;display:none;}
+    max-height:260px;overflow:auto;z-index:1300;display:none;}
   #searchResultsList div{padding:8px 12px;font-size:.82rem;cursor:pointer;border-bottom:1px solid #eee;}
   #searchResultsList div:hover{background:#f2f0fa;}
   #searchResultsList .fid{color:var(--pea-purple);font-weight:700;margin-right:6px;}
@@ -448,6 +450,15 @@
   .device-view-row .v{font-weight:600;text-align:right;}
   .device-view-row .v-warn{font-weight:700;text-align:right;color:#e0a030;}
   .device-view-row .v-bad{font-weight:700;text-align:right;color:#c62828;}
+  /* แถวพิกัด — กดที่ตัวเลขหรือปุ่มเพื่อคัดลอกไปวางที่อื่น */
+  .dm-coord{display:flex;align-items:center;gap:6px;justify-content:flex-end;flex-wrap:wrap;}
+  .dm-coord code{font-family:"Consolas",monospace;font-weight:700;font-size:.95rem;color:var(--ink);
+    background:var(--pea-soft,#f2eff8);border-radius:6px;padding:4px 8px;cursor:pointer;user-select:all;}
+  .dm-coord code:active{background:#e3dcf2;}
+  .dm-copy{border:1px solid var(--pea-purple);background:#fff;color:var(--pea-purple);border-radius:7px;
+    padding:5px 10px;font-family:inherit;font-size:.78rem;font-weight:600;cursor:pointer;min-height:32px;white-space:nowrap;}
+  .dm-copy:active{background:var(--pea-soft,#f2eff8);}
+  .dm-copy.done{background:#e8f5e9;border-color:#2e7d32;color:#2e7d32;}
   .device-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
   .device-modal-actions button{padding:10px 18px;border-radius:6px;border:1px solid var(--line);
     background:#fff;cursor:pointer;font-family:inherit;font-size:.95rem;}
@@ -5220,6 +5231,61 @@ function openDeviceModal(id){
 function closeDeviceModal(){
   document.getElementById('deviceOverlay').classList.remove('show');
 }
+/* คัดลอกข้อความลงคลิปบอร์ด — มีทางสำรองเผื่อเบราว์เซอร์เก่าหรือหน้าที่ไม่ใช่ https */
+async function copyToClipboard(text){
+  try{
+    if(navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(text); return true; }
+  }catch(e){}
+  try{
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly','');
+    ta.style.cssText = 'position:fixed;top:-1000px;left:-1000px;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select(); ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  }catch(e){ return false; }
+}
+/* ปุ่มคัดลอกพิกัดในหน้ารายละเอียดอุปกรณ์ — ใช้ event delegation
+   เพราะเนื้อหาในกล่องถูกสร้างใหม่ทุกครั้งที่เปิด */
+document.addEventListener('click', async e=>{
+  const btn = e.target.closest && e.target.closest('[data-copy]');
+  if(!btn) return;
+  e.preventDefault(); e.stopPropagation();
+  const text = btn.getAttribute('data-copy');
+  const ok = await copyToClipboard(text);
+  if(ok){
+    showToast('คัดลอกแล้ว: ' + text);
+    if(btn.classList.contains('dm-copy')){
+      const old = btn.textContent;
+      btn.textContent = '✓ คัดลอกแล้ว'; btn.classList.add('done');
+      setTimeout(()=>{ btn.textContent = old; btn.classList.remove('done'); }, 1600);
+    }
+  } else {
+    showToast('คัดลอกไม่สำเร็จ ลองกดค้างที่ตัวเลขแล้วเลือกคัดลอกแทน', 'err');
+  }
+});
+
+/* แถวพิกัดในหน้ารายละเอียดอุปกรณ์ — รูปแบบ "ละติจูด,ลองจิจูด" วางลง Google Maps
+   หรือช่องค้นหาของแอปอื่นได้ทันที กดที่ตัวเลขหรือปุ่มก็คัดลอกได้เหมือนกัน */
+function deviceCoordRowHtml(d){
+  if(d.lat == null || d.lon == null || d.lat === '' || d.lon === ''){
+    return `<div class="device-view-row"><span class="k">พิกัด</span><span class="v" style="color:var(--muted);font-weight:500;">ยังไม่มีพิกัดในระบบ</span></div>`;
+  }
+  const txt = Number(d.lat).toFixed(6) + ',' + Number(d.lon).toFixed(6);
+  const maps = 'https://www.google.com/maps?q=' + encodeURIComponent(txt);
+  return `<div class="device-view-row">
+      <span class="k">พิกัด</span>
+      <span class="dm-coord">
+        <code data-copy="${escapeHtml(txt)}" title="แตะเพื่อคัดลอก">${escapeHtml(txt)}</code>
+        <button type="button" class="dm-copy" data-copy="${escapeHtml(txt)}">📋 คัดลอก</button>
+        <a class="dm-copy" style="text-decoration:none;display:inline-block;line-height:20px;" target="_blank" rel="noopener" href="${escapeHtml(maps)}">🗺 เปิดแผนที่</a>
+      </span>
+    </div>`;
+}
+
 function renderDeviceModalView(f, d){
   document.getElementById('deviceModalTitle').textContent = d.id;
   const rows = [
@@ -5253,6 +5319,7 @@ function renderDeviceModalView(f, d){
   }
   const html = `
     <div>${rows.map(([k,v,cls])=>`<div class="device-view-row"><span class="k">${escapeHtml(k)}</span><span${cls||' class="v"'}>${escapeHtml(String(v))}</span></div>`).join('')}</div>
+    ${deviceCoordRowHtml(d)}
     ${d.type === 'TRANSFORMER' ? upstreamBlockHtml(f, d) : ''}
     <div class="dm-verify-row">
       <label class="sp-verify-label">
