@@ -182,6 +182,10 @@
   }
   #searchGoBtn{flex:0 0 auto;padding:0 12px;border-radius:8px;border:1px solid var(--pea-purple);
     background:var(--pea-purple);color:#fff;font-size:1rem;cursor:pointer;}
+  /* ต้องเจาะจงกว่า #searchbar button ที่ตั้ง padding 8px 14px ไว้ ไม่งั้นโดนทับ */
+  #searchbar #searchPasteBtn{flex:0 0 auto;padding:0 11px;border-radius:8px;border:1px solid #0f8f7e;
+    background:#0f8f7e;color:#fff;font-size:1rem;cursor:pointer;min-height:36px;}
+  #searchbar #searchPasteBtn:active{background:#0b6f62;}
   @keyframes srchPulse{0%{transform:scale(.6);opacity:1;}100%{transform:scale(1.9);opacity:0;}}
   .srch-mark{position:relative;width:46px;height:46px;pointer-events:none;}
   .srch-mark .ring{position:absolute;inset:0;border-radius:50%;border:3px solid #e53935;animation:srchPulse 1.3s ease-out infinite;}
@@ -723,6 +727,8 @@
     #searchbar{padding:8px 10px;gap:6px;box-sizing:border-box;}
     #searchbar input{font-size:16px;box-sizing:border-box;}
     #searchResults{max-width:none !important;flex:1 1 auto !important;min-width:0;}
+    /* จอแคบ บีบปุ่มสองตัวให้แคบลง คืนพื้นที่ให้ช่องพิมพ์ */
+    #searchbar #searchPasteBtn, #searchbar #searchGoBtn{padding:0 8px;}
     #backBtn{flex:0 0 auto;padding:8px 8px;font-size:.68rem;white-space:nowrap;}
     #clearBtn{flex:0 0 auto;padding:8px 8px;font-size:.68rem;white-space:nowrap;}
     #zoomCtrls button{width:40px;height:40px;font-size:1.1rem;}
@@ -773,6 +779,7 @@
     <div id="searchResults" style="flex:1;max-width:420px;">
       <div style="display:flex;gap:6px;">
         <input id="searchInput" type="text" placeholder="ค้นหาอุปกรณ์ หรือวางพิกัด เช่น ALA01WS-101, 57-004243, 8.402549,98.743330, ลิงก์ Google Maps" style="flex:1;min-width:0;">
+        <button id="searchPasteBtn" title="วางพิกัดที่คัดลอกไว้ (หรือคลิกขวาในช่องค้นหา)">📋</button>
         <button id="searchGoBtn" title="ค้นหาแล้วซูมไปที่ตำแหน่ง">🔍</button>
       </div>
       <div id="searchResultsList"></div>
@@ -5904,6 +5911,61 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
   if(e.key === 'Enter'){ e.preventDefault(); runSearch(); }
 });
 document.getElementById('searchGoBtn').addEventListener('click', runSearch);
+
+/* ===== วางพิกัดให้ง่ายขึ้น 3 ทาง =====
+   1) ปุ่ม 📋 ข้างช่องค้นหา — ใช้ได้ทุกเครื่อง รวมมือถือ
+   2) คลิกขวาในช่องค้นหา = วางทันที (เฉพาะเครื่องที่มีเมาส์
+      กด Shift ค้างแล้วคลิกขวา ถ้าอยากได้เมนูปกติของเบราว์เซอร์)
+   3) กด Ctrl+V ตรงไหนก็ได้ในหน้า โดยไม่ต้องแตะช่องค้นหาก่อน      */
+function applyPastedText(text){
+  const inp = document.getElementById('searchInput');
+  inp.value = String(text || '').trim();
+  doSearch(inp.value);
+  const c = parseCoordInput(inp.value);
+  if(c && !c.shortLink){ focusCoord(c); return true; }
+  inp.focus();
+  return false;
+}
+async function pasteFromClipboard(){
+  let text = '';
+  try{
+    if(navigator.clipboard && navigator.clipboard.readText) text = await navigator.clipboard.readText();
+  }catch(e){ text = ''; }
+  if(!text || !text.trim()){
+    showToast('อ่านคลิปบอร์ดไม่ได้ หรือยังไม่ได้คัดลอกอะไรไว้ — ลองกด Ctrl+V ในช่องค้นหาแทน', 'warn');
+    return false;
+  }
+  applyPastedText(text);
+  return true;
+}
+document.getElementById('searchPasteBtn').addEventListener('click', pasteFromClipboard);
+
+/* คลิกขวาในช่องค้นหา = วางเลย — ผูกเฉพาะเครื่องที่มีตัวชี้แบบละเอียด (เมาส์/ทัชแพด)
+   บนมือถือไม่ผูก เพราะกดค้างต้องเหลือไว้ให้เลือกข้อความและเมนูวางของระบบ */
+if(window.matchMedia && window.matchMedia('(any-pointer: fine)').matches){
+  let ctxPasteOff = false;   // ถ้าอ่านคลิปบอร์ดไม่ได้สักครั้ง เลิกยึดเมนู คืนเมนูปกติให้
+  document.getElementById('searchInput').addEventListener('contextmenu', async e => {
+    if(ctxPasteOff || e.shiftKey) return;
+    if(!(navigator.clipboard && navigator.clipboard.readText)) return;
+    e.preventDefault();
+    const ok = await pasteFromClipboard();
+    if(!ok) ctxPasteOff = true;
+  });
+}
+/* วางที่ไหนก็ได้ในหน้า — ยึดเฉพาะตอนที่สิ่งที่วางเป็นพิกัดจริง
+   ถ้าเป็นข้อความอื่นปล่อยให้วางตามปกติ จะได้ไม่กวนการพิมพ์ในฟอร์มอื่น */
+document.addEventListener('paste', e => {
+  const t = e.target;
+  if(t && t.id !== 'searchInput' &&
+     (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  let text = '';
+  try{ text = (e.clipboardData || window.clipboardData).getData('text'); }catch(err){ return; }
+  if(!text || !text.trim()) return;
+  const c = parseCoordInput(text);
+  if(!c || c.shortLink) return;
+  e.preventDefault();
+  applyPastedText(text);
+});
 
 document.getElementById('searchInput').addEventListener('input', e => doSearch(e.target.value));
 document.getElementById('searchInput').addEventListener('focus', e => e.target.select());
