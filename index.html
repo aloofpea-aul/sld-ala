@@ -194,6 +194,59 @@
     border:3px solid #fff;box-shadow:0 0 6px rgba(0,0,0,.5);}
   .srch-mark .lbl{position:absolute;left:50%;top:-26px;transform:translateX(-50%);background:#e53935;color:#fff;
     font:700 12px Consolas,monospace;padding:3px 8px;border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35);}
+  /* ===== แผงไล่สายขึ้นไปต้นทาง — เลื่อนขึ้นจากขอบล่างของแผนที่ ===== */
+  #chainSheet{position:absolute;left:0;right:0;bottom:0;z-index:900;background:#fff;
+    border-top:1px solid #e3ddd0;border-radius:14px 14px 0 0;box-shadow:0 -6px 18px rgba(0,0,0,.16);
+    display:none;flex-direction:column;max-height:62%;transition:max-height .18s ease;}
+  #chainSheet.on{display:flex;}
+  #chainSheet.collapsed{max-height:60px;}
+  #chainGrab{width:36px;height:4px;border-radius:2px;background:#d8d2c4;margin:6px auto 0;flex:0 0 auto;}
+  #chainHead{padding:4px 12px 8px;display:flex;align-items:center;gap:8px;cursor:pointer;flex:0 0 auto;}
+  #chainHead .ch-t{font-size:.84rem;font-weight:700;flex:1 1 auto;min-width:0;display:block;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #chainSheet .ch-sum{display:none;font-size:.72rem;color:var(--muted);line-height:1.45;flex:0 0 auto;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #chainSheet.collapsed #chainHead{padding-bottom:4px;}
+  #chainSheet.collapsed #chainHead .ch-t{font-size:.8rem;}
+  #chainSheet.collapsed #chainTabs{display:none;}
+  #chainSheet.collapsed #chainBody{display:none;}
+  #chainSheet.collapsed .ch-sum{display:block;}
+  #chainSheet.collapsed #chainGrab{margin-top:5px;}
+  #chainCollapsed{display:none;}
+  #chainTabs{display:flex;gap:4px;flex:0 0 auto;}
+  #chainTabs button{border:0;background:#f0ecf7;color:#6b5a8a;font:700 .68rem inherit;
+    padding:4px 10px;border-radius:12px;cursor:pointer;min-height:26px;}
+  #chainTabs button.on{background:var(--pea-purple);color:#fff;}
+  #chainClose{border:0;background:transparent;color:#8a8372;font-size:1rem;cursor:pointer;
+    padding:2px 4px;min-height:26px;}
+  #chainBody{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 12px 12px;
+    border-top:1px solid #f0ece2;flex:1 1 auto;}
+  .ch-step{display:flex;gap:9px;align-items:flex-start;padding:4px 0;}
+  .ch-step.clickable{cursor:pointer;}
+  .ch-step.clickable:active{background:#f7f5f1;}
+  .ch-rail{width:14px;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;align-self:stretch;}
+  .ch-dot{width:11px;height:11px;border-radius:50%;border:2px solid #fff;
+    box-shadow:0 0 0 1.4px #cfc7bb;flex:0 0 auto;margin-top:3px;}
+  .ch-line{width:2px;flex:1 1 auto;background:#d8d2c4;min-height:10px;}
+  .ch-txt{flex:1 1 auto;min-width:0;}
+  .ch-id{font:700 .8rem Consolas,monospace;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .ch-meta{font-size:.7rem;color:var(--muted);line-height:1.5;}
+  .ch-pill{display:inline-block;font:700 .6rem inherit;padding:1px 6px;border-radius:8px;margin-left:5px;
+    vertical-align:1px;}
+  .ch-imp{color:#b3261e;font-weight:700;}
+  .ch-skip{font-size:.7rem;color:#8a8372;background:#f7f5f1;border:1px dashed #d8d2c4;
+    border-radius:8px;padding:4px 9px;margin:3px 0 3px 23px;line-height:1.5;}
+  .ch-note{font-size:.72rem;color:#8a5200;background:#fdf3e3;border:1px solid #f0d9ae;
+    border-radius:8px;padding:5px 9px;margin:4px 0;line-height:1.55;}
+  #chainSheet.on ~ #hint{display:none;}          /* คำแนะนำมุมล่างซ้ายซ้อนกับแผง จึงซ่อนตอนเปิดแผง */
+  @media (max-width:900px){ #chainSheet{max-height:58%;} }
+  /* จอคอม: ย้ายไปเป็นการ์ดมุมล่างซ้าย ไม่พาดเต็มความกว้างแผนที่ และไม่ทับปุ่มมุมขวา */
+  @media (min-width:901px){
+    #chainSheet{left:14px;right:auto;bottom:14px;width:372px;max-height:72%;
+      border-radius:14px;border:1px solid #e3ddd0;box-shadow:0 6px 22px rgba(0,0,0,.2);}
+    #chainGrab{display:none;}
+    #chainHead{padding-top:9px;}
+  }
   body, button, input, select, textarea{ font-weight:500; }
   b, strong, th{ font-weight:700; }
   .device-view-row .k{ color:#4e4b45; }
@@ -845,6 +898,19 @@
         <span class="lp-label">🔺 หม้อแปลง/มิเตอร์</span>
         <button type="button" data-leaf="1">แสดง</button>
         <button type="button" data-leaf="0">ซ่อน</button>
+      </div>
+      <div id="chainSheet" class="collapsed">
+        <div id="chainGrab"></div>
+        <div id="chainHead">
+          <span class="ch-t">🔗 ไล่สายขึ้นไปต้นทาง</span>
+          <span id="chainTabs">
+            <button type="button" data-ctab="short" class="on">ย่อ</button>
+            <button type="button" data-ctab="full">ทุกขั้น</button>
+          </span>
+          <button type="button" id="chainClose" title="ปิดแผง">✕</button>
+        </div>
+        <div class="ch-sum" style="padding:0 12px 8px;"></div>
+        <div id="chainBody"></div>
       </div>
       <svg id="svg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet">
         <g id="zoomG"></g>
@@ -2958,8 +3024,10 @@ function rebuildMapMarkers(){
   leafletMap.Overlays.clear();
   poleOverlays = []; drawnPoles = []; poleViewKey = '';   // Overlays.clear() ลบหมุดเสาไปด้วย ต้องวาดใหม่
   searchHighlightOverlay = null;
+  chainRingOverlays = [];                                 // Overlays.clear() ลบวงกลมรอบจุดที่ค้นไปด้วย
   setTimeout(()=>{ if(searchHighlight) drawSearchHighlight(); }, 0);
   setTimeout(()=>{ if(polesEnabled()) redrawPoles(); }, 0);
+  setTimeout(()=>{ if(chainReport) drawChainRings(chainReport.lat, chainReport.lon); }, 0);
   mapMarkers = [];
   markerDeviceLookup = new Map();
   currentMapPopup = null;
@@ -5258,6 +5326,22 @@ async function copyToClipboard(text){
 /* ปุ่มคัดลอกพิกัดในหน้ารายละเอียดอุปกรณ์ — ใช้ event delegation
    เพราะเนื้อหาในกล่องถูกสร้างใหม่ทุกครั้งที่เปิด */
 document.addEventListener('click', async e=>{
+  const chainBtn = e.target.closest && e.target.closest('[data-chain]');
+  if(chainBtn){
+    e.preventDefault(); e.stopPropagation();
+    const p = String(chainBtn.getAttribute('data-chain')).split(',');
+    const la = Number(p[0]), lo = Number(p[1]);
+    if(!isFinite(la) || !isFinite(lo)) return;
+    if(typeof closeDeviceModal === 'function') closeDeviceModal();
+    if(!mapMode) toggleMapMode();
+    setTimeout(()=>{
+      if(leafletMap){ try{ leafletMap.location({ lon: lo, lat: la }, true); leafletMap.zoom(18, true); }catch(err){} }
+      searchHighlight = { lat: la, lon: lo, id: la.toFixed(6) + ',' + lo.toFixed(6), isCoord: true };
+      drawSearchHighlight();
+      openChainForCoord(la, lo);
+    }, 250);
+    return;
+  }
   const btn = e.target.closest && e.target.closest('[data-copy]');
   if(!btn) return;
   e.preventDefault(); e.stopPropagation();
@@ -5289,6 +5373,7 @@ function deviceCoordRowHtml(d){
         <code data-copy="${escapeHtml(txt)}" title="แตะเพื่อคัดลอก">${escapeHtml(txt)}</code>
         <button type="button" class="dm-copy" data-copy="${escapeHtml(txt)}">📋 คัดลอก</button>
         <a class="dm-copy" style="text-decoration:none;display:inline-block;line-height:20px;" target="_blank" rel="noopener" href="${escapeHtml(maps)}">🗺 เปิดแผนที่</a>
+        <button type="button" class="dm-copy" data-chain="${escapeHtml(txt)}">🔗 ไล่สายขึ้นไปต้นทาง</button>
       </span>
     </div>`;
 }
@@ -5821,6 +5906,232 @@ function devicesNearCoord(lat, lon, limit, maxM){
 function fmtMeters(m){
   return m < 1000 ? Math.round(m) + ' ม.' : (m/1000).toFixed(m < 10000 ? 2 : 1) + ' กม.';
 }
+/* ===== แผงไล่สายขึ้นไปต้นทาง =====
+   ค้นด้วยพิกัด → บอกว่าจุดนั้นอยู่ใกล้มิเตอร์/หม้อแปลงตัวไหน วาดวงกลมบอกพื้นที่
+   แล้วไล่ขึ้นไปทีละตัวจนถึงเบรกเกอร์ต้นทางที่สถานีไฟฟ้า
+
+   ข้อควรรู้เรื่องข้อมูล: ช่อง "ต่อจากอุปกรณ์" ในระบบเก็บตัวก่อนหน้าบนเส้นทางเดียวกัน
+   ไม่ใช่ลำดับการจ่ายไฟจริง ฟิวส์แยกหลายสิบตัวจึงเรียงต่อกันเป็นลูกโซ่ได้
+   ทั้งที่ของจริงมันแตะสายเมนขนานกัน แท็บ "ย่อ" จึงเหลือเฉพาะตัวที่ไฟไหลผ่านจริง
+   คือฟิวส์ของหม้อแปลงตัวเอง แล้วต่อด้วยสวิตช์ รีโคลสเซอร์ และเบรกเกอร์สถานี */
+const CHAIN_INLINE_TYPES = new Set(['WS','WR','MR','SW','WB']);
+const CHAIN_LV_MAX_M = 150;     // ไกลกว่านี้ไม่ถือว่าเป็นมิเตอร์ของจุดที่ค้น
+const CHAIN_TX_MAX_M = 400;     // หม้อแปลงที่ถือว่าจ่ายไฟให้จุดนี้
+const CHAIN_RINGS_M = [50, 100];
+const CHAIN_COLOR = { WB:'#2e7d32', WS:'#1a73e8', SW:'#1a73e8', WR:'#e8711a', MR:'#e8711a',
+  WF:'#e53935', TRANSFORMER:'#7c3aed', MVMETER:'#0f8f7e', WC:'#8a6d3b' };
+const CHAIN_PILL = { WB:'เบรกเกอร์สถานี', WS:'สวิตช์', SW:'สวิตช์', WR:'รีโคลสเซอร์', MR:'รีโคลสเซอร์',
+  WF:'ฟิวส์', TRANSFORMER:'หม้อแปลง', MVMETER:'มิเตอร์แรงกลาง', WC:'คาปาซิเตอร์', LVM:'มิเตอร์แรงต่ำ' };
+const CHAIN_PILL_BG = { WB:'#e8f5e9|#1b5e20', WS:'#e8f0fe|#174ea6', SW:'#e8f0fe|#174ea6',
+  WR:'#fff3e2|#8a5200', MR:'#fff3e2|#8a5200', WF:'#fdecea|#b3261e',
+  TRANSFORMER:'#f3e8fd|#5b21a6', MVMETER:'#e0f2f0|#0b6f62', WC:'#f3efe4|#6b5a2a',
+  LVM:'#e0f2f0|#0b6f62' };
+// ประกาศด้วย var เพราะ rebuildMapMarkers() ที่อยู่ก่อนหน้านี้ในไฟล์อ้างถึงตัวแปรพวกนี้ตอนเปิดแผนที่ครั้งแรก
+var chainReport = null, chainTab = 'short', chainRingOverlays = [];
+
+function chainPillHtml(type){
+  const name = CHAIN_PILL[type] || type || '';
+  const pair = (CHAIN_PILL_BG[type] || '#f0ecf7|#6b5a8a').split('|');
+  return `<span class="ch-pill" style="background:${pair[0]};color:${pair[1]};">${escapeHtml(name)}</span>`;
+}
+/* มิเตอร์แรงต่ำที่อยู่ใกล้พิกัดที่สุด — กรองหยาบด้วยองศาก่อนให้เร็ว (ข้อมูลสามหมื่นกว่าเครื่อง) */
+function nearestLvToCoord(lat, lon, maxM){
+  if(!LV_DATA || !LV_DATA.meters) return null;
+  const lim = maxM || CHAIN_LV_MAX_M;
+  const box = lim / 100000 + 0.0005;
+  let best = null, bestD = lim;
+  for(const m of LV_DATA.meters){
+    if(Math.abs(m[0] - lat) > box || Math.abs(m[1] - lon) > box) continue;
+    const dist = gpsDistanceMeters(lat, lon, m[0], m[1]);
+    if(dist < bestD){ bestD = dist; best = m; }
+  }
+  return best ? { m: best, dist: bestD } : null;
+}
+/* ประกอบรายงาน: จุดที่ค้น → มิเตอร์ → หม้อแปลง → ไล่ขึ้นไปจนถึงเบรกเกอร์สถานี */
+function buildChainReport(lat, lon){
+  const near = devicesNearCoord(lat, lon, 500, 1500);
+  const tx = near.find(n => n.d.type === 'TRANSFORMER' && n.dist <= CHAIN_TX_MAX_M) || null;
+  const anchor = tx || near[0] || null;
+  const rep = { lat, lon, nearest: near[0] || null, tx, anchor, lv: null, steps: [], station: null };
+  rep.lv = nearestLvToCoord(lat, lon, CHAIN_LV_MAX_M);
+  if(!anchor) return rep;
+  const f = anchor.f;
+  upstreamChainSld(f, anchor.d).forEach((x, i) => {
+    rep.steps.push({ x, f,
+      inline: CHAIN_INLINE_TYPES.has(x.type) || i === 0,
+      dist: (x.lat != null && x.lon != null) ? gpsDistanceMeters(lat, lon, x.lat, x.lon) : null });
+  });
+  rep.station = rep.steps.length ? rep.steps[rep.steps.length - 1].x : null;
+  return rep;
+}
+function chainStepHtml(st, rep){
+  const d = st.x;
+  const bits = [];
+  if(st.dist != null) bits.push(escapeHtml(fmtMeters(st.dist)));
+  if(d.rating) bits.push(escapeHtml(d.rating));
+  if(d.desc) bits.push(escapeHtml(d.desc));
+  const imp = (d.customerImpact != null)
+    ? `<br><span class="ch-imp">ถ้าตัดตัวนี้ ดับ ${Number(d.customerImpact).toLocaleString()} ราย</span>` : '';
+  return `<div class="ch-step clickable" data-cfid="${escapeHtml(st.f.id)}" data-cid="${escapeHtml(d.id)}">
+    <div class="ch-rail"><div class="ch-dot" style="background:${CHAIN_COLOR[d.type] || '#8a8372'}"></div>
+      <div class="ch-line"></div></div>
+    <div class="ch-txt"><span class="ch-id">${escapeHtml(d.id)}${chainPillHtml(d.type)}</span>
+      <span class="ch-meta">${bits.join(' · ')}${imp}</span></div></div>`;
+}
+function renderChainSheet(){
+  const sheet = document.getElementById('chainSheet');
+  const body = document.getElementById('chainBody');
+  const head = sheet.querySelector('#chainHead .ch-t');
+  const sum = sheet.querySelector('.ch-sum');
+  const rep = chainReport;
+  if(!rep){ sheet.classList.remove('on'); return; }
+  const txt = rep.lat.toFixed(6) + ', ' + rep.lon.toFixed(6);
+  let html = `<div class="ch-step"><div class="ch-rail"><div class="ch-dot" style="background:#e53935"></div>
+      <div class="ch-line"></div></div>
+    <div class="ch-txt"><span class="ch-id">จุดที่ค้นหา</span>
+      <span class="ch-meta" style="font-family:Consolas,monospace;">${escapeHtml(txt)}</span></div></div>`;
+
+  if(rep.lv){
+    const m = rep.lv.m;
+    html += `<div class="ch-step"><div class="ch-rail"><div class="ch-dot" style="background:#0f8f7e"></div>
+        <div class="ch-line"></div></div>
+      <div class="ch-txt"><span class="ch-id">${escapeHtml(String(m[7] || '-'))}${chainPillHtml('LVM')}</span>
+        <span class="ch-meta">${escapeHtml(fmtMeters(rep.lv.dist))} · CA ${escapeHtml(LV_DATA.caPrefix + String(m[6]).padStart(8,'0'))}
+          · เส้นทางจดหน่วย ${escapeHtml(LV_DATA.route[m[4]] || '-')}</span></div></div>`;
+  } else if(!LV_DATA){
+    html += `<div class="ch-note">กำลังโหลดข้อมูลมิเตอร์แรงต่ำ เดี๋ยวจะขึ้นมาเองว่าจุดนี้ใกล้มิเตอร์เครื่องไหน</div>`;
+  } else {
+    html += `<div class="ch-note">ไม่พบมิเตอร์แรงต่ำในรัศมี ${CHAIN_LV_MAX_M} ม. จากจุดนี้</div>`;
+  }
+
+  if(!rep.anchor){
+    html += `<div class="ch-note">ไม่พบอุปกรณ์แรงสูงในรัศมี 1.5 กม. จากพิกัดนี้ จึงไล่สายต่อไม่ได้</div>`;
+    body.innerHTML = html;
+    head.textContent = '🔗 ไม่พบอุปกรณ์ใกล้พิกัดนี้';
+    sum.textContent = txt;
+    sheet.classList.add('on');
+    return;
+  }
+
+  if(rep.tx){
+    const d = rep.tx.d;
+    const bits = [escapeHtml(fmtMeters(rep.tx.dist))];
+    if(d.rating) bits.push(escapeHtml(d.rating));
+    if(d.desc) bits.push(escapeHtml(d.desc));
+    if(d.meterCount != null) bits.push('มิเตอร์ ' + d.meterCount + ' เครื่อง');
+    html += `<div class="ch-step clickable" data-cfid="${escapeHtml(rep.tx.f.id)}" data-cid="${escapeHtml(d.id)}">
+      <div class="ch-rail"><div class="ch-dot" style="background:#7c3aed"></div><div class="ch-line"></div></div>
+      <div class="ch-txt"><span class="ch-id">${escapeHtml(d.id)}${chainPillHtml('TRANSFORMER')}</span>
+        <span class="ch-meta">${bits.join(' · ')}</span></div></div>`;
+  } else {
+    html += `<div class="ch-note">ไม่มีหม้อแปลงในรัศมี ${CHAIN_TX_MAX_M} ม. จึงเริ่มไล่จากอุปกรณ์ที่ใกล้ที่สุดแทน</div>`;
+  }
+
+  let skipped = [];
+  const flush = ()=>{
+    if(!skipped.length) return;
+    const show = skipped.slice(0, 4).map(s => escapeHtml(s.x.id)).join(' · ');
+    html += `<div class="ch-skip">${show}${skipped.length > 4 ? ' …' : ''}<br>
+      แยกออกจากสายเมนช่วงเดียวกันอีก <b>${skipped.length} ตัว</b> ไฟไม่ได้ไหลผ่านตัวพวกนี้มาถึงจุดที่ค้น</div>`;
+    skipped = [];
+  };
+  rep.steps.forEach(st => {
+    if(chainTab === 'full'){ html += chainStepHtml(st, rep); return; }
+    if(!st.inline){ skipped.push(st); return; }
+    flush();
+    html += chainStepHtml(st, rep);
+  });
+  if(chainTab === 'short') flush();
+  if(!rep.station){
+    html += `<div class="ch-note">อุปกรณ์นี้ยังไม่มีต้นทางในระบบ จึงไล่ขึ้นไปถึงเบรกเกอร์สถานีไม่ได้</div>`;
+  } else if(rep.station.type !== 'WB'){
+    html += `<div class="ch-note">ไล่ขึ้นไปสุดได้แค่ ${escapeHtml(rep.station.id)} — ยังไม่ได้ลงต้นทางต่อถึงเบรกเกอร์สถานี</div>`;
+  }
+  body.innerHTML = html;
+  body.scrollTop = 0;
+
+  const shown = rep.steps.filter(s => s.inline).length;
+  const hidden = rep.steps.length - shown;
+  head.textContent = '🔗 ไล่สายขึ้นไปต้นทาง' + (rep.station ? ' · ถึง ' + rep.station.id : '');
+  sum.innerHTML = (rep.lv ? 'มิเตอร์ ' + escapeHtml(String(rep.lv.m[7])) + ' → ' : '')
+    + (rep.tx ? escapeHtml(rep.tx.d.id) + ' → ' : '')
+    + (rep.station ? '… → <b>' + escapeHtml(rep.station.id) + '</b> ' + escapeHtml(rep.station.desc || '') : 'ไม่พบต้นทาง')
+    + (hidden > 0 ? ` <span style="color:#8a8372;">(ย่อจาก ${rep.steps.length} ขั้น)</span>` : '');
+  sheet.classList.add('on');
+}
+/* วงกลมบอกพื้นที่รอบจุดที่ค้น — วาดเป็นเส้นปิดรอบ ไม่ใช้พื้นทึบ เพื่อให้ยังเห็นแผนที่ใต้วง */
+function clearChainRings(){
+  chainRingOverlays.forEach(o => { try{ leafletMap.Overlays.remove(o); }catch(e){} });
+  chainRingOverlays = [];
+}
+function drawChainRings(lat, lon){
+  if(!leafletMap) return;
+  clearChainRings();
+  const latRad = lat * Math.PI / 180;
+  CHAIN_RINGS_M.forEach((rm, i) => {
+    const dLat = rm / 110574, dLon = rm / (111320 * Math.cos(latRad));
+    const pts = [];
+    for(let a = 0; a <= 360; a += 6){
+      const r = a * Math.PI / 180;
+      pts.push({ lat: lat + dLat * Math.cos(r), lon: lon + dLon * Math.sin(r) });
+    }
+    try{
+      const ring = new longdo.Polyline(pts, {
+        lineWidth: i === 0 ? 2 : 1.5,
+        lineColor: i === 0 ? 'rgba(229,57,53,.85)' : 'rgba(229,57,53,.45)'
+      });
+      leafletMap.Overlays.add(ring);
+      chainRingOverlays.push(ring);
+    }catch(e){}
+  });
+}
+function closeChainSheet(){
+  chainReport = null;
+  clearChainRings();
+  const sheet = document.getElementById('chainSheet');
+  sheet.classList.remove('on');
+  sheet.classList.add('collapsed');
+}
+/* เรียกจากการค้นด้วยพิกัด — เปิดแผงทันทีด้วยข้อมูลที่มี แล้วค่อยเติมมิเตอร์เมื่อโหลดเสร็จ */
+function openChainForCoord(lat, lon){
+  chainTab = 'short';
+  document.querySelectorAll('#chainTabs button').forEach(b =>
+    b.classList.toggle('on', b.getAttribute('data-ctab') === 'short'));
+  chainReport = buildChainReport(lat, lon);
+  renderChainSheet();
+  document.getElementById('chainSheet').classList.remove('collapsed');
+  drawChainRings(lat, lon);
+  if(!LV_DATA){
+    loadLvData().then(()=>{
+      if(!chainReport || chainReport.lat !== lat || chainReport.lon !== lon) return;
+      chainReport.lv = nearestLvToCoord(lat, lon, CHAIN_LV_MAX_M);
+      renderChainSheet();
+    });
+  }
+}
+document.getElementById('chainHead').addEventListener('click', e => {
+  if(e.target.closest('#chainTabs') || e.target.closest('#chainClose')) return;
+  document.getElementById('chainSheet').classList.toggle('collapsed');
+});
+document.getElementById('chainClose').addEventListener('click', closeChainSheet);
+document.querySelectorAll('#chainTabs button').forEach(btn => {
+  btn.addEventListener('click', ()=>{
+    chainTab = btn.getAttribute('data-ctab');
+    document.querySelectorAll('#chainTabs button').forEach(b => b.classList.toggle('on', b === btn));
+    renderChainSheet();
+  });
+});
+document.getElementById('chainBody').addEventListener('click', e => {
+  const row = e.target.closest('.ch-step.clickable');
+  if(!row) return;
+  const fid = row.getAttribute('data-cfid'), id = row.getAttribute('data-cid');
+  const f = DATA.feeders.find(x => x.id === fid);
+  const d = f && f.devices.find(x => x.id === id);
+  if(!d || d.lat == null || d.lon == null){ showToast('อุปกรณ์นี้ยังไม่มีพิกัดในระบบ', 'warn'); return; }
+  try{ leafletMap.location({ lon: d.lon, lat: d.lat }, true); leafletMap.zoom(18, true); }catch(err){}
+  showToast(d.id + (d.desc ? ' · ' + d.desc : ''));
+});
+
 /* ไปยังพิกัดที่ระบุ: สลับไปแผนที่จริง ปักหมุด แล้วบอกว่าอุปกรณ์ใกล้สุดคือตัวไหน */
 function focusCoord(c){
   const txt = c.lat.toFixed(6) + ',' + c.lon.toFixed(6);
@@ -5833,6 +6144,7 @@ function focusCoord(c){
     leafletMap.location({ lon: c.lon, lat: c.lat }, true);
     leafletMap.zoom(18, true);
     drawSearchHighlight();
+    openChainForCoord(c.lat, c.lon);
   };
   setTimeout(go, 250);
   if(c.swapped) showToast('สลับลำดับให้แล้ว — ค่าแรกเกิน 90 จึงเป็นลองจิจูด', 'warn');
@@ -5870,6 +6182,7 @@ function drawSearchHighlight(){
 function clearSearchHighlight(){
   try{ if(leafletMap && searchHighlightOverlay) leafletMap.Overlays.remove(searchHighlightOverlay); }catch(e){}
   searchHighlight = null; searchHighlightOverlay = null;
+  clearChainRings();
 }
 /* ซูมไปที่อุปกรณ์: เปิดวงจร ไฮไลต์ในผัง แล้วสลับไปแผนที่จริงและปักหมุด */
 function focusDevice(fid, id){
@@ -5905,6 +6218,7 @@ function runSearch(){
   if(c){ focusCoord(c); return; }
   const hit = findBestDevice(q);
   if(!hit){ showToast('ไม่พบ "' + q.trim() + '" ในผัง', 'warn'); return; }
+  closeChainSheet();   // ค้นด้วยรหัสอุปกรณ์ ไม่ต้องคาแผงไล่สายของพิกัดเดิมไว้
   focusDevice(hit.f.id, hit.d.id);
 }
 document.getElementById('searchInput').addEventListener('keydown', e => {
