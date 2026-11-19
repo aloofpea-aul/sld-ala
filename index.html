@@ -772,7 +772,7 @@
     <button id="backBtn">← ภาพรวมทั้งหมด</button>
     <div id="searchResults" style="flex:1;max-width:420px;">
       <div style="display:flex;gap:6px;">
-        <input id="searchInput" type="text" placeholder="ค้นหา เช่น ALA01WS-101, 57-004243, บ.นาเหนือ..." style="flex:1;min-width:0;">
+        <input id="searchInput" type="text" placeholder="ค้นหาอุปกรณ์ หรือวางพิกัด เช่น ALA01WS-101, 57-004243, 8.402549,98.743330, ลิงก์ Google Maps" style="flex:1;min-width:0;">
         <button id="searchGoBtn" title="ค้นหาแล้วซูมไปที่ตำแหน่ง">🔍</button>
       </div>
       <div id="searchResultsList"></div>
@@ -5672,8 +5672,48 @@ function escapeHtml(s){
 
 function doSearch(q){
   const list = document.getElementById('searchResultsList');
-  q = q.trim().toLowerCase();
+  const rawQ = String(q || '').trim();
+  q = rawQ.toLowerCase();
   if(!q){ list.style.display='none'; list.innerHTML=''; return; }
+
+  // ถ้าสิ่งที่พิมพ์/วางเป็นพิกัด ให้เสนอ "ไปยังพิกัด" พร้อมอุปกรณ์ที่อยู่ใกล้
+  const c = parseCoordInput(rawQ);
+  if(c && c.shortLink){
+    list.innerHTML = `<div style="color:#8a5200;line-height:1.6;">ลิงก์ย่อของ Google Maps อ่านพิกัดตรง ๆ ไม่ได้<br>
+      <span style="color:#777;font-size:.78rem;">เปิดลิงก์ในแอปแผนที่ก่อน แล้วค่อยก๊อปพิกัดหรือลิงก์แบบเต็มมาวาง</span></div>`;
+    list.style.display = 'block';
+    return;
+  }
+  if(c){
+    const txt = c.lat.toFixed(6) + ',' + c.lon.toFixed(6);
+    const near = devicesNearCoord(c.lat, c.lon, 5);
+    let html = `<div data-coord="1" style="background:#f2eff8;border-bottom:1px solid #ddd6ee;">
+        <span class="fid">📍 ไปยังพิกัด</span>
+        <span style="font-family:Consolas,monospace;font-weight:700;">${escapeHtml(txt)}</span>
+        <span style="color:#777;font-size:.76rem;"> · ${escapeHtml(c.how)}${c.swapped?' · สลับลำดับให้แล้ว':''}</span>
+        ${c.far?'<div style="color:#c62828;font-size:.76rem;margin-top:2px;">⚠ อยู่นอกประเทศไทย</div>':''}
+      </div>`;
+    if(near.length){
+      html += `<div style="color:#777;font-size:.74rem;padding:6px 12px 2px;border:0;cursor:default;">อุปกรณ์ที่อยู่ใกล้พิกัดนี้</div>`;
+      html += near.map(n=>`<div data-fid="${n.f.id}" data-id="${n.d.id}">
+          <span class="fid" style="color:${n.f.color}">${n.f.id}</span>${escapeHtml(n.d.id)}
+          <span style="color:#4b2e83;font-weight:700;"> ${escapeHtml(fmtMeters(n.dist))}</span>
+          <span style="color:#777;"> — ${escapeHtml(n.d.desc || '')}</span>
+        </div>`).join('');
+    }
+    list.innerHTML = html;
+    list.querySelector('[data-coord]').addEventListener('click', ()=> focusCoord(c));
+    list.querySelectorAll('div[data-fid]').forEach(row=>{
+      row.addEventListener('click', ()=>{
+        const fid = row.getAttribute('data-id');
+        focusDevice(row.getAttribute('data-fid'), fid);
+        setTimeout(()=>{ openDeviceModal(fid); }, 700);
+      });
+    });
+    list.style.display = 'block';
+    return;
+  }
+
   let results = [];
   DATA.feeders.forEach(f => {
     f.devices.forEach(d => {
@@ -5701,6 +5741,98 @@ function doSearch(q){
     });
   }
   list.style.display = 'block';
+}
+
+/* ===== อ่านพิกัดจากข้อความที่พิมพ์หรือวางในช่องค้นหา =====
+   รองรับ  8.402549,98.743330  /  8.402549, 98.743330  /  8.402549 98.743330
+          ลิงก์ Google Maps ทั้งแบบ /@lat,lon,17z  ?q=lat,lon  และ !3dlat!4dlon
+          แบบองศา ลิปดา ฟิลิปดา  8°24'09.2"N 98°44'36.0"E
+          แบบมีอักษรทิศ  8.4025N 98.7433E
+   คืน null ถ้าไม่ใช่พิกัด เพื่อให้ตกไปค้นหาอุปกรณ์ตามปกติ               */
+const COORD_TH_BOUNDS = { minLat:5.0, maxLat:21.0, minLon:96.0, maxLon:106.5 };
+function parseCoordInput(raw){
+  let s = String(raw || '').trim();
+  if(!s) return null;
+  if(/^https?:\/\/(maps\.app\.goo\.gl|goo\.gl)\//i.test(s)) return { shortLink:true };
+  let m;
+  // ลิงก์ Google Maps — ลำดับความสำคัญ: !3d!4d (จุดของสถานที่) > @ (จุดกึ่งกลางจอ) > q=
+  if(/https?:\/\//i.test(s) || s.includes('/@') || s.includes('?q=') || s.includes('&q=')){
+    if((m = s.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/))) return mk(m[1], m[2], 'ลิงก์ Google Maps');
+    if((m = s.match(/[@](-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/)))  return mk(m[1], m[2], 'ลิงก์ Google Maps');
+    if((m = s.match(/[?&](?:q|ll|daddr|destination)=(-?\d+(?:\.\d+)?)[,%20+\s]+(-?\d+(?:\.\d+)?)/i))) return mk(m[1], m[2], 'ลิงก์แผนที่');
+    return null;
+  }
+  // องศา ลิปดา ฟิลิปดา
+  const dms = /(\d{1,3})\s*[°d]\s*(\d{1,2})\s*['′m]\s*([\d.]+)\s*["″s]?\s*([NSEWnsew])/g;
+  const parts = [];
+  while((m = dms.exec(s)) !== null){
+    let v = Number(m[1]) + Number(m[2])/60 + Number(m[3])/3600;
+    const h = m[4].toUpperCase();
+    if(h === 'S' || h === 'W') v = -v;
+    parts.push({ v, h });
+  }
+  if(parts.length === 2){
+    const la = parts.find(p=> p.h==='N'||p.h==='S'), lo = parts.find(p=> p.h==='E'||p.h==='W');
+    if(la && lo) return mk(la.v, lo.v, 'พิกัดองศา');
+    return mk(parts[0].v, parts[1].v, 'พิกัดองศา');
+  }
+  // ตัวเลขสองค่า คั่นด้วยจุลภาคหรือช่องว่าง อาจมีอักษรทิศต่อท้าย
+  m = s.match(/^\s*(-?\d{1,3}(?:\.\d+)?)\s*([NSns])?\s*[,; ]\s*(-?\d{1,3}(?:\.\d+)?)\s*([EWew])?\s*$/);
+  if(m){
+    let a = Number(m[1]), b = Number(m[3]);
+    if(m[2] && m[2].toUpperCase() === 'S') a = -a;
+    if(m[4] && m[4].toUpperCase() === 'W') b = -b;
+    // ต้องมีจุดทศนิยมอย่างน้อยหนึ่งค่า กัน "57, 4" หรือรหัสอุปกรณ์ถูกตีความเป็นพิกัด
+    if(!/\./.test(m[1]) && !/\./.test(m[3])) return null;
+    return mk(a, b, 'พิกัด');
+  }
+  return null;
+  function mk(a, b, how){
+    let lat = Number(a), lon = Number(b);
+    if(!isFinite(lat) || !isFinite(lon)) return null;
+    // สลับให้ถูกถ้าใส่ลองจิจูดมาก่อน (ละติจูดเกิน 90 ไม่มีจริง)
+    let swapped = false;
+    if(Math.abs(lat) > 90 && Math.abs(lon) <= 90){ const t = lat; lat = lon; lon = t; swapped = true; }
+    if(Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    const B = COORD_TH_BOUNDS;
+    const far = (lat < B.minLat || lat > B.maxLat || lon < B.minLon || lon > B.maxLon);
+    return { lat, lon, how, swapped, far };
+  }
+}
+/* อุปกรณ์ที่อยู่ใกล้พิกัดที่สุด — ใช้บอกว่าจุดที่วางมาอยู่แถวอุปกรณ์ตัวไหน */
+function devicesNearCoord(lat, lon, limit, maxM){
+  const out = [];
+  DATA.feeders.forEach(f => f.devices.forEach(d => {
+    if(d.lat == null || d.lon == null) return;
+    const dist = gpsDistanceMeters(lat, lon, d.lat, d.lon);
+    if(maxM && dist > maxM) return;
+    out.push({ f, d, dist });
+  }));
+  out.sort((a,b)=> a.dist - b.dist);
+  return out.slice(0, limit || 6);
+}
+function fmtMeters(m){
+  return m < 1000 ? Math.round(m) + ' ม.' : (m/1000).toFixed(m < 10000 ? 2 : 1) + ' กม.';
+}
+/* ไปยังพิกัดที่ระบุ: สลับไปแผนที่จริง ปักหมุด แล้วบอกว่าอุปกรณ์ใกล้สุดคือตัวไหน */
+function focusCoord(c){
+  const txt = c.lat.toFixed(6) + ',' + c.lon.toFixed(6);
+  document.getElementById('searchResultsList').style.display = 'none';
+  document.getElementById('searchInput').value = txt;
+  searchHighlight = { lat: c.lat, lon: c.lon, id: txt, isCoord: true };
+  if(!mapMode) toggleMapMode();
+  const go = ()=>{
+    if(!leafletMap){ setTimeout(go, 150); return; }
+    leafletMap.location({ lon: c.lon, lat: c.lat }, true);
+    leafletMap.zoom(18, true);
+    drawSearchHighlight();
+  };
+  setTimeout(go, 250);
+  if(c.swapped) showToast('สลับลำดับให้แล้ว — ค่าแรกเกิน 90 จึงเป็นลองจิจูด', 'warn');
+  if(c.far){ showToast('พิกัดนี้อยู่นอกประเทศไทย ตรวจดูว่าวางครบหรือสลับค่ากันหรือเปล่า', 'warn'); return; }
+  const near = devicesNearCoord(c.lat, c.lon, 1);
+  if(near.length) showToast('ไปที่พิกัดแล้ว · ใกล้ ' + near[0].d.id + ' ' + fmtMeters(near[0].dist));
+  else showToast('ไปที่พิกัดแล้ว');
 }
 
 /* ===== ค้นหาแล้วซูมไปที่ตำแหน่งบนแผนที่จริง พร้อมหมุดไฮไลต์ ===== */
@@ -5758,6 +5890,12 @@ function focusDevice(fid, id){
 }
 function runSearch(){
   const q = document.getElementById('searchInput').value;
+  const c = parseCoordInput(q);
+  if(c && c.shortLink){
+    showToast('ลิงก์ย่อ Google Maps อ่านพิกัดไม่ได้ — เปิดลิงก์ก่อนแล้วก๊อปพิกัดมาวาง', 'warn');
+    return;
+  }
+  if(c){ focusCoord(c); return; }
   const hit = findBestDevice(q);
   if(!hit){ showToast('ไม่พบ "' + q.trim() + '" ในผัง', 'warn'); return; }
   focusDevice(hit.f.id, hit.d.id);
