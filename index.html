@@ -6,7 +6,7 @@
 <!-- ไม่ใส่ viewport-fit=cover เหมือนงานพาโทรล เพื่อให้ขอบบน-ล่างชนจอ ไม่มีแถบคั่น
      (ถ้าใส่ cover ค่า env(safe-area-inset-bottom) จะกลายเป็น 34px แล้วดันแถบล่างลอยขึ้นจากขอบ) -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Single Line Diagram - สถานีไฟฟ้าอ่าวลึก</title>
+<title>ผังระบบไฟฟ้าอ่าวลึก (SLD) - สถานีไฟฟ้าอ่าวลึก</title>
 
 <!-- PWA: ติดตั้งขึ้นหน้าจอโฮมได้เหมือนแอปจริง -->
 <link rel="manifest" href="manifest.json">
@@ -814,7 +814,7 @@
 })();
 </script>
   <header>
-    <h1>Single Line Diagram</h1>
+    <h1>ผังระบบไฟฟ้าอ่าวลึก (SLD)</h1>
     <span class="sub" id="stationSub">สถานีไฟฟ้าอ่าวลึก · กฟส.อ่าวลึก กฟต.2</span>
     <span class="meta">
       <span id="sourceMeta"></span>
@@ -924,7 +924,7 @@
       <script>if(window.matchMedia("(pointer:coarse)").matches) document.getElementById("hint").textContent = "ลากเพื่อเลื่อนภาพ · ใช้สองนิ้วถ่างเพื่อซูม";</script>
       <div id="loadingOverlay">
         <div id="loadingIcon">⚡</div>
-        <h2>Single Line Diagram</h2>
+        <h2>ผังระบบไฟฟ้าอ่าวลึก (SLD)</h2>
         <p class="loading-sub">สถานีไฟฟ้าอ่าวลึก · กฟส.อ่าวลึก กฟต.2</p>
         <div id="loadingSpinner"><span></span><span></span><span></span></div>
         <p class="loading-status">กำลังโหลดข้อมูลจาก Google Sheet...</p>
@@ -1523,7 +1523,7 @@ async function loadData(){
   PEAUI.boot.start([
     { k:'data',   t:'ดึงข้อมูลอุปกรณ์จาก Google Sheet' },
     { k:'render', t:'จัดผังวงจรและแผนที่' }
-  ], { title:'Single Line Diagram', sub:'สถานีไฟฟ้าอ่าวลึก · กฟส.อ่าวลึก' });
+  ], { title:'ผังระบบไฟฟ้าอ่าวลึก (SLD)', sub:'สถานีไฟฟ้าอ่าวลึก · กฟส.อ่าวลึก' });
   PEAUI.boot.step('data','run');
   if(GAS_URL){
     loadMemberList();   // ตรวจรายชื่อผู้ใช้เบื้องหลัง ไม่ต้องรอ
