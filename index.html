@@ -331,6 +331,43 @@
     border-radius:6px;border:1px solid var(--line);background:#fff;font-size:15px;cursor:pointer;
     box-shadow:0 1px 4px rgba(0,0,0,.15);}
   #locateBtn:hover{background:var(--paper);}
+  /* ===== ไม้บรรทัดวัดระยะบนแผนที่ ===== */
+  #rulerBtn{position:absolute;right:14px;bottom:94px;z-index:5;width:32px;height:32px;
+    border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.95);cursor:pointer;
+    font-size:15px;line-height:1;display:none;align-items:center;justify-content:center;
+    box-shadow:0 1px 5px rgba(0,0,0,.25);-webkit-user-select:none;user-select:none;touch-action:manipulation;}
+  #rulerBtn:hover{background:var(--paper);}
+  #rulerBtn.on{background:var(--pea-purple);border-color:var(--pea-purple);}
+  #mapDiv.measuring{cursor:crosshair;}
+  .msr-pt{width:13px;height:13px;border-radius:50%;background:#fff;border:3px solid #e8711a;
+    box-shadow:0 1px 4px rgba(0,0,0,.5);pointer-events:none;}
+  .msr-pt.snap{border-color:#7c3aed;}
+  .msr-lbl{background:#e8711a;color:#fff;font:700 11px "Noto Sans Thai",sans-serif;padding:2px 7px;
+    border-radius:10px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4);pointer-events:none;}
+  .msr-tag{background:rgba(124,58,237,.95);color:#fff;font:700 10px Consolas,monospace;padding:1px 6px;
+    border-radius:8px;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.35);}
+  #measureHud{position:absolute;left:12px;right:56px;bottom:12px;z-index:901;display:none;
+    background:rgba(255,255,255,.97);border:1px solid var(--line);border-radius:12px;
+    padding:8px 12px 9px;box-shadow:0 4px 16px rgba(0,0,0,.22);}
+  #measureHud.on{display:block;}
+  #measureHud .mh-top{display:flex;align-items:baseline;gap:8px;}
+  #measureHud .mh-n{font-size:1.5rem;font-weight:700;color:#e8711a;line-height:1.1;}
+  #measureHud .mh-u{font-size:.76rem;color:var(--muted);}
+  #measureHud .mh-sub{font-size:.7rem;color:var(--muted);line-height:1.55;margin-top:2px;}
+  #measureHud .mh-btns{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap;}
+  #measureHud .mh-btns button{border:0;border-radius:11px;padding:5px 10px;min-height:30px;cursor:pointer;
+    font:700 .72rem inherit;background:#f0ecf7;color:var(--pea-purple);}
+  #measureHud .mh-btns button.pri{background:#0f8f7e;color:#fff;}
+  #measureHud .mh-btns button:disabled{opacity:.45;cursor:default;}
+  /* แผงไล่สายกินพื้นที่ด้านล่าง เปิดพร้อมกันเมื่อไหร่ต้องขยับแถบวัดระยะให้พ้นกัน */
+  @media (max-width:900px){
+    #chainSheet.on ~ #measureHud{bottom:78px;}
+    #chainSheet.on:not(.collapsed) ~ #measureHud{bottom:auto;top:58px;}
+  }
+  @media (min-width:901px){
+    #measureHud{left:auto;right:58px;width:340px;}
+    #chainSheet.on:not(.collapsed) ~ #measureHud{bottom:auto;top:52px;}
+  }
   #zoomCtrls button{width:32px;height:32px;border-radius:6px;border:1px solid var(--line);
     background:#fff;font-size:1rem;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.15);}
   #hint{position:absolute;left:14px;bottom:14px;font-size:.7rem;color:var(--muted);
@@ -894,6 +931,7 @@
         </div>
       </div>
       <button id="locateBtn" title="ตำแหน่งปัจจุบัน" style="display:none;">📍</button>
+      <button id="rulerBtn" title="วัดระยะ (กดค้าง = เริ่มจากตำแหน่งปัจจุบัน)">📏</button>
       <div id="leafPill" role="group" aria-label="แสดงหม้อแปลงและมิเตอร์" style="display:none;">
         <span class="lp-label">🔺 หม้อแปลง/มิเตอร์</span>
         <button type="button" data-leaf="1">แสดง</button>
@@ -911,6 +949,16 @@
         </div>
         <div class="ch-sum" style="padding:0 12px 8px;"></div>
         <div id="chainBody"></div>
+      </div>
+      <div id="measureHud">
+        <div class="mh-top"><span class="mh-n">0</span><span class="mh-u">เมตร</span></div>
+        <div class="mh-sub"></div>
+        <div class="mh-btns">
+          <button type="button" id="msrUndoBtn" class="pri">↶ เลิกจุดล่าสุด</button>
+          <button type="button" id="msrClearBtn">🗑 ล้าง</button>
+          <button type="button" id="msrCopyBtn">📋 คัดลอก</button>
+          <button type="button" id="msrCloseBtn">✕ ปิด</button>
+        </div>
       </div>
       <svg id="svg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet">
         <g id="zoomG"></g>
@@ -2640,6 +2688,7 @@ function toggleMapMode(){
     document.getElementById('zoomCtrls').style.display = 'none';
     panel.style.display = '';
     locateBtn.style.display = '';
+    document.getElementById('rulerBtn').style.display = 'flex';
     if(!leafletMap) initLeafletMap();
     setTimeout(()=>{ if(leafletMap){ fitMapBounds(); } }, 50);
   } else {
@@ -2649,6 +2698,8 @@ function toggleMapMode(){
     document.getElementById('zoomCtrls').style.display = '';
     panel.style.display = 'none';
     locateBtn.style.display = 'none';
+    document.getElementById('rulerBtn').style.display = 'none';
+    if(measureOn) setMeasureMode(false);
     document.getElementById('mapControlBody').classList.remove('open');
   }
 }
@@ -3028,6 +3079,8 @@ function rebuildMapMarkers(){
   setTimeout(()=>{ if(searchHighlight) drawSearchHighlight(); }, 0);
   setTimeout(()=>{ if(polesEnabled()) redrawPoles(); }, 0);
   setTimeout(()=>{ if(chainReport) drawChainRings(chainReport.lat, chainReport.lon); }, 0);
+  measureOverlays = [];                                   // เช่นกัน เส้นและหมุดวัดระยะต้องวาดใหม่
+  setTimeout(()=>{ if(measureOn && measurePts.length) redrawMeasure(); }, 0);
   mapMarkers = [];
   markerDeviceLookup = new Map();
   currentMapPopup = null;
@@ -3472,6 +3525,20 @@ function gisLineTipHtml(f, seg){
     return best;
   }
   window.__nearestMapMarkerAt = nearestMarkerAt;
+  // แปลงตำแหน่งบนจอเป็นพิกัดจริง — ใช้ขอบเขตแผนที่ที่แสดงอยู่ เหมือนที่ใช้หาหมุดใกล้เคียง
+  window.__mapXYtoLatLon = function(clientX, clientY){
+    if(!mapMode || !leafletMap) return null;
+    const rect = mapDiv.getBoundingClientRect();
+    const mx = clientX - rect.left, my = clientY - rect.top;
+    if(mx < 0 || my < 0 || mx > rect.width || my > rect.height) return null;
+    let b;
+    try{ b = leafletMap.bound(); }catch(e){ return null; }
+    if(!b || b.maxLon === b.minLon || b.maxLat === b.minLat) return null;
+    const yTop = mercY(b.maxLat), yBot = mercY(b.minLat);
+    const y = yTop - (my / rect.height) * (yTop - yBot);
+    return { lon: b.minLon + (mx / rect.width) * (b.maxLon - b.minLon),
+             lat: (Math.atan(Math.exp(y)) - Math.PI/4) * 360 / Math.PI };
+  };
   // หาช่วงสายแรงสูงที่ใกล้ตำแหน่งเมาส์/นิ้วที่สุด (คำนวณเองเหมือนหมุด เพราะ Longdo ไม่ส่งเหตุการณ์คลิกของเส้นมาให้)
   // หาเสาไฟที่ใกล้ตำแหน่งเมาส์/นิ้วที่สุด (เฉพาะต้นที่วาดอยู่บนหน้าจอตอนนี้)
   const POLE_HIT_PX = 9;
@@ -3547,7 +3614,9 @@ function gisLineTipHtml(f, seg){
     });
     return best;
   }
-  const isUiTarget = t => t && t.closest && t.closest('button, a, input, select, label, textarea, #mapControlPanel, [class*="popup"], [class*="ldmap_"][class*="menu"]');
+  window.__nearestPoleAt = (x, y) => nearestPoleAt(x, y);
+  window.__nearestLvMeterAt = (x, y) => nearestLvAt(x, y);
+  const isUiTarget = t => t && t.closest && t.closest('button, a, input, select, label, textarea, #mapControlPanel, #measureHud, #chainSheet, [class*="popup"], [class*="ldmap_"][class*="menu"]');
 
   if(canHover){
     let raf = null, lastEv = null, lastKey = null;
@@ -3559,7 +3628,8 @@ function gisLineTipHtml(f, seg){
         const ev = lastEv;
         const tip = ensureMapHoverTip();
         const overlayOpen = document.getElementById('deviceOverlay') && document.getElementById('deviceOverlay').classList.contains('show');
-        const active = (!overlayOpen && !(ev.buttons & 1) && !isUiTarget(ev.target) && mapDiv.contains(ev.target));
+        const measuring = (typeof measureOn !== 'undefined' && measureOn);
+        const active = (!overlayOpen && !measuring && !(ev.buttons & 1) && !isUiTarget(ev.target) && mapDiv.contains(ev.target));
         const info = active ? nearestMarkerAt(ev.clientX, ev.clientY) : null;
         // ไม่โดนหมุด — ลองดูว่าชี้อยู่บนแนวสายไหม (หมุดมาก่อนเสมอ)
         const pole = (!info && active) ? nearestPoleAt(ev.clientX, ev.clientY) : null;
@@ -3591,6 +3661,8 @@ function gisLineTipHtml(f, seg){
     const moved = Math.hypot(e.clientX - downXY.x, e.clientY - downXY.y) > 6; // ลากแผนที่ ไม่นับเป็นคลิก
     downXY = null;
     if(moved) return;
+    // อยู่ในโหมดวัดระยะ — แตะ = ปักจุดวัด ไม่ใช่เปิดรายละเอียดอุปกรณ์
+    if(typeof measureOn !== 'undefined' && measureOn){ addMeasurePoint(e.clientX, e.clientY); return; }
     const info = nearestMarkerAt(e.clientX, e.clientY);
     if(info){ openMapDeviceInfo(info.f, info.d); return; }
     // แตะบนเสาไฟ / แนวสาย = แสดงรายละเอียดของจุดนั้น (ใช้ได้บนมือถือที่ไม่มีการชี้เมาส์)
@@ -6131,6 +6203,172 @@ document.getElementById('chainBody').addEventListener('click', e => {
   try{ leafletMap.location({ lon: d.lon, lat: d.lat }, true); leafletMap.zoom(18, true); }catch(err){}
   showToast(d.id + (d.desc ? ' · ' + d.desc : ''));
 });
+
+/* ===== ไม้บรรทัดวัดระยะบนแผนที่ =====
+   กดปุ่ม 📏 แล้วแตะจุดไปเรื่อย ๆ ได้กี่จุดก็ได้ แต่ละช่วงมีป้ายบอกระยะ และมีผลรวมอยู่ในแถบล่าง
+   แตะใกล้หมุดอุปกรณ์ เสาไฟ หรือมิเตอร์ จะเกาะไปที่ตัวนั้นพอดีพร้อมชื่อ
+   วัดเป็นเส้นตรงจากจุดถึงจุด ไม่ใช่ระยะตามถนนหรือตามแนวสายจริง
+   ประกาศด้วย var เพราะโค้ดจับการแตะแผนที่ที่อยู่ก่อนหน้านี้ในไฟล์อ้างถึง measureOn */
+var measureOn = false, measurePts = [], measureOverlays = [];
+
+function setMeasureOverlays(list){ measureOverlays = list; }
+function clearMeasureOverlays(){
+  measureOverlays.forEach(o=>{ try{ leafletMap.Overlays.remove(o); }catch(e){} });
+  measureOverlays = [];
+}
+function measureTotalM(){
+  let t = 0;
+  for(let i = 1; i < measurePts.length; i++)
+    t += gpsDistanceMeters(measurePts[i-1].lat, measurePts[i-1].lon, measurePts[i].lat, measurePts[i].lon);
+  return t;
+}
+/* หาว่าจุดที่แตะเกาะอะไรได้บ้าง — หมุดอุปกรณ์มาก่อน แล้วเสาไฟ แล้วมิเตอร์แรงต่ำ */
+function snapMeasurePoint(clientX, clientY){
+  const info = window.__nearestMapMarkerAt && window.__nearestMapMarkerAt(clientX, clientY);
+  if(info && info.d.lat != null && info.d.lon != null){
+    const kind = info.d.type === 'TRANSFORMER' ? 'หม้อแปลง ' : '';
+    return { lat: info.d.lat, lon: info.d.lon, name: kind + info.d.id, snap: true };
+  }
+  const pole = window.__nearestPoleAt && window.__nearestPoleAt(clientX, clientY);
+  if(pole) return { lat: pole[0], lon: pole[1], name: 'เสา ' + poleTagText(pole), snap: true };
+  const lvm = window.__nearestLvMeterAt && window.__nearestLvMeterAt(clientX, clientY);
+  if(lvm) return { lat: lvm[0], lon: lvm[1], name: 'มิเตอร์ ' + String(lvm[7] || ''), snap: true };
+  const c = window.__mapXYtoLatLon && window.__mapXYtoLatLon(clientX, clientY);
+  return c ? { lat: c.lat, lon: c.lon, name: '', snap: false } : null;
+}
+function addMeasurePoint(clientX, clientY){
+  const p = snapMeasurePoint(clientX, clientY);
+  if(!p) return;
+  measurePts.push(p);
+  redrawMeasure();
+  if(measurePts.length === 1 && p.snap) showToast('เริ่มวัดจาก ' + p.name);
+}
+function redrawMeasure(){
+  if(!leafletMap) return;
+  clearMeasureOverlays();
+  if(!measureOn){ updateMeasureHud(); return; }
+  const added = [];
+  if(measurePts.length >= 2){
+    try{
+      const line = new longdo.Polyline(measurePts.map(p=>({ lon:p.lon, lat:p.lat })),
+        { lineWidth: 3, lineColor: 'rgba(232,113,26,.95)' });
+      leafletMap.Overlays.add(line); added.push(line);
+    }catch(e){}
+  }
+  measurePts.forEach((p, i)=>{
+    try{
+      const mk = new longdo.Marker({ lon:p.lon, lat:p.lat }, {
+        icon: { html: `<div class="msr-pt${p.snap ? ' snap' : ''}"></div>`, offset:{ x:9, y:9 } },
+        weight: longdo.OverlayWeight.Top });
+      leafletMap.Overlays.add(mk); added.push(mk);
+    }catch(e){}
+    if(p.name){
+      try{
+        const tag = new longdo.Marker({ lon:p.lon, lat:p.lat }, {
+          icon: { html: `<div class="msr-tag">${escapeHtml(p.name)}</div>`, offset:{ x:-10, y:26 } },
+          weight: longdo.OverlayWeight.Top });
+        leafletMap.Overlays.add(tag); added.push(tag);
+      }catch(e){}
+    }
+    if(i > 0){
+      const a = measurePts[i-1];
+      const d = gpsDistanceMeters(a.lat, a.lon, p.lat, p.lon);
+      try{
+        const lbl = new longdo.Marker({ lon:(a.lon + p.lon)/2, lat:(a.lat + p.lat)/2 }, {
+          icon: { html: `<div class="msr-lbl">${escapeHtml(fmtMeters(d))}</div>`, offset:{ x:26, y:10 } },
+          weight: longdo.OverlayWeight.Top });
+        leafletMap.Overlays.add(lbl); added.push(lbl);
+      }catch(e){}
+    }
+  });
+  setMeasureOverlays(added);
+  updateMeasureHud();
+}
+function measureSummaryText(){
+  if(measurePts.length < 2) return '';
+  const first = measurePts[0], last = measurePts[measurePts.length-1];
+  const a = first.name || (first.lat.toFixed(6) + ',' + first.lon.toFixed(6));
+  const b = last.name || (last.lat.toFixed(6) + ',' + last.lon.toFixed(6));
+  const seg = measurePts.length > 2 ? ` (ผ่าน ${measurePts.length - 2} จุด)` : '';
+  return `${a} → ${b}${seg} = ${fmtMeters(measureTotalM())}`;
+}
+function updateMeasureHud(){
+  const hud = document.getElementById('measureHud');
+  if(!hud) return;
+  hud.classList.toggle('on', !!measureOn);
+  if(!measureOn) return;
+  const n = measurePts.length, total = measureTotalM();
+  const big = total < 1000 ? Math.round(total).toLocaleString() : (total/1000).toFixed(total < 10000 ? 2 : 1);
+  hud.querySelector('.mh-n').textContent = n < 2 ? '0' : big;
+  hud.querySelector('.mh-u').textContent = (total < 1000 || n < 2)
+    ? (n < 2 ? 'เมตร' : 'เมตร' + (n > 2 ? ` รวม ${n-1} ช่วง` : ''))
+    : 'กิโลเมตร' + (n > 2 ? ` รวม ${n-1} ช่วง` : '');
+  hud.querySelector('.mh-sub').innerHTML = n === 0
+    ? 'แตะจุดแรกบนแผนที่ · แตะใกล้อุปกรณ์ เสา หรือมิเตอร์ จะเกาะให้เอง'
+    : n === 1
+      ? 'แตะจุดต่อไปเพื่อได้ระยะ · ระหว่างวัดยังเลื่อนและซูมแผนที่ได้'
+      : escapeHtml(measureSummaryText()) + '<br><span style="color:#8a5200;">เส้นตรงจากจุดถึงจุด ไม่ใช่ระยะตามถนนหรือแนวสายจริง</span>';
+  document.getElementById('msrUndoBtn').disabled = n === 0;
+  document.getElementById('msrClearBtn').disabled = n === 0;
+  document.getElementById('msrCopyBtn').disabled = n < 2;
+}
+function setMeasureMode(on){
+  measureOn = !!on;
+  const btn = document.getElementById('rulerBtn');
+  const mapDiv = document.getElementById('mapDiv');
+  btn.classList.toggle('on', measureOn);
+  btn.textContent = measureOn ? '✕' : '📏';
+  btn.title = measureOn ? 'ออกจากโหมดวัดระยะ' : 'วัดระยะ (กดค้าง = เริ่มจากตำแหน่งปัจจุบัน)';
+  if(mapDiv) mapDiv.classList.toggle('measuring', measureOn);
+  if(!measureOn){ measurePts = []; clearMeasureOverlays(); }
+  hideMapHoverTip();
+  updateMeasureHud();
+  if(measureOn) showToast('โหมดวัดระยะ — แตะจุดบนแผนที่ไปเรื่อย ๆ');
+}
+document.getElementById('msrUndoBtn').addEventListener('click', ()=>{
+  measurePts.pop(); redrawMeasure();
+});
+document.getElementById('msrClearBtn').addEventListener('click', ()=>{
+  measurePts = []; redrawMeasure();
+});
+document.getElementById('msrCopyBtn').addEventListener('click', async ()=>{
+  const txt = measureSummaryText();
+  if(!txt) return;
+  const ok = await copyToClipboard(txt);
+  showToast(ok ? 'คัดลอกแล้ว: ' + txt : 'คัดลอกไม่สำเร็จ', ok ? 'ok' : 'warn');
+});
+document.getElementById('msrCloseBtn').addEventListener('click', ()=> setMeasureMode(false));
+/* กดปุ่มสั้น = เปิด/ปิดโหมดวัด · กดค้าง = เปิดโหมดวัดแล้วปักจุดแรกที่ตำแหน่งปัจจุบัน */
+(function bindRulerBtn(){
+  const btn = document.getElementById('rulerBtn');
+  if(!btn) return;
+  let holdTimer = null, held = false;
+  const startFromMe = ()=>{
+    if(!navigator.geolocation){ showToast('อุปกรณ์นี้ไม่รองรับการระบุตำแหน่ง', 'err'); return; }
+    if(!measureOn) setMeasureMode(true);
+    showToast('กำลังหาตำแหน่งปัจจุบัน ...');
+    navigator.geolocation.getCurrentPosition(pos=>{
+      measurePts = [{ lat: pos.coords.latitude, lon: pos.coords.longitude, name: 'ตำแหน่งฉัน', snap: true }];
+      try{ leafletMap.location({ lon: pos.coords.longitude, lat: pos.coords.latitude }, true); }catch(e){}
+      redrawMeasure();
+      showToast('ปักจุดแรกที่ตำแหน่งของคุณแล้ว — แตะจุดที่สองบนแผนที่');
+    }, ()=> showToast('ไม่สามารถระบุตำแหน่งได้ — ตรวจสอบการอนุญาตเข้าถึงตำแหน่ง', 'err'),
+    { enableHighAccuracy:true, timeout:8000 });
+  };
+  btn.addEventListener('pointerdown', ()=>{
+    held = false;
+    holdTimer = setTimeout(()=>{ held = true; startFromMe(); }, 550);
+  });
+  const cancel = ()=>{ clearTimeout(holdTimer); };
+  btn.addEventListener('pointerup', cancel);
+  btn.addEventListener('pointerleave', cancel);
+  btn.addEventListener('pointercancel', cancel);
+  btn.addEventListener('contextmenu', e=> e.preventDefault());
+  btn.addEventListener('click', ()=>{
+    if(held){ held = false; return; }     // กดค้างไปแล้ว ไม่ต้องสลับโหมดซ้ำ
+    setMeasureMode(!measureOn);
+  });
+})();
 
 /* ไปยังพิกัดที่ระบุ: สลับไปแผนที่จริง ปักหมุด แล้วบอกว่าอุปกรณ์ใกล้สุดคือตัวไหน */
 function focusCoord(c){
