@@ -5988,7 +5988,7 @@ function fmtMeters(m){
    คือฟิวส์ของหม้อแปลงตัวเอง แล้วต่อด้วยสวิตช์ รีโคลสเซอร์ และเบรกเกอร์สถานี */
 const CHAIN_INLINE_TYPES = new Set(['WS','WR','MR','SW','WB']);
 const CHAIN_LV_MAX_M = 150;     // ไกลกว่านี้ไม่ถือว่าเป็นมิเตอร์ของจุดที่ค้น
-const CHAIN_TX_MAX_M = 400;     // หม้อแปลงที่ถือว่าจ่ายไฟให้จุดนี้
+const CHAIN_TX_MAX_M = 1000;    // หม้อแปลงที่ถือว่าจ่ายไฟให้จุดนี้
 const CHAIN_RINGS_M = [50, 100];
 const CHAIN_COLOR = { WB:'#2e7d32', WS:'#1a73e8', SW:'#1a73e8', WR:'#e8711a', MR:'#e8711a',
   WF:'#e53935', TRANSFORMER:'#7c3aed', MVMETER:'#0f8f7e', WC:'#8a6d3b' };
@@ -6021,7 +6021,7 @@ function nearestLvToCoord(lat, lon, maxM){
 }
 /* ประกอบรายงาน: จุดที่ค้น → มิเตอร์ → หม้อแปลง → ไล่ขึ้นไปจนถึงเบรกเกอร์สถานี */
 function buildChainReport(lat, lon){
-  const near = devicesNearCoord(lat, lon, 500, 1500);
+  const near = devicesNearCoord(lat, lon, 800, 2000);
   const tx = near.find(n => n.d.type === 'TRANSFORMER' && n.dist <= CHAIN_TX_MAX_M) || null;
   const anchor = tx || near[0] || null;
   const rep = { lat, lon, nearest: near[0] || null, tx, anchor, lv: null, steps: [], station: null };
@@ -6077,7 +6077,7 @@ function renderChainSheet(){
   }
 
   if(!rep.anchor){
-    html += `<div class="ch-note">ไม่พบอุปกรณ์แรงสูงในรัศมี 1.5 กม. จากพิกัดนี้ จึงไล่สายต่อไม่ได้</div>`;
+    html += `<div class="ch-note">ไม่พบอุปกรณ์แรงสูงในรัศมี 2 กม. จากพิกัดนี้ จึงไล่สายต่อไม่ได้</div>`;
     body.innerHTML = html;
     head.textContent = '🔗 ไม่พบอุปกรณ์ใกล้พิกัดนี้';
     sum.textContent = txt;
@@ -6095,6 +6095,10 @@ function renderChainSheet(){
       <div class="ch-rail"><div class="ch-dot" style="background:#7c3aed"></div><div class="ch-line"></div></div>
       <div class="ch-txt"><span class="ch-id">${escapeHtml(d.id)}${chainPillHtml('TRANSFORMER')}</span>
         <span class="ch-meta">${bits.join(' · ')}</span></div></div>`;
+    // ไกลขนาดนี้อาจไม่ใช่ตัวที่จ่ายไฟให้จุดนั้นจริง บอกไว้ให้ตรวจก่อนเชื่อ
+    if(rep.tx.dist > 300)
+      html += `<div class="ch-note">หม้อแปลงตัวนี้อยู่ห่างถึง ${escapeHtml(fmtMeters(rep.tx.dist))}
+        อาจไม่ใช่ตัวที่จ่ายไฟให้จุดนี้จริง ตรวจดูหน้างานอีกทีก่อนใช้</div>`;
   } else {
     html += `<div class="ch-note">ไม่มีหม้อแปลงในรัศมี ${CHAIN_TX_MAX_M} ม. จึงเริ่มไล่จากอุปกรณ์ที่ใกล้ที่สุดแทน</div>`;
   }
