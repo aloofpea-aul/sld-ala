@@ -1124,10 +1124,11 @@ const APP_LIST = [
   { code: 'dutyroster',   name: 'งานเวรแก้ไฟ' },
   { code: 'vehicle',      name: 'ระบบยานพาหนะ' },
   { code: 'procure',      name: 'จัดซื้อจัดจ้าง' },
-  { code: 'tfbuy',        name: 'จัดซื้อหม้อแปลง (ธุรกิจเสริม)' }
+  { code: 'tfbuy',        name: 'จัดซื้อหม้อแปลง (ธุรกิจเสริม)' },
+  { code: 'damage',       name: 'ประเมินค่าเสียหาย (รถชน)' }
 ];
 // โปรแกรมที่เพิ่งเปิดล็อกสิทธิ์ — ครั้งแรกหลังอัปเดต ระบบเติมสิทธิ์ให้สมาชิกที่เคยกำหนดสิทธิ์ไว้ทุกคน (กันคนที่ใช้อยู่หลุด) แล้วจำว่าทำแล้ว
-const APP_MIGRATE = ['procure', 'tfbuy'];
+const APP_MIGRATE = ['procure', 'tfbuy', 'damage'];
 function hubMigrateApps_() {
   const props = PropertiesService.getScriptProperties();
   const done = String(props.getProperty('hubAppsMigrated') || '').split(',').filter(String);
