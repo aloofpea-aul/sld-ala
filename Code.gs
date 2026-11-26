@@ -1128,8 +1128,12 @@ const APP_LIST = [
   { code: 'tfbuy',        name: 'จัดซื้อหม้อแปลง (ธุรกิจเสริม)' },
   { code: 'damage',       name: 'ประเมินค่าเสียหาย (รถชน)' },
   { code: 'asset',        name: 'ทรัพย์สิน ผปร.' },
-  { code: 'stock',        name: 'คลังพัสดุ / มิเตอร์ชำรุด' }
+  { code: 'stock',        name: 'คลังพัสดุ / มิเตอร์ชำรุด' },
+  { code: 'english',      name: 'English Step ฝึกภาษาอังกฤษ' }
 ];
+// โปรแกรมที่ไม่เปิดให้อัตโนมัติ — สมาชิกที่ยังไม่เคยกำหนดสิทธิ์จะไม่ได้โปรแกรมนี้ ต้องให้ผู้ดูแลเปิดให้ทีละคน
+const APP_DEFAULT_OFF = ['english'];
+function defaultApps_() { return APP_LIST.map(function (a) { return a.code; }).filter(function (c) { return APP_DEFAULT_OFF.indexOf(c) < 0; }); }
 // โปรแกรมที่เพิ่งเปิดล็อกสิทธิ์ — ครั้งแรกหลังอัปเดต ระบบเติมสิทธิ์ให้สมาชิกที่เคยกำหนดสิทธิ์ไว้ทุกคน (กันคนที่ใช้อยู่หลุด) แล้วจำว่าทำแล้ว
 const APP_MIGRATE = ['procure', 'tfbuy', 'damage', 'asset', 'stock', 'construction'];
 function hubMigrateApps_() {
@@ -1184,7 +1188,7 @@ function getUserApps_(name, role) {
   if (role === 'admin') return APP_LIST.map(function (a) { return a.code; });
   const found = findUserRow_(name);
   const raw = found ? String(found.values[APPS_COL - 1] || '').trim() : '';
-  if (!raw) return APP_LIST.map(function (a) { return a.code; });   // ยังไม่เคยกำหนด = ใช้ได้ทุกโปรแกรม
+  if (!raw) return defaultApps_();   // ยังไม่เคยกำหนด = ใช้ได้ทุกโปรแกรม (ยกเว้น APP_DEFAULT_OFF)
   if (raw === '-') return [];
   return raw.split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x; });
 }
@@ -1205,7 +1209,7 @@ function listUsersWithApps_(requesterRole) {
         name: name, role: pair[1],
         position: String(values[r][2] || '').trim(),
         org: String(values[r][3] || '').trim(),
-        apps: pair[1] === 'admin' || !raw ? APP_LIST.map(function (a) { return a.code; })   // คิดจากแถวที่อ่านแล้ว ไม่อ่านชีตซ้ำทีละคน
+        apps: pair[1] === 'admin' ? APP_LIST.map(function (a) { return a.code; }) : !raw ? defaultApps_()   // คิดจากแถวที่อ่านแล้ว ไม่อ่านชีตซ้ำทีละคน
           : raw === '-' ? [] : raw.split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x; }),
         appsRaw: raw,
         appsUpdated: String(values[r][APPS_META_COL - 1] || '').trim(),
