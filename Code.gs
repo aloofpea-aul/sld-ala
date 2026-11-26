@@ -457,7 +457,8 @@ function doPostInner_(body) {
     if (body.action === 'whoAmI') {
       // apps = รหัสโปรแกรมที่ใช้ได้ — หน้าโปรแกรมแต่ละตัวใช้ตรวจสิทธิ์ก่อนเปิดให้ใช้
       return jsonOut({ ok: true, name: changedByName, role: requesterRole,
-        apps: requesterRole ? getUserApps_(changedByName, requesterRole) : [] });
+        apps: requesterRole ? getUserApps_(changedByName, requesterRole) : [],
+        reason: requesterRole ? '' : hubLoginReason_(changedByName, changedByPassword) });
     }
     // นับการเข้าใช้แม้ยังไม่ได้ล็อกอินศูนย์รวมงาน (เช่น เข้าระบบเลขหนังสือ/งบประมาณตรงๆ ด้วยล็อกอินของโปรแกรมนั้น)
     // userHint = ชื่อที่โปรแกรมนั้นจำไว้ในเครื่อง (ไม่ได้ตรวจรหัสผ่าน) — รับเฉพาะรหัสโปรแกรมที่มีในรายการ
@@ -3085,4 +3086,21 @@ function hubUserResetPw_(body, requesterRole, changedByName) {
   found.sheet.getRange(found.row, 2).setValue(temp);
   logChange('ตั้งรหัสผ่านใหม่', '', name, [], changedByName);
   return jsonOut({ ok: true, tempPw: temp });
+}
+
+/** เหตุที่เข้าระบบไม่ได้ (ให้หน้าเว็บแจ้งให้ตรง): disabled = ถูกระงับ · pending = รออนุมัติ · wrong = ชื่อ/รหัสไม่ถูก
+ *  บอก "ถูกระงับ" เฉพาะเมื่อรหัสผ่านถูก — ไม่เปิดเผยข้อมูลให้คนเดารหัส */
+function hubLoginReason_(name, password) {
+  const lower = String(name || '').trim().toLowerCase(), pass = String(password || '');
+  if (!lower) return 'wrong';
+  const u = readMembersFull_(SHEET_ADMINS).concat(readMembersFull_(SHEET_MEMBERS)).find(function (m) { return m.name.toLowerCase() === lower; });
+  if (u) return u.password === pass && u.disabled ? 'disabled' : 'wrong';
+  try {
+    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PENDING);
+    if (sh && sh.getLastRow() >= 2) {
+      const v = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues();
+      if (v.some(function (r) { return String(r[0] || '').trim().toLowerCase() === lower && String(r[1] || '') === pass; })) return 'pending';
+    }
+  } catch (e) {}
+  return 'wrong';
 }
