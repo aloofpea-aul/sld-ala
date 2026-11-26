@@ -438,6 +438,7 @@ function doPost(e) {
 }
 function doPostInner_(body) {
   try {
+    try { hubMigrateApps_(); } catch (eMig) {}
 
     if (body.action === 'getMemberList') {
       return jsonOut({ ok: true, members: getMemberList_() });
@@ -1121,8 +1122,36 @@ const APP_LIST = [
   { code: 'analytics',    name: 'วิเคราะห์ข้อมูลไฟฟ้า' },
   { code: 'drawings',     name: 'คลังแบบมาตรฐาน กฟภ.' },
   { code: 'dutyroster',   name: 'งานเวรแก้ไฟ' },
-  { code: 'vehicle',      name: 'ระบบยานพาหนะ' }
+  { code: 'vehicle',      name: 'ระบบยานพาหนะ' },
+  { code: 'procure',      name: 'จัดซื้อจัดจ้าง' }
 ];
+// โปรแกรมที่เพิ่งเปิดล็อกสิทธิ์ — ครั้งแรกหลังอัปเดต ระบบเติมสิทธิ์ให้สมาชิกที่เคยกำหนดสิทธิ์ไว้ทุกคน (กันคนที่ใช้อยู่หลุด) แล้วจำว่าทำแล้ว
+const APP_MIGRATE = ['procure'];
+function hubMigrateApps_() {
+  const props = PropertiesService.getScriptProperties();
+  const done = String(props.getProperty('hubAppsMigrated') || '').split(',').filter(String);
+  const todo = APP_MIGRATE.filter(function (c) { return done.indexOf(c) < 0; });
+  if (!todo.length) return;
+  const lock = LockService.getScriptLock(), held = lock.hasLock(); if (!held && !lock.tryLock(20000)) return;
+  try {
+    const again = String(props.getProperty('hubAppsMigrated') || '').split(',').filter(String);
+    const list = todo.filter(function (c) { return again.indexOf(c) < 0; }); if (!list.length) return;
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_MEMBERS);
+    if (sheet && sheet.getLastRow() >= 2) {
+      const rng = sheet.getRange(2, APPS_COL, sheet.getLastRow() - 1, 1), vals = rng.getValues();
+      let n = 0;
+      vals.forEach(function (r) {
+        const raw = String(r[0] || '').trim(); if (!raw) return;   // ว่าง = ใช้ได้ทุกโปรแกรมอยู่แล้ว
+        let cur = raw === '-' ? [] : raw.split(',').map(function (x) { return x.trim(); }).filter(String);
+        list.forEach(function (c) { if (cur.indexOf(c) < 0) { cur.push(c); n++; } });
+        r[0] = cur.join(',');
+      });
+      rng.setValues(vals);
+      logChange('เปิดล็อกสิทธิ์โปรแกรม', '', list.join(','), [{ field: 'เติมสิทธิ์ให้ผู้ใช้เดิม', oldValue: '', newValue: n + ' คน' }], 'ระบบ');
+    }
+    props.setProperty('hubAppsMigrated', again.concat(list).join(','));
+  } finally { if (!held) lock.releaseLock(); }
+}
 const APPS_COL = 5;        // คอลัมน์ E = Apps (รหัสโปรแกรมที่ใช้ได้)
 const STATUS_COL = 7;      // คอลัมน์ G = Status (Disabled = ระงับ เข้าระบบไม่ได้ · ว่าง = ใช้งานได้)
 const APPS_META_COL = 6;   // คอลัมน์ F = AppsUpdated (แก้ล่าสุดเมื่อไหร่ โดยใคร เหตุผลอะไร)
