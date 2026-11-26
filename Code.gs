@@ -84,7 +84,7 @@ function readMembersFull_(sheetName) {
   const out = [];
   for (let i = 1; i < values.length; i++) {
     const name = String(values[i][0] || '').trim();
-    if (name) out.push({ name: name, password: String(values[i][1] || '') });
+    if (name) out.push({ name: name, password: String(values[i][1] || ''), disabled: String(values[i][STATUS_COL - 1] || '').trim() === 'Disabled' });
   }
   return out;
 }
@@ -103,16 +103,16 @@ function getUserRole_(name, password) {
   const lower = trimmed.toLowerCase();
   const pass = String(password || '');
   const admin = readMembersFull_(SHEET_ADMINS).find(m => m.name.toLowerCase() === lower);
-  if (admin) return admin.password === pass ? 'admin' : null;
+  if (admin) return admin.password === pass && !admin.disabled ? 'admin' : null;
   const member = readMembersFull_(SHEET_MEMBERS).find(m => m.name.toLowerCase() === lower);
-  if (member) return member.password === pass ? 'member' : null;
+  if (member) return member.password === pass && !member.disabled ? 'member' : null;
   return null;
 }
 
 /** คืนรายชื่อทั้งหมดที่แอดมินอนุมัติไว้ (Admins + Members) พร้อมระบุบทบาท — ชื่อเท่านั้น ไม่มีรหัสผ่านติดไปด้วยเด็ดขาด ให้หน้าเว็บเอาไปทำ dropdown/autocomplete เวลาเลือกชื่อผู้ใช้งาน */
 function getMemberList_() {
-  const admins = readNameList_(SHEET_ADMINS).map(n => ({ name: n, role: 'admin' }));
-  const members = readNameList_(SHEET_MEMBERS).map(n => ({ name: n, role: 'member' }));
+  const admins = readMembersFull_(SHEET_ADMINS).filter(m => !m.disabled).map(m => ({ name: m.name, role: 'admin' }));
+  const members = readMembersFull_(SHEET_MEMBERS).filter(m => !m.disabled).map(m => ({ name: m.name, role: 'member' }));
   return admins.concat(members);
 }
 
@@ -1079,6 +1079,9 @@ function handlePatrolAction_(body, requesterRole, changedByName) {
     case 'patrolListUsers':   return listUsersWithApps_(requesterRole);
     case 'patrolSetApps':     return setUserApps_(body, requesterRole, changedByName);
     case 'patrolSetAppBulk':  return setAppBulk_(body, requesterRole, changedByName);
+    case 'hubUserSave':       return hubUserSave_(body, requesterRole, changedByName);
+    case 'hubUserAdd':        return hubUserAdd_(body, requesterRole, changedByName);
+    case 'hubUserResetPw':    return hubUserResetPw_(body, requesterRole, changedByName);
     case 'patrolRiskStates':  return patrolRiskStates_();
     case 'patrolRiskSet':     return patrolRiskSet_(body, changedByName);
     case 'patrolCloseBulk':   return patrolCloseBulk_(body, changedByName);
@@ -1121,6 +1124,7 @@ const APP_LIST = [
   { code: 'vehicle',      name: 'ระบบยานพาหนะ' }
 ];
 const APPS_COL = 5;        // คอลัมน์ E = Apps (รหัสโปรแกรมที่ใช้ได้)
+const STATUS_COL = 7;      // คอลัมน์ G = Status (Disabled = ระงับ เข้าระบบไม่ได้ · ว่าง = ใช้งานได้)
 const APPS_META_COL = 6;   // คอลัมน์ F = AppsUpdated (แก้ล่าสุดเมื่อไหร่ โดยใคร เหตุผลอะไร)
 
 /** หาแถวของผู้ใช้ในชีต Admins/Members คืน { sheet, row, role } */
@@ -1170,7 +1174,8 @@ function listUsersWithApps_(requesterRole) {
         apps: pair[1] === 'admin' || !raw ? APP_LIST.map(function (a) { return a.code; })   // คิดจากแถวที่อ่านแล้ว ไม่อ่านชีตซ้ำทีละคน
           : raw === '-' ? [] : raw.split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x; }),
         appsRaw: raw,
-        appsUpdated: String(values[r][APPS_META_COL - 1] || '').trim()
+        appsUpdated: String(values[r][APPS_META_COL - 1] || '').trim(),
+        disabled: String(values[r][STATUS_COL - 1] || '').trim() === 'Disabled'
       });
     }
   });
@@ -2963,4 +2968,88 @@ function txPlanUnmark_(loadId) {
     itemSheet.getRange(r + 1, 5).setValue('');
     itemSheet.getRange(r + 1, 6).setValue('');
   }
+}
+
+
+// ═════ จัดการผู้ใช้ศูนย์รวมงาน (หน้า hub-admin.js) ═════
+// ชีต Admins/Members: A ชื่อ · B รหัสผ่าน · C ตำแหน่ง · D หน่วยงาน · E Apps · F AppsUpdated · G Status (Disabled = ระงับ)
+function hubAdminCount_() {
+  return readMembersFull_(SHEET_ADMINS).filter(function (m) { return !m.disabled; }).length;
+}
+function hubTempPw_() { const c = 'abcdefghjkmnpqrstuvwxyz23456789'; let s = ''; for (let i = 0; i < 8; i++) s += c.charAt(Math.floor(Math.random() * c.length)); return s; }
+function hubEnsureHeaders_(sheet) {
+  const want = ['Name', 'Password', 'Position', 'Org', 'Apps', 'AppsUpdated', 'Status'];
+  const cur = sheet.getRange(1, 1, 1, 7).getValues()[0];
+  want.forEach(function (h, i) { if (String(cur[i] || '').trim() === '') sheet.getRange(1, i + 1).setValue(h); });
+}
+/** บันทึกผู้ใช้ทีเดียว: บทบาท สิทธิ์โปรแกรม ตำแหน่ง หน่วยงาน สถานะ — body = {targetName, role, apps[], position, org, disabled} */
+function hubUserSave_(body, requesterRole, changedByName) {
+  if (requesterRole !== 'admin') return jsonOut({ ok: false, error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+  const name = String(body.targetName || '').trim();
+  let found = findUserRow_(name);
+  if (!found) return jsonOut({ ok: false, error: 'ไม่พบผู้ใช้ชื่อนี้ — กรุณารีเฟรช' });
+  const role = body.role === 'admin' ? 'admin' : 'member';
+  const disabled = !!body.disabled;
+  const self = name.toLowerCase() === String(changedByName || '').trim().toLowerCase();
+  if (self && (role !== 'admin' || disabled)) return jsonOut({ ok: false, error: 'ลดสิทธิ์หรือระงับบัญชีของตัวเองไม่ได้' });
+  const wasActiveAdmin = found.role === 'admin' && String(found.values[STATUS_COL - 1] || '').trim() !== 'Disabled';
+  if (wasActiveAdmin && (role !== 'admin' || disabled) && hubAdminCount_() <= 1) return jsonOut({ ok: false, error: 'ต้องมีผู้ดูแลระบบอย่างน้อย 1 คน' });
+  const changes = [];
+  if (role !== found.role) { // ย้ายแถวไปอีกชีต (เก็บข้อมูลทุกช่องไว้)
+    const row = found.sheet.getRange(found.row, 1, 1, Math.max(7, found.sheet.getLastColumn())).getValues()[0];
+    const target = getOrCreateNameSheet_(role === 'admin' ? SHEET_ADMINS : SHEET_MEMBERS);
+    hubEnsureHeaders_(target);
+    target.appendRow(row.slice(0, Math.max(7, target.getLastColumn())));
+    found.sheet.deleteRow(found.row);
+    changes.push({ field: 'บทบาท', oldValue: found.role, newValue: role });
+    found = findUserRow_(name);
+  }
+  hubEnsureHeaders_(found.sheet);
+  const pos = String(body.position == null ? found.values[2] || '' : body.position).trim().slice(0, 60);
+  const org = String(body.org == null ? found.values[3] || '' : body.org).trim().slice(0, 60);
+  found.sheet.getRange(found.row, 3, 1, 2).setValues([[pos, org]]);
+  const oldSt = String(found.values[STATUS_COL - 1] || '').trim();
+  const newSt = disabled ? 'Disabled' : '';
+  if (oldSt !== newSt) { found.sheet.getRange(found.row, STATUS_COL).setValue(newSt); changes.push({ field: 'สถานะ', oldValue: oldSt || 'ใช้งาน', newValue: newSt || 'ใช้งาน' }); }
+  if (role === 'member' && Array.isArray(body.apps)) {
+    const valid = APP_LIST.map(function (a) { return a.code; });
+    const apps = body.apps.map(function (x) { return String(x).trim(); }).filter(function (x) { return valid.indexOf(x) >= 0; });
+    const newVal = apps.length ? apps.join(',') : '-';
+    const oldVal = String(found.values[APPS_COL - 1] || '');
+    if (newVal !== oldVal) { writeUserApps_(found, newVal, 'แก้จากหน้าจัดการผู้ใช้', changedByName); changes.push({ field: 'Apps', oldValue: oldVal, newValue: newVal }); }
+  }
+  if (changes.length) logChange('แก้ไขผู้ใช้', '', name, changes, changedByName);
+  return jsonOut({ ok: true });
+}
+/** เพิ่มผู้ใช้โดยผู้ดูแลระบบ — ระบบสร้างรหัสผ่านชั่วคราวให้ */
+function hubUserAdd_(body, requesterRole, changedByName) {
+  if (requesterRole !== 'admin') return jsonOut({ ok: false, error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+  const name = String(body.newName || '').trim();
+  const role = body.role === 'admin' ? 'admin' : 'member';
+  const temp = hubTempPw_();
+  const r = addMember_(name, role, temp);
+  if (!r.ok) return jsonOut(r);
+  const found = findUserRow_(name);
+  hubEnsureHeaders_(found.sheet);
+  found.sheet.getRange(found.row, 3, 1, 2).setValues([[String(body.position || '').trim(), String(body.org || '').trim()]]);
+  if (role === 'member' && Array.isArray(body.apps)) {
+    const valid = APP_LIST.map(function (a) { return a.code; });
+    const apps = body.apps.map(function (x) { return String(x).trim(); }).filter(function (x) { return valid.indexOf(x) >= 0; });
+    writeUserApps_(found, apps.length ? apps.join(',') : '-', 'เพิ่มผู้ใช้ใหม่', changedByName);
+  }
+  logChange('เพิ่มสมาชิก', '', name, [{ field: 'บทบาท', oldValue: '', newValue: role }], changedByName);
+  return jsonOut({ ok: true, tempPw: temp });
+}
+/** ตั้งรหัสผ่านใหม่ (สุ่มรหัสชั่วคราว) — เครื่องที่จำรหัสเดิมไว้จะต้องล็อกอินใหม่ */
+function hubUserResetPw_(body, requesterRole, changedByName) {
+  if (requesterRole !== 'admin') return jsonOut({ ok: false, error: 'เฉพาะผู้ดูแลระบบเท่านั้น' });
+  const name = String(body.targetName || '').trim();
+  const found = findUserRow_(name);
+  if (!found) return jsonOut({ ok: false, error: 'ไม่พบผู้ใช้ชื่อนี้' });
+  const want = String(body.newPassword || '').trim();
+  if (want && want.length < 4) return jsonOut({ ok: false, error: 'รหัสผ่านต้องมีอย่างน้อย 4 ตัว' });
+  const temp = want || hubTempPw_();
+  found.sheet.getRange(found.row, 2).setValue(temp);
+  logChange('ตั้งรหัสผ่านใหม่', '', name, [], changedByName);
+  return jsonOut({ ok: true, tempPw: temp });
 }
